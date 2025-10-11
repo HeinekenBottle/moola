@@ -9,6 +9,7 @@ from typing import Type
 from .base import BaseModel
 from .logreg import LogRegModel
 from .rf import RFModel
+from .stack import StackModel
 from .xgb import XGBModel
 
 # Model registry mapping names to classes
@@ -16,6 +17,7 @@ _MODEL_REGISTRY: dict[str, Type[BaseModel]] = {
     "logreg": LogRegModel,
     "rf": RFModel,
     "xgb": XGBModel,
+    "stack": StackModel,
 }
 
 

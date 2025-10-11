@@ -369,6 +369,171 @@ def oof(cfg_dir, over, model, seed):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
+@click.option("--model", required=True, help="Model name (logreg, rf, xgb, stack)")
+@click.option("--input", "input_path", required=True, type=click.Path(exists=True), help="Input parquet file")
+@click.option("--output", "output_path", required=True, type=click.Path(), help="Output predictions CSV file")
+def predict(cfg_dir, over, model, input_path, output_path):
+    """Generate predictions using a trained model."""
+    import numpy as np
+    import pandas as pd
+
+    from .models import get_model
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+    log.info("Predict start | model=%s", model)
+
+    # Load input data
+    input_path = Path(input_path)
+    df = pd.read_parquet(input_path)
+    log.info(f"Loaded {len(df)} samples from {input_path}")
+
+    # Extract features
+    if "features" in df.columns:
+        X = np.array(df["features"].tolist())
+    else:
+        # Assume all columns except certain metadata columns are features
+        exclude_cols = {"window_id", "label"}
+        feature_cols = [c for c in df.columns if c not in exclude_cols]
+        X = df[feature_cols].values
+
+    log.info(f"Feature matrix shape: {X.shape}")
+
+    # For stack model, need to load OOF predictions instead
+    if model == "stack":
+        # Stack model expects concatenated base model predictions [N, 3*C]
+        # For inference, we need to generate predictions from each base model first
+        base_models = ["logreg", "rf", "xgb"]
+        base_predictions = []
+
+        for base_model_name in base_models:
+            # Load base model
+            model_dir = paths.artifacts / "models" / base_model_name
+            model_path = model_dir / "model.pkl"
+            if not model_path.exists():
+                log.error(f"Base model not found: {base_model_name} at {model_path}")
+                raise FileNotFoundError(f"Missing {model_path}")
+
+            base_model_instance = get_model(base_model_name, seed=cfg.seed)
+            base_model_instance.load(model_path)
+            log.info(f"Loaded base model: {base_model_name}")
+
+            # Get base model predictions
+            base_proba = base_model_instance.predict_proba(X)
+            base_predictions.append(base_proba)
+            log.info(f"{base_model_name} predictions shape: {base_proba.shape}")
+
+        # Concatenate base predictions for stack input
+        X_stack = np.concatenate(base_predictions, axis=1)
+        log.info(f"Stack input shape: {X_stack.shape}")
+
+        # Load stack model
+        model_dir = paths.artifacts / "models" / "stack"
+        model_path = model_dir / "stack.pkl"
+    else:
+        # Load regular model
+        model_dir = paths.artifacts / "models" / model
+        model_path = model_dir / "model.pkl"
+
+    if not model_path.exists():
+        log.error(f"Model not found at {model_path}. Run 'moola train --model {model}' first.")
+        raise FileNotFoundError(f"Missing {model_path}")
+
+    model_instance = get_model(model, seed=cfg.seed)
+    model_instance.load(model_path)
+    log.info(f"Loaded model from {model_path}")
+
+    # Generate predictions
+    if model == "stack":
+        y_pred = model_instance.predict(X_stack)
+        y_proba = model_instance.predict_proba(X_stack)
+    else:
+        y_pred = model_instance.predict(X)
+        y_proba = model_instance.predict_proba(X)
+
+    log.info(f"Generated {len(y_pred)} predictions")
+
+    # Create output DataFrame
+    output_df = pd.DataFrame({
+        "prediction": y_pred,
+    })
+
+    # Add probability columns
+    n_classes = y_proba.shape[1]
+    for i in range(n_classes):
+        output_df[f"prob_class_{i}"] = y_proba[:, i]
+
+    # Add window_id if present in input
+    if "window_id" in df.columns:
+        output_df.insert(0, "window_id", df["window_id"].values)
+
+    # Save predictions
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_df.to_csv(output_path, index=False)
+    log.info(f"Saved predictions to {output_path}")
+    log.info("Predict done")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
+@click.option("--seed", type=int, default=None, help="Random seed (defaults to config seed)")
+def stack_train(cfg_dir, over, seed):
+    """Train stacking meta-learner on OOF predictions."""
+    import numpy as np
+    import pandas as pd
+
+    from .pipelines import train_stack
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+
+    # Use provided seed or default from config
+    seed = seed if seed is not None else cfg.seed
+    k = cfg.get("cv_folds", 5)
+
+    log.info("Stack training start | seed=%s k=%s", seed, k)
+
+    # Load training data for labels
+    train_path = paths.data / "processed" / "train.parquet"
+    if not train_path.exists():
+        log.error(f"Training data not found at {train_path}")
+        raise FileNotFoundError(f"Missing {train_path}")
+
+    df = pd.read_parquet(train_path)
+    y = df["label"].values
+    log.info(f"Loaded {len(df)} samples | labels shape={y.shape}")
+
+    # Define paths
+    oof_dir = paths.artifacts / "oof"
+    splits_dir = paths.artifacts / "splits" / "v1"
+    model_dir = paths.artifacts / "models" / "stack"
+    output_path = model_dir / "stack.pkl"
+    metrics_path = model_dir / "metrics.json"
+    manifest_path = paths.artifacts / "manifest.json"
+
+    # Train stack
+    metrics = train_stack(
+        y=y,
+        seed=seed,
+        k=k,
+        oof_dir=oof_dir,
+        splits_dir=splits_dir,
+        output_path=output_path,
+        metrics_path=metrics_path,
+        manifest_path=manifest_path,
+    )
+
+    log.info(f"Stack training complete | f1={metrics['f1']:.3f} ece={metrics['ece']:.3f}")
+    log.info("Stack-train done")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
 @click.option("--section", default="base", help="Audit section (base, oof, stack, all)")
 def audit(cfg_dir, over, section):
     """Audit pipeline for completeness and consistency."""
@@ -385,6 +550,48 @@ def audit(cfg_dir, over, section):
 
     passed = True
     base_models = ["logreg", "rf", "xgb"]
+
+    # Check manifest validity (for all sections)
+    if section == "all":
+        log.info("=== Manifest & Schema Audit ===")
+
+        # Check manifest exists
+        manifest_path = paths.artifacts / "manifest.json"
+        if not manifest_path.exists():
+            log.warning(f"⚠️  Manifest not found: {manifest_path}")
+        else:
+            log.info(f"✅ Manifest exists: {manifest_path}")
+
+            # Verify manifest integrity
+            from .utils.manifest import verify_manifest
+
+            verification = verify_manifest(paths.artifacts, manifest_path)
+            failed_files = [f for f, valid in verification.items() if not valid]
+
+            if failed_files:
+                log.error(f"❌ Manifest verification failed for {len(failed_files)} files:")
+                for f in failed_files[:5]:  # Show first 5 failures
+                    log.error(f"   {f}")
+                passed = False
+            else:
+                log.info(f"✅ Manifest verified: {len(verification)} files match")
+
+        # Validate training data schema
+        train_path = paths.data / "processed" / "train.parquet"
+        if train_path.exists():
+            import pandas as pd
+
+            from .schemas.canonical_v1 import check_training_data
+
+            df = pd.read_parquet(train_path)
+            schema_valid = check_training_data(df)
+            if schema_valid:
+                log.info(f"✅ Training data schema valid: {train_path}")
+            else:
+                log.error(f"❌ Training data schema invalid: {train_path}")
+                passed = False
+        else:
+            log.warning(f"⚠️  Training data not found for schema validation")
 
     if section in ["base", "all"]:
         log.info("=== Base Models Audit ===")
@@ -452,7 +659,51 @@ def audit(cfg_dir, over, section):
 
     if section in ["stack", "all"]:
         log.info("=== Stacking Audit ===")
-        log.warning("⚠️  Stacking not yet implemented")
+
+        seed = cfg.seed
+        stack_dir = paths.artifacts / "models" / "stack"
+        stack_path = stack_dir / "stack.pkl"
+
+        # Check stack model exists
+        if not stack_path.exists():
+            log.error(f"❌ Stack model missing: {stack_path}")
+            passed = False
+        else:
+            log.info(f"✅ Stack model exists: {stack_path}")
+
+            # Check stack metrics
+            stack_metrics_path = stack_dir / "metrics.json"
+            if stack_metrics_path.exists():
+                import json
+
+                with open(stack_metrics_path, "r") as f:
+                    stack_metrics = json.load(f)
+                f1 = stack_metrics.get("f1", 0)
+                ece = stack_metrics.get("ece", 0)
+                log.info(f"   F1: {f1:.3f} | ECE: {ece:.3f}")
+
+                # Load base model metrics for comparison
+                best_base_f1 = 0
+                for model in base_models:
+                    metrics_path = paths.artifacts / "models" / model / "metrics.json"
+                    if metrics_path.exists():
+                        with open(metrics_path, "r") as f:
+                            base_metrics = json.load(f)
+                        base_f1 = base_metrics.get("f1", 0)
+                        best_base_f1 = max(best_base_f1, base_f1)
+
+                # Check acceptance criteria: F1 improvement >= 2pp OR ECE improvement >= 0.03
+                f1_improvement = (f1 - best_base_f1) * 100  # in percentage points
+                log.info(f"   Best base F1: {best_base_f1:.3f} | Improvement: {f1_improvement:.1f}pp")
+
+                if f1_improvement >= 2.0:
+                    log.info(f"✅ Stack F1 improvement >= 2pp: {f1_improvement:.1f}pp")
+                elif ece <= 0.03:
+                    log.info(f"✅ Stack ECE <= 0.03: {ece:.3f}")
+                else:
+                    log.warning(f"⚠️  Stack acceptance criteria not met (F1 improvement: {f1_improvement:.1f}pp, ECE: {ece:.3f})")
+            else:
+                log.warning(f"⚠️  Stack metrics missing")
 
     # Final verdict
     log.info("=" * 40)
