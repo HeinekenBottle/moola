@@ -1,8 +1,9 @@
 """Data validation schemas using Pydantic."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -24,6 +25,45 @@ class DatasetSchema(BaseModel):
         if v not in allowed:
             raise ValueError(f"Format must be one of {allowed}, got {v}")
         return v
+
+
+class TrainingDataRow(BaseModel):
+    """Schema for processed/train.parquet rows.
+
+    This is the locked data contract for the training dataset.
+    Each row represents a single training example.
+    """
+
+    window_id: int = Field(..., description="Unique identifier for the data window")
+    label: str = Field(..., description="Target label for classification")
+    features: Union[List[float], str] = Field(
+        ..., description="Feature vector (list of floats or JSON-serialized array)"
+    )
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    @field_validator("features", mode="before")
+    @classmethod
+    def validate_features(cls, v: Any) -> Union[List[float], str]:
+        """Validate and normalize features.
+
+        Accepts:
+        - list of floats
+        - numpy array (converted to list)
+        - JSON string (validated)
+        """
+        if isinstance(v, np.ndarray):
+            return v.tolist()
+        if isinstance(v, list):
+            # Ensure all elements are numeric
+            if not all(isinstance(x, (int, float)) for x in v):
+                raise ValueError("All feature elements must be numeric")
+            return v
+        if isinstance(v, str):
+            # Assume it's JSON-serialized, let pandas/pyarrow handle it
+            return v
+        raise ValueError(f"Features must be list, numpy array, or JSON string, got {type(v)}")
 
 
 class ModelConfig(BaseModel):

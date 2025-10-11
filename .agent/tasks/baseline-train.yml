@@ -1,0 +1,34 @@
+name: baseline-train
+description: Train baseline classifier with LogisticRegression
+
+steps:
+  - name: check-data
+    run: |
+      if [ ! -f data/processed/train.parquet ]; then
+        echo "Error: train.parquet not found. Run 'moola ingest' first."
+        exit 1
+      fi
+    description: Verify training data exists
+
+  - name: train
+    run: moola train
+    description: Train LogisticRegression baseline model
+    depends_on: [check-data]
+
+  - name: verify-model
+    run: |
+      if [ ! -f data/artifacts/model.bin ]; then
+        echo "Error: model.bin not created"
+        exit 1
+      fi
+      echo "Model saved successfully at data/artifacts/model.bin"
+    description: Verify model artifact exists
+    depends_on: [train]
+
+outputs:
+  - data/artifacts/model.bin
+  - data/logs/moola.log
+
+notes: |
+  This task trains a simple LogisticRegression classifier as a baseline.
+  Uses seed=1337 from configs/default.yaml for reproducibility.
