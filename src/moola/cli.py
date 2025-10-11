@@ -88,8 +88,9 @@ def ingest(cfg_dir, over):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
-@click.option("--model", default="logreg", help="Model name (logreg, rf, xgb)")
-def train(cfg_dir, over, model):
+@click.option("--model", default="logreg", help="Model name (logreg, rf, xgb, rwkv_ts, cnn_transformer)")
+@click.option("--device", default="cpu", type=click.Choice(["cpu", "cuda"]), help="Device for training")
+def train(cfg_dir, over, model, device):
     """Train classifier on processed/train.parquet."""
     import numpy as np
     import pandas as pd
@@ -126,7 +127,8 @@ def train(cfg_dir, over, model):
     log.info(f"Train samples: {len(X_train)} | Test samples: {len(X_test)}")
 
     # Get model from registry and train
-    model_instance = get_model(model, seed=cfg.seed)
+    # Pass device parameter for deep learning models
+    model_instance = get_model(model, seed=cfg.seed, device=device)
     model_instance.fit(X_train, y_train)
 
     # Calculate accuracy using model's predict method (handles label encoding)
@@ -315,9 +317,10 @@ def evaluate(cfg_dir, over, model):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
-@click.option("--model", required=True, help="Model name (logreg, rf, xgb)")
+@click.option("--model", required=True, help="Model name (logreg, rf, xgb, rwkv_ts, cnn_transformer)")
 @click.option("--seed", type=int, default=None, help="Random seed (defaults to config seed)")
-def oof(cfg_dir, over, model, seed):
+@click.option("--device", default="cpu", type=click.Choice(["cpu", "cuda"]), help="Device for training")
+def oof(cfg_dir, over, model, seed, device):
     """Generate out-of-fold predictions for ensemble stacking."""
     import numpy as np
     import pandas as pd
@@ -352,6 +355,7 @@ def oof(cfg_dir, over, model, seed):
     oof_path = oof_dir / f"seed_{seed}.npy"
 
     # Generate OOF predictions
+    # Pass device parameter for deep learning models
     oof_predictions = generate_oof(
         X=X,
         y=y,
@@ -360,6 +364,7 @@ def oof(cfg_dir, over, model, seed):
         k=k,
         splits_dir=splits_dir,
         output_path=oof_path,
+        device=device,
     )
 
     log.info(f"OOF generation complete | shape={oof_predictions.shape}")
@@ -549,7 +554,7 @@ def audit(cfg_dir, over, section):
     log.info("Audit start | section=%s", section)
 
     passed = True
-    base_models = ["logreg", "rf", "xgb"]
+    base_models = ["logreg", "rf", "xgb", "rwkv_ts", "cnn_transformer"]
 
     # Check manifest validity (for all sections)
     if section == "all":
@@ -607,7 +612,12 @@ def audit(cfg_dir, over, section):
         # Check each base model
         for model in base_models:
             model_dir = paths.artifacts / "models" / model
-            model_path = model_dir / "model.pkl"
+
+            # Deep learning models use .pt, sklearn models use .pkl
+            if model in ["rwkv_ts", "cnn_transformer"]:
+                model_path = model_dir / "model.pt"
+            else:
+                model_path = model_dir / "model.pkl"
 
             if not model_path.exists():
                 log.error(f"❌ Model missing: {model} at {model_path}")

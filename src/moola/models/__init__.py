@@ -7,8 +7,10 @@ All models implement the BaseModel interface.
 from typing import Type
 
 from .base import BaseModel
+from .cnn_transformer import CnnTransformerModel
 from .logreg import LogRegModel
 from .rf import RFModel
+from .rwkv_ts import RWKVTSModel
 from .stack import StackModel
 from .xgb import XGBModel
 
@@ -17,6 +19,8 @@ _MODEL_REGISTRY: dict[str, Type[BaseModel]] = {
     "logreg": LogRegModel,
     "rf": RFModel,
     "xgb": XGBModel,
+    "rwkv_ts": RWKVTSModel,
+    "cnn_transformer": CnnTransformerModel,
     "stack": StackModel,
 }
 
@@ -25,8 +29,8 @@ def get_model(name: str, **kwargs) -> BaseModel:
     """Get model instance by name.
 
     Args:
-        name: Model name (logreg, rf, xgb, stack)
-        **kwargs: Model-specific hyperparameters (seed, max_iter, etc.)
+        name: Model name (logreg, rf, xgb, rwkv_ts, cnn_transformer, stack)
+        **kwargs: Model-specific hyperparameters (seed, max_iter, device, etc.)
 
     Returns:
         Instantiated model implementing BaseModel interface
@@ -56,4 +60,14 @@ def list_models() -> list[str]:
     return list(_MODEL_REGISTRY.keys())
 
 
-__all__ = ["BaseModel", "LogRegModel", "get_model", "list_models"]
+__all__ = [
+    "BaseModel",
+    "LogRegModel",
+    "RFModel",
+    "XGBModel",
+    "RWKVTSModel",
+    "CnnTransformerModel",
+    "StackModel",
+    "get_model",
+    "list_models",
+]

@@ -21,8 +21,8 @@ class XGBModel(BaseModel):
     def __init__(
         self,
         seed: int = 1337,
-        n_estimators: int = 800,
-        max_depth: int = 4,
+        n_estimators: int = 500,
+        max_depth: int = 6,
         learning_rate: float = 0.05,
         subsample: float = 0.8,
         colsample_bytree: float = 0.8,

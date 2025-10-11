@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace/moola
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml README.md ./
+
+# Install dependencies
+RUN pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir numpy pandas scikit-learn xgboost pandera
+
+# Copy application code
+COPY . .
+
+# Default entrypoint
+ENTRYPOINT ["python", "-m", "moola.cli"]

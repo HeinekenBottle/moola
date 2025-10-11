@@ -26,6 +26,7 @@ def generate_oof(
     k: int,
     splits_dir: Path,
     output_path: Path,
+    device: str = "cpu",
     **model_kwargs,
 ) -> np.ndarray:
     """Generate out-of-fold predictions for a given model.
@@ -33,11 +34,12 @@ def generate_oof(
     Args:
         X: Feature matrix of shape [N, D]
         y: Target labels of shape [N]
-        model_name: Model name (logreg, rf, xgb)
+        model_name: Model name (logreg, rf, xgb, rwkv_ts, cnn_transformer)
         seed: Random seed for reproducibility
         k: Number of folds
         splits_dir: Directory containing split manifests
         output_path: Path to save OOF predictions (.npy file)
+        device: Device for training deep learning models ('cpu' or 'cuda')
         **model_kwargs: Additional model hyperparameters
 
     Returns:
@@ -72,7 +74,8 @@ def generate_oof(
         y_train, y_val = y[train_idx], y[val_idx]
 
         # Train model on K-1 folds
-        model = get_model(model_name, seed=seed, **model_kwargs)
+        # Pass device parameter for deep learning models
+        model = get_model(model_name, seed=seed, device=device, **model_kwargs)
         model.fit(X_train, y_train)
 
         # Predict probabilities on held-out fold
