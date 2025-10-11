@@ -26,6 +26,7 @@ dependencies = [
   "pyarrow>=14.0",
   "torch>=2.0,<2.3; platform_machine != 'x86_64' or sys_platform != 'darwin'",
   "torch>=2.0,<2.2.3; platform_machine == 'x86_64' and sys_platform == 'darwin'",
+  "pandera>=0.26.1",
 ]
 
 [project.scripts]

@@ -39,7 +39,8 @@ def doctor(cfg_dir, over):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
-def ingest(cfg_dir, over):
+@click.option("--input", "input_path", type=click.Path(exists=True), help="Input parquet file to ingest (optional)")
+def ingest(cfg_dir, over, input_path):
     """Ingest and validate raw data, write processed/train.parquet."""
     import numpy as np
     import pandas as pd
@@ -51,38 +52,64 @@ def ingest(cfg_dir, over):
     log = setup_logging(paths.logs)
     log.info("Ingest start")
 
-    # Set seed for reproducible synthetic data
-    np.random.seed(cfg.seed)
+    if input_path:
+        # Load and validate existing dataset
+        input_path = Path(input_path)
+        log.info(f"Loading existing dataset from {input_path}")
+        df = pd.read_parquet(input_path)
+        log.info(f"Loaded {len(df)} samples | Shape: {df.shape}")
+        log.info(f"Columns: {list(df.columns)}")
+        log.info(f"Label distribution: {df['label'].value_counts().to_dict()}")
+        
+        # Validate schema if window_id column exists (our new format)
+        if "window_id" in df.columns:
+            from .schemas.canonical_v1 import check_training_data
+            if check_training_data(df):
+                log.info("✅ Dataset schema validation passed")
+            else:
+                log.error("❌ Dataset schema validation failed")
+                raise ValueError("Invalid dataset schema")
+        
+        # Copy to standard train.parquet location
+        output_path = paths.data / "processed" / "train.parquet"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(output_path, index=False, engine="pyarrow")
+        log.info(f"Copied validated dataset to {output_path}")
+        log.info("Ingest done")
+        
+    else:
+        # Set seed for reproducible synthetic data
+        np.random.seed(cfg.seed)
 
-    # Generate synthetic training data
-    # For now: 1000 samples, 2 classes, 10 features each
-    n_samples = 1000
-    n_features = 10
-    labels = ["class_A", "class_B"]
+        # Generate synthetic training data
+        # For now: 1000 samples, 2 classes, 10 features each
+        n_samples = 1000
+        n_features = 10
+        labels = ["class_A", "class_B"]
 
-    log.info(f"Generating {n_samples} synthetic samples with {n_features} features")
+        log.info(f"Generating {n_samples} synthetic samples with {n_features} features")
 
-    rows = []
-    for i in range(n_samples):
-        # Generate random features
-        features = np.random.randn(n_features).tolist()
-        # Assign label (50/50 split)
-        label = labels[i % 2]
+        rows = []
+        for i in range(n_samples):
+            # Generate random features
+            features = np.random.randn(n_features).tolist()
+            # Assign label (50/50 split)
+            label = labels[i % 2]
 
-        # Validate against schema
-        row_data = {"window_id": i, "label": label, "features": features}
-        validated_row = TrainingDataRow(**row_data)
-        rows.append(validated_row.model_dump())
+            # Validate against schema
+            row_data = {"window_id": i, "label": label, "features": features}
+            validated_row = TrainingDataRow(**row_data)
+            rows.append(validated_row.model_dump())
 
-    # Create DataFrame and write to parquet
-    df = pd.DataFrame(rows)
-    output_path = paths.data / "processed" / "train.parquet"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(output_path, index=False, engine="pyarrow")
+        # Create DataFrame and write to parquet
+        df = pd.DataFrame(rows)
+        output_path = paths.data / "processed" / "train.parquet"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(output_path, index=False, engine="pyarrow")
 
-    log.info(f"Wrote {len(df)} validated rows to {output_path}")
-    log.info(f"Schema: {list(df.columns)} | Shape: {df.shape}")
-    log.info("Ingest done")
+        log.info(f"Wrote {len(df)} validated rows to {output_path}")
+        log.info(f"Schema: {list(df.columns)} | Shape: {df.shape}")
+        log.info("Ingest done")
 
 
 @app.command()

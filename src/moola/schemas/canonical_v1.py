@@ -12,7 +12,7 @@ from pandera import Column, DataFrameSchema
 TrainingDataSchema = DataFrameSchema(
     {
         "window_id": Column(
-            int,
+            str,
             required=True,
             nullable=False,
             description="Unique identifier for the data window",
