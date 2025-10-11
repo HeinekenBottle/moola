@@ -5,37 +5,37 @@ to learn optimal ensemble weights and calibration.
 """
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 
 from .base import BaseModel
 
 
 class StackModel(BaseModel):
-    """Stacking meta-learner using Logistic Regression.
+    """Stacking meta-learner using RandomForest.
 
     Trains on concatenated OOF predictions [N, 3*C] from base models
-    (logreg, rf, xgb) to produce calibrated ensemble predictions.
+    (logreg, rf, xgb, rwkv_ts, cnn_transformer) to produce calibrated ensemble predictions.
 
-    Uses LogisticRegression with balanced class weights for robustness
-    to class imbalance and improved calibration.
+    Uses RandomForest with balanced_subsample class weights for robustness
+    to class imbalance and improved performance on small datasets.
     """
 
-    def __init__(self, seed: int = 1337, C: float = 1.0, **kwargs):
+    def __init__(self, seed: int = 1337, n_estimators: int = 1000, **kwargs):
         """Initialize stacking meta-learner.
 
         Args:
             seed: Random seed for reproducibility
-            C: Inverse of regularization strength (default 1.0)
-            **kwargs: Additional sklearn LogisticRegression parameters
+            n_estimators: Number of trees in the forest (default 1000)
+            **kwargs: Additional sklearn RandomForestClassifier parameters
         """
         super().__init__(seed=seed)
-        self.C = C
+        self.n_estimators = n_estimators
         self.kwargs = kwargs
-        self.model = LogisticRegression(
-            C=self.C,
-            class_weight="balanced",
+        self.model = RandomForestClassifier(
+            n_estimators=self.n_estimators,
+            class_weight="balanced_subsample",
             random_state=self.seed,
-            max_iter=1000,
+            max_features="sqrt",
             **self.kwargs,
         )
 

@@ -54,7 +54,7 @@ def train_stack(
     logger.info(f"Stack training start | seed={seed} k={k}")
 
     # Define base models
-    base_models = ["logreg", "rf", "xgb"]
+    base_models = ["logreg", "rf", "xgb", "rwkv_ts", "cnn_transformer"]
 
     # Load OOF predictions for each base model
     oof_predictions = []
@@ -74,8 +74,9 @@ def train_stack(
     # Get number of samples and classes
     n_samples = len(y)
     n_classes = len(np.unique(y))
-    assert X_stack.shape == (n_samples, 3 * n_classes), (
-        f"Expected shape ({n_samples}, {3 * n_classes}), got {X_stack.shape}"
+    n_base_models = len(base_models)
+    assert X_stack.shape == (n_samples, n_base_models * n_classes), (
+        f"Expected shape ({n_samples}, {n_base_models * n_classes}), got {X_stack.shape}"
     )
 
     # Load splits for cross-validation

@@ -512,7 +512,8 @@ def predict(cfg_dir, over, model, input_path, output_path):
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
 @click.option("--seed", type=int, default=None, help="Random seed (defaults to config seed)")
-def stack_train(cfg_dir, over, seed):
+@click.option("--stacker", default="rf", help="Meta-learner type (rf)")
+def stack_train(cfg_dir, over, seed, stacker):
     """Train stacking meta-learner on OOF predictions."""
     import numpy as np
     import pandas as pd
