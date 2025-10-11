@@ -1,0 +1,22 @@
+name: train-eval
+description: Full training and evaluation pipeline
+
+steps:
+  - name: ingest
+    run: moola ingest
+    description: Load and validate raw data
+
+  - name: train
+    run: moola train
+    description: Train model with current config
+    depends_on: [ingest]
+
+  - name: evaluate
+    run: moola evaluate
+    description: Evaluate model performance
+    depends_on: [train]
+
+outputs:
+  - data/artifacts/model.bin
+  - data/artifacts/metrics.json
+  - data/logs/moola.log
