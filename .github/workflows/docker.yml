@@ -1,0 +1,56 @@
+name: docker
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "repo_lower=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Build and push CPU image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:cpu
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ steps.meta.outputs.version }}-cpu
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push CUDA image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.gpu
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:cuda
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ steps.meta.outputs.version }}-cuda
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
