@@ -88,19 +88,19 @@ def ingest(cfg_dir, over):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
-def train(cfg_dir, over):
-    """Train baseline classifier on processed/train.parquet."""
-    import pickle
-
+@click.option("--model", default="logreg", help="Model name (logreg, rf, xgb)")
+def train(cfg_dir, over, model):
+    """Train classifier on processed/train.parquet."""
     import numpy as np
     import pandas as pd
-    from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import train_test_split
+
+    from .models import get_model
 
     cfg = _load_cfg(Path(cfg_dir), list(over))
     paths = resolve_paths()
     log = setup_logging(paths.logs)
-    log.info("Train start | seed=%s", cfg.seed)
+    log.info("Train start | model=%s seed=%s", model, cfg.seed)
 
     # Load training data
     train_path = paths.data / "processed" / "train.parquet"
@@ -125,18 +125,22 @@ def train(cfg_dir, over):
 
     log.info(f"Train samples: {len(X_train)} | Test samples: {len(X_test)}")
 
-    # Train LogisticRegression baseline
-    model = LogisticRegression(random_state=cfg.seed, max_iter=1000)
-    model.fit(X_train, y_train)
+    # Get model from registry and train
+    model_instance = get_model(model, seed=cfg.seed)
+    model_instance.fit(X_train, y_train)
 
-    train_score = model.score(X_train, y_train)
-    test_score = model.score(X_test, y_test)
+    # Calculate accuracy using model's predict method (handles label encoding)
+    y_train_pred = model_instance.predict(X_train)
+    y_test_pred = model_instance.predict(X_test)
+    train_score = (y_train_pred == y_train).mean()
+    test_score = (y_test_pred == y_test).mean()
     log.info(f"Train accuracy: {train_score:.3f} | Test accuracy: {test_score:.3f}")
 
     # Save model
-    model_path = paths.artifacts / "model.bin"
-    with open(model_path, "wb") as f:
-        pickle.dump(model, f)
+    model_dir = paths.artifacts / "models" / model
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path = model_dir / "model.pkl"
+    model_instance.save(model_path)
 
     log.info(f"Saved model to {model_path}")
     log.info("Train done")
@@ -145,11 +149,11 @@ def train(cfg_dir, over):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
-def evaluate(cfg_dir, over):
+@click.option("--model", default="logreg", help="Model name (logreg, rf, xgb)")
+def evaluate(cfg_dir, over, model):
     """Evaluate model with stratified K-fold CV, output metrics and confusion matrix."""
     import csv
     import json
-    import pickle
     import subprocess
     import time
     from datetime import datetime, timezone
@@ -165,10 +169,12 @@ def evaluate(cfg_dir, over):
     )
     from sklearn.model_selection import StratifiedKFold
 
+    from .models import get_model
+
     cfg = _load_cfg(Path(cfg_dir), list(over))
     paths = resolve_paths()
     log = setup_logging(paths.logs)
-    log.info("Evaluate start")
+    log.info("Evaluate start | model=%s", model)
 
     start_time = time.time()
 
@@ -183,13 +189,14 @@ def evaluate(cfg_dir, over):
     y = df["label"].values
 
     # Load model
-    model_path = paths.artifacts / "model.bin"
+    model_dir = paths.artifacts / "models" / model
+    model_path = model_dir / "model.pkl"
     if not model_path.exists():
-        log.error(f"Model not found at {model_path}. Run 'moola train' first.")
+        log.error(f"Model not found at {model_path}. Run 'moola train --model {model}' first.")
         raise FileNotFoundError(f"Missing {model_path}")
 
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
+    model_instance = get_model(model, seed=cfg.seed)
+    model_instance.load(model_path)
 
     log.info(f"Loaded model from {model_path}")
     log.info(f"Running stratified {cfg.get('cv_folds', 5)}-fold cross-validation")
@@ -206,10 +213,8 @@ def evaluate(cfg_dir, over):
         X_train_fold, X_val_fold = X[train_idx], X[val_idx]
         y_train_fold, y_val_fold = y[train_idx], y[val_idx]
 
-        # Clone and train model on this fold
-        from sklearn.base import clone
-
-        fold_model = clone(model)
+        # Create fresh model instance for this fold
+        fold_model = get_model(model, seed=cfg.seed)
         fold_model.fit(X_train_fold, y_train_fold)
         y_pred_fold = fold_model.predict(X_val_fold)
 
@@ -244,6 +249,7 @@ def evaluate(cfg_dir, over):
 
     # Save metrics.json with required keys
     metrics = {
+        "model": model,
         "accuracy": mean_accuracy,
         "f1": mean_f1,
         "precision": mean_precision,
@@ -253,11 +259,19 @@ def evaluate(cfg_dir, over):
         "fold_details": fold_metrics,
     }
 
-    metrics_path = paths.artifacts / "metrics.json"
+    # Save metrics to model-specific directory
+    metrics_dir = paths.artifacts / "models" / model
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = metrics_dir / "metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
     log.info(f"Saved metrics to {metrics_path}")
+
+    # Also save confusion matrix to model directory
+    cm_path = metrics_dir / "confusion_matrix.csv"
+    cm_df.to_csv(cm_path)
+    log.info(f"Saved confusion matrix to {cm_path}")
 
     # Track run in runs.csv
     duration = time.time() - start_time
@@ -280,19 +294,174 @@ def evaluate(cfg_dir, over):
     file_exists = runs_path.exists()
 
     with open(runs_path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["run_id", "git_sha", "accuracy", "f1", "duration"])
+        writer = csv.DictWriter(
+            f, fieldnames=["run_id", "model", "git_sha", "accuracy", "f1", "duration"]
+        )
         if not file_exists:
             writer.writeheader()
         writer.writerow({
             "run_id": run_id,
+            "model": model,
             "git_sha": git_sha,
             "accuracy": f"{mean_accuracy:.4f}",
             "f1": f"{mean_f1:.4f}",
             "duration": f"{duration:.2f}",
         })
 
-    log.info(f"Tracked run to {runs_path} | run_id={run_id} git_sha={git_sha}")
+    log.info(f"Tracked run to {runs_path} | run_id={run_id} model={model} git_sha={git_sha}")
     log.info("Evaluate done")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
+@click.option("--model", required=True, help="Model name (logreg, rf, xgb)")
+@click.option("--seed", type=int, default=None, help="Random seed (defaults to config seed)")
+def oof(cfg_dir, over, model, seed):
+    """Generate out-of-fold predictions for ensemble stacking."""
+    import numpy as np
+    import pandas as pd
+
+    from .pipelines import generate_oof
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+
+    # Use provided seed or default from config
+    seed = seed if seed is not None else cfg.seed
+    k = cfg.get("cv_folds", 5)
+
+    log.info("OOF generation start | model=%s seed=%s k=%s", model, seed, k)
+
+    # Load training data
+    train_path = paths.data / "processed" / "train.parquet"
+    if not train_path.exists():
+        log.error(f"Training data not found at {train_path}")
+        raise FileNotFoundError(f"Missing {train_path}")
+
+    df = pd.read_parquet(train_path)
+    X = np.array(df["features"].tolist())
+    y = df["label"].values
+
+    log.info(f"Loaded {len(df)} samples | shape={X.shape}")
+
+    # Define paths for splits and OOF output
+    splits_dir = paths.artifacts / "splits" / "v1"
+    oof_dir = paths.artifacts / "oof" / model / "v1"
+    oof_path = oof_dir / f"seed_{seed}.npy"
+
+    # Generate OOF predictions
+    oof_predictions = generate_oof(
+        X=X,
+        y=y,
+        model_name=model,
+        seed=seed,
+        k=k,
+        splits_dir=splits_dir,
+        output_path=oof_path,
+    )
+
+    log.info(f"OOF generation complete | shape={oof_predictions.shape}")
+    log.info("OOF done")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
+@click.option("--section", default="base", help="Audit section (base, oof, stack, all)")
+def audit(cfg_dir, over, section):
+    """Audit pipeline for completeness and consistency."""
+    import sys
+
+    import numpy as np
+
+    from .models import list_models
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+    log.info("Audit start | section=%s", section)
+
+    passed = True
+    base_models = ["logreg", "rf", "xgb"]
+
+    if section in ["base", "all"]:
+        log.info("=== Base Models Audit ===")
+
+        # Check training data exists
+        train_path = paths.data / "processed" / "train.parquet"
+        if not train_path.exists():
+            log.error(f"❌ Training data missing: {train_path}")
+            passed = False
+        else:
+            log.info(f"✅ Training data exists: {train_path}")
+
+        # Check each base model
+        for model in base_models:
+            model_dir = paths.artifacts / "models" / model
+            model_path = model_dir / "model.pkl"
+
+            if not model_path.exists():
+                log.error(f"❌ Model missing: {model} at {model_path}")
+                passed = False
+            else:
+                log.info(f"✅ Model exists: {model}")
+
+                # Check metrics file
+                metrics_path = model_dir / "metrics.json"
+                if metrics_path.exists():
+                    import json
+
+                    with open(metrics_path, "r") as f:
+                        metrics = json.load(f)
+                    acc = metrics.get("accuracy", 0)
+                    log.info(f"   Accuracy: {acc:.3f}")
+                else:
+                    log.warning(f"⚠️  Metrics missing for {model}")
+
+    if section in ["oof", "all"]:
+        log.info("=== OOF Predictions Audit ===")
+
+        seed = cfg.seed
+        splits_dir = paths.artifacts / "splits" / "v1"
+
+        # Check split manifests exist
+        if not splits_dir.exists() or not (splits_dir / "fold_0.json").exists():
+            log.error(f"❌ Split manifests missing: {splits_dir}")
+            passed = False
+        else:
+            log.info(f"✅ Split manifests exist: {splits_dir}")
+
+        # Check OOF predictions for each base model
+        for model in base_models:
+            oof_path = paths.artifacts / "oof" / model / "v1" / f"seed_{seed}.npy"
+
+            if not oof_path.exists():
+                log.error(f"❌ OOF predictions missing: {model} at {oof_path}")
+                passed = False
+            else:
+                oof = np.load(oof_path)
+                log.info(f"✅ OOF exists: {model} | shape={oof.shape}")
+
+                # Check for zero rows
+                zero_rows = np.where(np.all(oof == 0, axis=1))[0]
+                if len(zero_rows) > 0:
+                    log.warning(f"⚠️  Found {len(zero_rows)} zero rows in {model} OOF")
+                    passed = False
+
+    if section in ["stack", "all"]:
+        log.info("=== Stacking Audit ===")
+        log.warning("⚠️  Stacking not yet implemented")
+
+    # Final verdict
+    log.info("=" * 40)
+    if passed:
+        log.info("✅ Audit PASSED - all checks successful")
+        sys.exit(0)
+    else:
+        log.error("❌ Audit FAILED - some checks failed")
+        sys.exit(1)
 
 
 @app.command()
