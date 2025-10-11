@@ -1,0 +1,3 @@
+hardware:
+  device: cpu
+  num_workers: 2

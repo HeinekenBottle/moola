@@ -1,0 +1,11 @@
+moola:
+  run_id: ${env:MOOLA_RUN_ID, "dev"}
+  env: ${env:MOOLA_ENV, "local"}
+paths:
+  data: ${env:MOOLA_DATA_DIR, "./data"}
+  artifacts: ${env:MOOLA_ARTIFACTS_DIR, "./data/artifacts"}
+  logs: ${env:MOOLA_LOG_DIR, "./data/logs"}
+
+seed: 1337
+logging:
+  level: INFO

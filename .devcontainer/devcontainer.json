@@ -1,0 +1,6 @@
+{
+  "name": "Moola",
+  "image": "python:3.10-slim",
+  "workspaceFolder": "/workspace/moola",
+  "postCreateCommand": "python -m venv .venv && . .venv/bin/activate && pip install -e . && pre-commit install"
+}

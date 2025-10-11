@@ -1,0 +1,3 @@
+hardware:
+  device: cuda
+  num_workers: 4
