@@ -18,21 +18,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip wheel
+# Upgrade pip and install UV
+RUN python3 -m pip install --upgrade pip wheel uv
 
 # Copy project files
 COPY pyproject.toml README.md ./
 
-# Install PyTorch with CUDA support
-RUN pip3 install --no-cache-dir torch==2.* --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch with CUDA support (pin to 2.4.x for stability)
+RUN pip3 install --no-cache-dir "torch>=2.0,<2.5" --index-url https://download.pytorch.org/whl/cu121
 
 # Install XGBoost with CUDA support
-RUN pip3 install --no-cache-dir xgboost[cuda]
+RUN pip3 install --no-cache-dir "xgboost[cuda]>=2.0"
 
 # Install project and remaining dependencies
-RUN pip3 install --no-cache-dir -e . && \
-    pip3 install --no-cache-dir pandas numpy scikit-learn pandera
+RUN uv pip install --system --no-cache -e . && \
+    uv pip install --system --no-cache pandas numpy scikit-learn pandera
 
 # Copy application code
 COPY . .
