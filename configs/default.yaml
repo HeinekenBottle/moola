@@ -1,3 +1,13 @@
+# Moola Configuration
+#
+# Training Mode: 2-class (consolidation vs retracement)
+#   - Reversal class removed due to insufficient samples (19 → need 150+)
+#   - data/processed/train.parquet → symlink to train_2class.parquet (115 samples)
+#   - data/processed/reversals_archive.parquet → archived for future use
+#   - To restore 3-class: ln -sf train_3class.parquet train.parquet
+#
+# Model architecture automatically adapts to n_classes via len(np.unique(y))
+
 moola:
   run_id: ${env:MOOLA_RUN_ID, "dev"}
   env: ${env:MOOLA_ENV, "local"}

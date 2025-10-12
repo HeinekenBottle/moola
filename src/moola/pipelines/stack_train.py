@@ -53,19 +53,26 @@ def train_stack(
     """
     logger.info(f"Stack training start | seed={seed} k={k}")
 
-    # Define base models
-    base_models = ["logreg", "rf", "xgb", "rwkv_ts", "cnn_transformer"]
+    # Define base models (use only those with OOF predictions available)
+    all_base_models = ["logreg", "rf", "xgb", "rwkv_ts", "cnn_transformer"]
+    base_models = []
 
     # Load OOF predictions for each base model
     oof_predictions = []
-    for model_name in base_models:
+    for model_name in all_base_models:
         oof_path = oof_dir / model_name / "v1" / f"seed_{seed}.npy"
-        if not oof_path.exists():
-            raise FileNotFoundError(f"OOF predictions not found: {oof_path}")
+        if oof_path.exists():
+            oof = np.load(oof_path)
+            logger.info(f"Loaded OOF {model_name} | shape={oof.shape}")
+            oof_predictions.append(oof)
+            base_models.append(model_name)
+        else:
+            logger.warning(f"Skipping {model_name} - no OOF predictions found at {oof_path}")
 
-        oof = np.load(oof_path)
-        logger.info(f"Loaded OOF {model_name} | shape={oof.shape}")
-        oof_predictions.append(oof)
+    if not oof_predictions:
+        raise FileNotFoundError("No OOF predictions found for any base model")
+
+    logger.info(f"Using {len(base_models)} base models: {base_models}")
 
     # Concatenate OOF predictions [N, C] + [N, C] + [N, C] -> [N, 3*C]
     X_stack = np.concatenate(oof_predictions, axis=1)
