@@ -1,0 +1,55 @@
+#!/bin/bash
+# Master control script for RunPod operations
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+case "${1:-help}" in
+    clean)
+        echo "🧹 Cleaning network storage..."
+        ./clean-storage.sh
+        ;;
+
+    upload)
+        echo "📤 Uploading to network storage..."
+        ./sync-to-storage.sh all
+        ;;
+
+    download)
+        echo "📥 Downloading from network storage..."
+        ./sync-from-storage.sh all
+        ;;
+
+    reset)
+        echo "🔄 Resetting network storage..."
+        ./clean-storage.sh
+        ./sync-to-storage.sh all
+        echo "✅ Storage reset complete"
+        ;;
+
+    check)
+        source network-storage.env
+        echo "📊 Network storage contents:"
+        aws s3 ls s3://hg878tp14w/ --recursive --human-readable \
+            --region "$RUNPOD_S3_REGION" \
+            --endpoint-url "$RUNPOD_S3_ENDPOINT"
+        ;;
+
+    *)
+        cat << 'EOF'
+RunPod Control Commands:
+
+  ./runpod clean      - Clean network storage
+  ./runpod upload     - Upload files to storage
+  ./runpod download   - Download results from storage
+  ./runpod reset      - Clean + upload (fresh start)
+  ./runpod check      - Show storage contents
+
+On RunPod pod:
+  bash /workspace/scripts/setup.sh     - Setup pod
+  bash /workspace/scripts/train.sh     - Run training
+
+EOF
+        ;;
+esac

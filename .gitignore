@@ -17,3 +17,6 @@ data/**/*
 .pytest_cache/
 .ruff_cache/
 .claude/
+# RunPod credentials (DO NOT COMMIT!)
+.runpod/*credentials*
+.runpod/aws-*

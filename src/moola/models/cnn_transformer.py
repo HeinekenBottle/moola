@@ -397,14 +397,15 @@ class CnnTransformerModel(BaseModel):
 
         # Create training dataset and dataloader
         train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
+        num_workers = self.num_workers if self.device.type == "cuda" else 0
         train_dataloader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.num_workers if self.device.type == "cuda" else 0,
+            num_workers=num_workers,
             pin_memory=True if self.device.type == "cuda" else False,
-            persistent_workers=True if self.num_workers > 0 and self.device.type == "cuda" else False,
-            prefetch_factor=2 if self.num_workers > 0 else None,
+            persistent_workers=True if num_workers > 0 else False,
+            prefetch_factor=2 if num_workers > 0 else None,
         )
 
         # Create validation dataloader if needed
