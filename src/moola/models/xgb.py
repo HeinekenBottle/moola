@@ -29,6 +29,7 @@ class XGBModel(BaseModel):
         reg_lambda: float = 1.0,
         eval_metric: str = "logloss",
         tree_method: str = "hist",
+        device: str = "cpu",
         **kwargs,
     ):
         """Initialize XGBoost model.
@@ -43,6 +44,7 @@ class XGBModel(BaseModel):
             reg_lambda: L2 regularization term on weights
             eval_metric: Evaluation metric (logloss, error, auc)
             tree_method: Tree construction algorithm ('hist' for speed)
+            device: Device parameter ('cpu' or 'cuda', XGBoost supports GPU)
             **kwargs: Additional xgboost parameters
         """
         super().__init__(seed=seed)

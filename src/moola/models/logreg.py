@@ -13,12 +13,13 @@ class LogRegModel(BaseModel):
     Uses scikit-learn's LogisticRegression with default L2 regularization.
     """
 
-    def __init__(self, seed: int = 1337, max_iter: int = 1000, **kwargs):
+    def __init__(self, seed: int = 1337, max_iter: int = 1000, device: str = "cpu", **kwargs):
         """Initialize LogisticRegression model.
 
         Args:
             seed: Random seed for reproducibility
             max_iter: Maximum iterations for solver convergence
+            device: Device parameter (ignored for sklearn models, kept for API consistency)
             **kwargs: Additional sklearn LogisticRegression parameters
         """
         super().__init__(seed=seed)

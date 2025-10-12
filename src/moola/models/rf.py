@@ -22,6 +22,7 @@ class RFModel(BaseModel):
         class_weight: str = "balanced_subsample",
         oob_score: bool = True,
         n_jobs: int = -1,
+        device: str = "cpu",  # sklearn models ignore device parameter
         **kwargs,
     ):
         """Initialize RandomForest model.
@@ -34,6 +35,7 @@ class RFModel(BaseModel):
             class_weight: Class weighting strategy ('balanced_subsample' handles imbalance)
             oob_score: Whether to use out-of-bag samples for generalization estimate
             n_jobs: Number of parallel jobs (-1 = use all cores)
+            device: Device parameter (ignored for sklearn models, kept for API consistency)
             **kwargs: Additional sklearn RandomForestClassifier parameters
         """
         super().__init__(seed=seed)

@@ -436,7 +436,7 @@ def predict(cfg_dir, over, model, input_path, output_path):
     if model == "stack":
         # Stack model expects concatenated base model predictions [N, 3*C]
         # For inference, we need to generate predictions from each base model first
-        base_models = ["logreg", "rf", "xgb"]
+        base_models = ["logreg", "rf", "xgb", "rwkv_ts", "cnn_transformer"]
         base_predictions = []
 
         for base_model_name in base_models:
@@ -641,29 +641,32 @@ def audit(cfg_dir, over, section):
         for model in base_models:
             model_dir = paths.artifacts / "models" / model
 
-            # Deep learning models use .pt, sklearn models use .pkl
-            if model in ["rwkv_ts", "cnn_transformer"]:
-                model_path = model_dir / "model.pt"
+            # Check for both .pt and .pkl files (some models might be saved as .pkl)
+            model_path_pt = model_dir / "model.pt"
+            model_path_pkl = model_dir / "model.pkl"
+            
+            if model_path_pt.exists():
+                model_path = model_path_pt
+            elif model_path_pkl.exists():
+                model_path = model_path_pkl
             else:
-                model_path = model_dir / "model.pkl"
-
-            if not model_path.exists():
-                log.error(f"❌ Model missing: {model} at {model_path}")
+                log.error(f"❌ Model missing: {model} (checked .pt and .pkl)")
                 passed = False
+                continue
+
+            log.info(f"✅ Model exists: {model}")
+
+            # Check metrics file
+            metrics_path = model_dir / "metrics.json"
+            if metrics_path.exists():
+                import json
+
+                with open(metrics_path, "r") as f:
+                    metrics = json.load(f)
+                acc = metrics.get("accuracy", 0)
+                log.info(f"   Accuracy: {acc:.3f}")
             else:
-                log.info(f"✅ Model exists: {model}")
-
-                # Check metrics file
-                metrics_path = model_dir / "metrics.json"
-                if metrics_path.exists():
-                    import json
-
-                    with open(metrics_path, "r") as f:
-                        metrics = json.load(f)
-                    acc = metrics.get("accuracy", 0)
-                    log.info(f"   Accuracy: {acc:.3f}")
-                else:
-                    log.warning(f"⚠️  Metrics missing for {model}")
+                log.warning(f"⚠️  Metrics missing for {model}")
 
     if section in ["oof", "all"]:
         log.info("=== OOF Predictions Audit ===")
