@@ -33,13 +33,24 @@ class LogRegModel(BaseModel):
         """Train logistic regression model.
 
         Args:
-            X: Feature matrix of shape [N, D]
+            X: Feature matrix of shape [N, D] or [N, T, F]
             y: Target labels of shape [N]
 
         Returns:
             Self for method chaining
         """
-        self.model.fit(X, y)
+        from ..features.price_action_features import engineer_classical_features
+
+        # Transform raw OHLC to engineered features
+        if X.shape[1] == 420:  # Flattened [105*4]
+            X = X.reshape(-1, 105, 4)
+
+        if X.ndim == 3:  # [N, T, F] format
+            X_engineered = engineer_classical_features(X)
+        else:
+            X_engineered = X
+
+        self.model.fit(X_engineered, y)
         self.is_fitted = True
         return self
 
@@ -47,24 +58,46 @@ class LogRegModel(BaseModel):
         """Predict class labels.
 
         Args:
-            X: Feature matrix of shape [N, D]
+            X: Feature matrix of shape [N, D] or [N, T, F]
 
         Returns:
             Predicted labels of shape [N]
         """
+        from ..features.price_action_features import engineer_classical_features
+
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
-        return self.model.predict(X)
+
+        if X.shape[1] == 420:
+            X = X.reshape(-1, 105, 4)
+
+        if X.ndim == 3:
+            X_engineered = engineer_classical_features(X)
+        else:
+            X_engineered = X
+
+        return self.model.predict(X_engineered)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
-            X: Feature matrix of shape [N, D]
+            X: Feature matrix of shape [N, D] or [N, T, F]
 
         Returns:
             Class probabilities of shape [N, C]
         """
+        from ..features.price_action_features import engineer_classical_features
+
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
-        return self.model.predict_proba(X)
+
+        if X.shape[1] == 420:
+            X = X.reshape(-1, 105, 4)
+
+        if X.ndim == 3:
+            X_engineered = engineer_classical_features(X)
+        else:
+            X_engineered = X
+
+        return self.model.predict_proba(X_engineered)

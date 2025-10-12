@@ -1,7 +1,7 @@
 """Metric computation utilities for model evaluation and calibration."""
 
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, log_loss, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, log_loss, precision_score, recall_score, roc_auc_score
 
 
 def calculate_ece(y_true: np.ndarray, y_proba: np.ndarray, n_bins: int = 10) -> float:
@@ -86,3 +86,169 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarra
             metrics["logloss"] = None
 
     return metrics
+
+
+def compute_pointer_metrics(
+    start_preds: np.ndarray,
+    end_preds: np.ndarray,
+    start_true: np.ndarray,
+    end_true: np.ndarray,
+    k: int = 3
+) -> dict:
+    """Compute comprehensive pointer detection metrics for expansion localization.
+
+    This function evaluates how well a model can identify the start and end points
+    of market expansions within a sliding window. Multiple complementary metrics
+    provide a complete picture of pointer prediction quality.
+
+    Args:
+        start_preds: Predicted start probabilities [N, 45]
+            Each row contains probability distribution over 45 timesteps
+            Output from sigmoid(model_logits), values in [0, 1]
+        end_preds: Predicted end probabilities [N, 45]
+            Same format as start_preds
+        start_true: True start indices [N]
+            Ground truth pointer locations, integers in range [0, 44]
+        end_true: True end indices [N]
+            Ground truth pointer locations, integers in range [0, 44]
+        k: Top-k for precision@k metric (default 3)
+            Number of top predictions to consider for "near miss" scoring
+
+    Returns:
+        Dictionary containing 8 pointer prediction metrics:
+        {
+            # Ranking metrics (how well can model discriminate pointer vs non-pointer?)
+            'start_auc': float [0-1],       # AUC-ROC for start detection
+            'end_auc': float [0-1],         # AUC-ROC for end detection
+
+            # Top-k metrics (is true pointer in top-k predictions?)
+            'start_precision_at_k': float [0-1],  # % samples with true start in top-k
+            'end_precision_at_k': float [0-1],    # % samples with true end in top-k
+
+            # Exact accuracy (did model predict exact timestep?)
+            'start_exact_accuracy': float [0-1],  # % exact start matches
+            'end_exact_accuracy': float [0-1],    # % exact end matches
+
+            # Localization error (how far off is prediction?)
+            'avg_start_error': float,      # Mean absolute error in timesteps
+            'avg_end_error': float         # Mean absolute error in timesteps
+        }
+
+    Metrics Explained:
+        AUC (Area Under ROC Curve):
+            - Treats each timestep as binary classification: "Is this the pointer?"
+            - Measures ranking quality: Can model rank true pointer higher than others?
+            - 0.5 = random guessing, 1.0 = perfect ranking
+            - Robust to class imbalance (1 positive vs 44 negatives per sample)
+
+        Precision@k (Top-k Accuracy):
+            - More lenient than exact match: "Is true pointer in top-k predictions?"
+            - Useful for applications where approximate localization is acceptable
+            - k=3 means: did model identify correct region (within ~7% of window)?
+
+        Exact Accuracy:
+            - Strictest metric: predicted timestep must match ground truth exactly
+            - Equivalent to argmax(predictions) == true_index
+            - Baseline for random guessing: 1/45 ≈ 2.2%
+
+        Average Error:
+            - Measures localization precision in physical units (timesteps)
+            - |argmax(predictions) - true_index|
+            - Lower is better, 0 = perfect localization
+            - More interpretable than probability-based metrics
+
+    Example:
+        >>> # Model predictions for batch of 10 samples
+        >>> start_preds = np.random.rand(10, 45)  # Sigmoid outputs
+        >>> end_preds = np.random.rand(10, 45)
+        >>> start_true = np.array([5, 12, 8, 15, 3, 20, 10, 7, 18, 25])
+        >>> end_true = np.array([20, 30, 25, 35, 18, 40, 28, 22, 35, 42])
+        >>> metrics = compute_pointer_metrics(start_preds, end_preds, start_true, end_true, k=3)
+        >>> print(f"Start AUC: {metrics['start_auc']:.3f}")
+        >>> print(f"End Precision@3: {metrics['end_precision_at_k']:.1%}")
+
+    Notes:
+        - All predictions should be probabilities (post-sigmoid), not logits
+        - Pointer indices are relative to inner window [0, 45)
+        - Metrics are averaged across all samples in batch
+        - Handles edge cases (empty predictions, ties in argmax)
+        - For random baseline: AUC≈0.5, Precision@3≈6.7%, Exact≈2.2%
+    """
+    n_samples = start_true.shape[0]
+    inner_window_size = 45
+
+    # Validate inputs
+    assert start_preds.shape == (n_samples, inner_window_size), \
+        f"start_preds shape mismatch: expected ({n_samples}, {inner_window_size}), got {start_preds.shape}"
+    assert end_preds.shape == (n_samples, inner_window_size), \
+        f"end_preds shape mismatch: expected ({n_samples}, {inner_window_size}), got {end_preds.shape}"
+    assert start_true.shape == (n_samples,), \
+        f"start_true shape mismatch: expected ({n_samples},), got {start_true.shape}"
+    assert end_true.shape == (n_samples,), \
+        f"end_true shape mismatch: expected ({n_samples},), got {end_true.shape}"
+
+    # 1. AUC Computation (ranking quality)
+    # Flatten to [N*45] for sklearn
+    start_preds_flat = start_preds.flatten()
+    end_preds_flat = end_preds.flatten()
+
+    # Create binary labels: 1 at true pointer index, 0 elsewhere
+    start_labels_flat = np.zeros(n_samples * inner_window_size)
+    end_labels_flat = np.zeros(n_samples * inner_window_size)
+
+    for i in range(n_samples):
+        start_labels_flat[i * inner_window_size + start_true[i]] = 1
+        end_labels_flat[i * inner_window_size + end_true[i]] = 1
+
+    # Compute AUC (handles rare case of all same label gracefully)
+    try:
+        start_auc = roc_auc_score(start_labels_flat, start_preds_flat)
+    except ValueError:
+        # All labels are same class (shouldn't happen with proper data)
+        start_auc = 0.5
+
+    try:
+        end_auc = roc_auc_score(end_labels_flat, end_preds_flat)
+    except ValueError:
+        end_auc = 0.5
+
+    # 2. Precision@k (top-k accuracy)
+    # Get top-k predictions for each sample
+    start_topk_indices = np.argsort(start_preds, axis=1)[:, -k:]  # [N, k]
+    end_topk_indices = np.argsort(end_preds, axis=1)[:, -k:]
+
+    # Check if true index is in top-k
+    start_in_topk = np.array([start_true[i] in start_topk_indices[i] for i in range(n_samples)])
+    end_in_topk = np.array([end_true[i] in end_topk_indices[i] for i in range(n_samples)])
+
+    start_precision_at_k = start_in_topk.mean()
+    end_precision_at_k = end_in_topk.mean()
+
+    # 3. Exact Accuracy (argmax match)
+    start_predictions = np.argmax(start_preds, axis=1)  # [N]
+    end_predictions = np.argmax(end_preds, axis=1)
+
+    start_exact_accuracy = (start_predictions == start_true).mean()
+    end_exact_accuracy = (end_predictions == end_true).mean()
+
+    # 4. Average Error (localization precision)
+    avg_start_error = np.abs(start_predictions - start_true).mean()
+    avg_end_error = np.abs(end_predictions - end_true).mean()
+
+    return {
+        # Ranking metrics
+        'start_auc': start_auc,
+        'end_auc': end_auc,
+
+        # Top-k metrics
+        'start_precision_at_k': start_precision_at_k,
+        'end_precision_at_k': end_precision_at_k,
+
+        # Exact accuracy
+        'start_exact_accuracy': start_exact_accuracy,
+        'end_exact_accuracy': end_exact_accuracy,
+
+        # Localization error
+        'avg_start_error': avg_start_error,
+        'avg_end_error': avg_end_error,
+    }

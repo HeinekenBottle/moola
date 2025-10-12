@@ -29,6 +29,21 @@ TrainingDataSchema = DataFrameSchema(
             nullable=False,
             description="Feature vector stored as list or array",
         ),
+        # Multi-task pointer prediction fields (optional for backward compatibility)
+        "pointer_start": Column(
+            int,
+            required=False,
+            nullable=True,
+            checks=pa.Check.in_range(0, 44),  # Must be in [0, 45) - relative to inner window
+            description="Index of expansion start within inner window [30:75], relative to window start (0-44)",
+        ),
+        "pointer_end": Column(
+            int,
+            required=False,
+            nullable=True,
+            checks=pa.Check.in_range(0, 44),  # Must be in [0, 45) - relative to inner window
+            description="Index of expansion end within inner window [30:75], relative to window start (0-44)",
+        ),
     },
     strict=False,  # Allow additional columns
     coerce=True,   # Coerce column types if possible

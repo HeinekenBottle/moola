@@ -1,7 +1,7 @@
-"""CNN → Transformer hybrid model for hierarchical feature extraction.
+"""CNN → Transformer hybrid model for hierarchical feature extraction with multi-task learning.
 
 This model combines local pattern detection via CNNs with global context modeling
-via Transformers. Designed for time series classification.
+via Transformers. Designed for time series classification with optional pointer prediction.
 
 Architecture:
 - Multi-scale CNN blocks (Conv1d with kernels {3, 5, 9} - final kernel increased to capture longer trends)
@@ -10,6 +10,14 @@ Architecture:
 - 3 layers × 4 heads
 
 Channels: 3× [64, 128, 128] with dropout 0.25 (balanced regularization)
+
+Multi-Task Learning (Phase 3):
+- Shared backbone: CNN + Transformer feature extractor
+- Task-specific heads:
+  1. Classification head: Predict pattern type (consolidation/retracement/reversal)
+  2. Pointer start head: Identify expansion start within inner window [30:75]
+  3. Pointer end head: Identify expansion end within inner window [30:75]
+- Balanced loss weighting: alpha=0.5 (class), beta=0.25 (each pointer)
 
 Training Enhancements:
 - Mixup + CutMix augmentation (alpha=0.2, gentler mixing for small dataset)
@@ -21,6 +29,7 @@ Training Enhancements:
 """
 
 from pathlib import Path
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -30,6 +39,8 @@ from sklearn.model_selection import train_test_split
 
 from ..utils.augmentation import mixup_criterion, mixup_cutmix
 from ..utils.early_stopping import EarlyStopping
+from ..utils.focal_loss import FocalLoss
+from ..utils.losses import compute_multitask_loss
 from ..utils.seeds import get_device, set_seed
 from .base import BaseModel
 
@@ -150,6 +161,31 @@ class RelativePositionalEncoding(nn.Module):
         return self.rel_pos_emb[rel_pos]  # [seq_len, seq_len, d_model]
 
 
+class WindowAwarePositionalEncoding(nn.Module):
+    """Boost attention for inner prediction window [30:75]."""
+
+    def __init__(self, window_size: int = 105):
+        super().__init__()
+        self.window_size = window_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply window-aware positional weighting.
+
+        Args:
+            x: Input tensor [B, seq_len, d_model]
+
+        Returns:
+            Weighted tensor with inner window [30:75] boosted by 1.5x
+        """
+        pos = torch.arange(self.window_size, device=x.device)
+
+        # Create attention boost
+        weights = torch.ones_like(pos, dtype=torch.float32)
+        weights[30:75] = 1.5  # 50% boost for prediction region
+
+        return x * weights[None, :, None]
+
+
 class CnnTransformerModel(BaseModel):
     """CNN → Transformer hybrid for time series classification.
 
@@ -174,9 +210,12 @@ class CnnTransformerModel(BaseModel):
         val_split: float = 0.15,
         mixup_alpha: float = 0.2,
         cutmix_prob: float = 0.5,
+        predict_pointers: bool = False,
+        loss_alpha: float = 0.5,
+        loss_beta: float = 0.25,
         **kwargs,
     ):
-        """Initialize CNN→Transformer model.
+        """Initialize CNN→Transformer model with optional multi-task pointer prediction.
 
         Args:
             seed: Random seed for reproducibility
@@ -195,6 +234,9 @@ class CnnTransformerModel(BaseModel):
             val_split: Validation split ratio for early stopping (default: 0.15, ~20 samples)
             mixup_alpha: Mixup interpolation strength (default: 0.2, gentler for small dataset)
             cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
+            predict_pointers: Enable multi-task pointer prediction (default: False)
+            loss_alpha: Weight for classification loss in multi-task mode (default: 0.5)
+            loss_beta: Weight for each pointer loss in multi-task mode (default: 0.25)
             **kwargs: Additional parameters
         """
         super().__init__(seed=seed)
@@ -214,6 +256,9 @@ class CnnTransformerModel(BaseModel):
         self.val_split = val_split
         self.mixup_alpha = mixup_alpha
         self.cutmix_prob = cutmix_prob
+        self.predict_pointers = predict_pointers
+        self.loss_alpha = loss_alpha
+        self.loss_beta = loss_beta
 
         set_seed(seed)
 
@@ -242,20 +287,22 @@ class CnnTransformerModel(BaseModel):
                 transformer_heads: int,
                 n_classes: int,
                 dropout: float,
+                predict_pointers: bool = False,
             ):
                 super().__init__()
                 self.input_dim = input_dim
                 self.cnn_channels = cnn_channels
                 self.d_model = cnn_channels[-1]  # Final CNN output becomes Transformer input
+                self.predict_pointers = predict_pointers
 
-                # CNN blocks
+                # CNN blocks (shared backbone)
                 in_channels = [input_dim] + cnn_channels[:-1]
                 self.cnn_blocks = nn.ModuleList([
                     CNNBlock(in_ch, out_ch, cnn_kernels, dropout)
                     for in_ch, out_ch in zip(in_channels, cnn_channels)
                 ])
 
-                # Transformer encoder
+                # Transformer encoder (shared backbone)
                 encoder_layer = nn.TransformerEncoderLayer(
                     d_model=self.d_model,
                     nhead=transformer_heads,
@@ -272,29 +319,47 @@ class CnnTransformerModel(BaseModel):
                 # Relative positional encoding
                 self.rel_pos_enc = RelativePositionalEncoding(self.d_model)
 
-                # Classification head
+                # Window-aware positional weighting
+                self.window_pos_weight = WindowAwarePositionalEncoding(window_size=105)
+
+                # Classification head (always present)
                 self.output_norm = nn.LayerNorm(self.d_model)
                 self.classifier = nn.Linear(self.d_model, n_classes)
                 self.dropout = nn.Dropout(dropout)
 
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                """Forward pass.
+                # Pointer prediction heads (optional)
+                if predict_pointers:
+                    self.pointer_start_head = nn.Linear(self.d_model, 1)
+                    self.pointer_end_head = nn.Linear(self.d_model, 1)
+
+            def forward(self, x: torch.Tensor) -> Union[torch.Tensor, dict]:
+                """Forward pass with optional multi-task output.
 
                 Args:
                     x: Input tensor [batch, seq_len, input_dim]
+                       Expected shape: [B, 105, 4] for OHLC data
 
                 Returns:
-                    Logits [batch, n_classes]
+                    If predict_pointers=False:
+                        Classification logits [batch, n_classes]
+                    If predict_pointers=True:
+                        Dictionary with keys:
+                        - 'classification': [B, 3] class logits
+                        - 'start': [B, 45] pointer start logits for inner window
+                        - 'end': [B, 45] pointer end logits for inner window
                 """
                 # Transpose to [batch, input_dim, seq_len] for Conv1d
                 x = x.transpose(1, 2)
 
-                # Apply CNN blocks
+                # Apply CNN blocks (shared backbone)
                 for cnn_block in self.cnn_blocks:
                     x = cnn_block(x)
 
                 # Transpose back to [batch, seq_len, d_model] for Transformer
                 x = x.transpose(1, 2)
+
+                # Apply window-aware positional weighting (before Transformer)
+                x = self.window_pos_weight(x)
 
                 # Add relative positional encoding
                 # Simplified approach: use mean of relative position embeddings as additive bias
@@ -305,16 +370,35 @@ class CnnTransformerModel(BaseModel):
                 pos_bias = rel_pos_encoding.mean(dim=1)  # [T, C]
                 x = x + pos_bias.unsqueeze(0)  # Add positional bias [1, T, C]
 
-                # Apply Transformer encoder
-                x = self.transformer(x)
+                # Apply Transformer encoder (shared backbone)
+                x = self.transformer(x)  # [B, 105, d_model]
 
+                # TASK 1: Classification head
                 # Global average pooling over sequence
-                x = x.mean(dim=1)  # [batch, d_model]
+                pooled = x.mean(dim=1)  # [B, d_model]
+                pooled = self.output_norm(pooled)
+                pooled = self.dropout(pooled)
+                class_logits = self.classifier(pooled)  # [B, n_classes]
 
-                # Classification head
-                x = self.output_norm(x)
-                x = self.dropout(x)
-                logits = self.classifier(x)
+                # Return early if single-task mode
+                if not self.predict_pointers:
+                    return class_logits
+
+                # TASK 2 & 3: Pointer prediction heads
+                # Extract inner window [30:75] for pointer prediction
+                inner_features = x[:, 30:75, :]  # [B, 45, d_model]
+
+                # Pointer start logits (per-timestep prediction)
+                start_logits = self.pointer_start_head(inner_features).squeeze(-1)  # [B, 45]
+
+                # Pointer end logits (per-timestep prediction)
+                end_logits = self.pointer_end_head(inner_features).squeeze(-1)  # [B, 45]
+
+                return {
+                    'classification': class_logits,
+                    'start': start_logits,
+                    'end': end_logits
+                }
 
                 # TODO: Add evidential deep learning layer here
                 # - Replace final linear layer with evidential output
@@ -326,8 +410,6 @@ class CnnTransformerModel(BaseModel):
                 # - Track non-conformity scores during training
                 # - Provide coverage guarantees for predictions
 
-                return logits
-
         model = CnnTransformerNet(
             input_dim=input_dim,
             cnn_channels=self.cnn_channels,
@@ -336,21 +418,52 @@ class CnnTransformerModel(BaseModel):
             transformer_heads=self.transformer_heads,
             n_classes=n_classes,
             dropout=self.dropout_rate,
+            predict_pointers=self.predict_pointers,
         )
 
         return model.to(self.device)
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "CnnTransformerModel":
-        """Train CNN→Transformer model.
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        pointer_starts: Optional[np.ndarray] = None,
+        pointer_ends: Optional[np.ndarray] = None,
+    ) -> "CnnTransformerModel":
+        """Train CNN→Transformer model with optional multi-task pointer prediction.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D]
+                For OHLC data: [N, 105, 4] or flattened [N, 420]
             y: Target labels of shape [N]
+                Classification labels (e.g., 'consolidation', 'retracement', 'reversal')
+            pointer_starts: Optional pointer start indices [N] in range [0, 44]
+                Relative to inner window [30:75]. Required if predict_pointers=True
+            pointer_ends: Optional pointer end indices [N] in range [0, 44]
+                Relative to inner window [30:75]. Required if predict_pointers=True
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ValueError: If predict_pointers=True but pointer labels not provided
+            ValueError: If pointer labels provided but predict_pointers=False (warning only)
         """
         set_seed(self.seed)
+
+        # Validate multi-task mode configuration
+        has_pointers = (pointer_starts is not None) and (pointer_ends is not None)
+
+        if has_pointers and not self.predict_pointers:
+            print("[WARNING] Pointer labels provided but predict_pointers=False. Ignoring pointer labels.")
+            print("          Set predict_pointers=True to enable multi-task learning.")
+            has_pointers = False
+
+        if not has_pointers and self.predict_pointers:
+            raise ValueError(
+                "predict_pointers=True but pointer labels not provided. "
+                "Please provide both pointer_starts and pointer_ends arrays."
+            )
 
         # Handle input shape
         if X.ndim == 2:
@@ -365,11 +478,34 @@ class CnnTransformerModel(BaseModel):
         N, T, F = X.shape
         self.input_dim = F
 
+        # Validate pointer indices if provided
+        if has_pointers:
+            assert pointer_starts.shape == (N,), f"pointer_starts shape mismatch: expected ({N},), got {pointer_starts.shape}"
+            assert pointer_ends.shape == (N,), f"pointer_ends shape mismatch: expected ({N},), got {pointer_ends.shape}"
+            assert np.all((pointer_starts >= 0) & (pointer_starts < 45)), "pointer_starts must be in range [0, 44]"
+            assert np.all((pointer_ends >= 0) & (pointer_ends < 45)), "pointer_ends must be in range [0, 44]"
+            print(f"[MULTI-TASK] Training with pointer prediction enabled")
+            print(f"[MULTI-TASK] Loss weights: alpha={self.loss_alpha}, beta={self.loss_beta}")
+
         # Get unique classes and build label mapping
         unique_labels = np.unique(y)
         self.n_classes = len(unique_labels)
         self.label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
         self.idx_to_label = {idx: label for label, idx in self.label_to_idx.items()}
+
+        # Calculate class weights for Focal Loss
+        # Convert labels to indices for counting
+        y_indices_for_weights = np.array([self.label_to_idx[label] for label in y])
+        unique_classes, class_counts = np.unique(y_indices_for_weights, return_counts=True)
+        n_samples = len(y)
+        n_classes = len(unique_classes)
+
+        # Balanced class weights: n_samples / (n_classes * class_count)
+        class_weights_np = n_samples / (n_classes * class_counts)
+        class_weights = torch.FloatTensor(class_weights_np)
+
+        print(f"[CLASS BALANCE] Class weights: {dict(zip(unique_classes, class_weights_np))}")
+        print(f"[CLASS BALANCE] Class distribution: {dict(zip(unique_classes, class_counts))}")
 
         # Build model
         self.model = self._build_model(self.input_dim, self.n_classes)
@@ -385,19 +521,37 @@ class CnnTransformerModel(BaseModel):
 
         # Split into train/val for early stopping if val_split > 0
         if self.val_split > 0:
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y_indices, test_size=self.val_split, random_state=self.seed, stratify=y_indices
-            )
+            if has_pointers:
+                X_train, X_val, y_train, y_val, ptr_start_train, ptr_start_val, ptr_end_train, ptr_end_val = train_test_split(
+                    X, y_indices, pointer_starts, pointer_ends,
+                    test_size=self.val_split, random_state=self.seed, stratify=y_indices
+                )
+            else:
+                X_train, X_val, y_train, y_val = train_test_split(
+                    X, y_indices, test_size=self.val_split, random_state=self.seed, stratify=y_indices
+                )
+                ptr_start_train = ptr_start_val = None
+                ptr_end_train = ptr_end_val = None
         else:
             X_train, y_train = X, y_indices
             X_val, y_val = None, None
+            ptr_start_train, ptr_end_train = pointer_starts, pointer_ends if has_pointers else (None, None)
+            ptr_start_val = ptr_end_val = None
 
         # Convert training data to tensors
         X_train_tensor = torch.FloatTensor(X_train)
         y_train_tensor = torch.LongTensor(y_train)
 
         # Create training dataset and dataloader
-        train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
+        if has_pointers:
+            ptr_start_train_tensor = torch.LongTensor(ptr_start_train)
+            ptr_end_train_tensor = torch.LongTensor(ptr_end_train)
+            train_dataset = torch.utils.data.TensorDataset(
+                X_train_tensor, y_train_tensor,
+                ptr_start_train_tensor, ptr_end_train_tensor
+            )
+        else:
+            train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
         num_workers = self.num_workers if self.device.type == "cuda" else 0
         train_dataloader = torch.utils.data.DataLoader(
             train_dataset,
@@ -414,7 +568,15 @@ class CnnTransformerModel(BaseModel):
         if X_val is not None:
             X_val_tensor = torch.FloatTensor(X_val)
             y_val_tensor = torch.LongTensor(y_val)
-            val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
+            if has_pointers:
+                ptr_start_val_tensor = torch.LongTensor(ptr_start_val)
+                ptr_end_val_tensor = torch.LongTensor(ptr_end_val)
+                val_dataset = torch.utils.data.TensorDataset(
+                    X_val_tensor, y_val_tensor,
+                    ptr_start_val_tensor, ptr_end_val_tensor
+                )
+            else:
+                val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
             val_dataloader = torch.utils.data.DataLoader(
                 val_dataset,
                 batch_size=self.batch_size,
@@ -427,7 +589,8 @@ class CnnTransformerModel(BaseModel):
         optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4
         )
-        criterion = nn.CrossEntropyLoss()
+        # Use Focal Loss with class weights to handle imbalance
+        criterion = FocalLoss(gamma=2.0, alpha=class_weights, reduction='mean')
 
         # Setup mixed precision training
         scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
@@ -449,12 +612,21 @@ class CnnTransformerModel(BaseModel):
             correct = 0
             total = 0
 
-            for batch_X, batch_y in train_dataloader:
-                # CRITICAL: Move batch to GPU
-                batch_X = batch_X.to(self.device, non_blocking=True)
-                batch_y = batch_y.to(self.device, non_blocking=True)
+            for batch_idx, batch_data in enumerate(train_dataloader):
+                # Unpack batch (handles both single-task and multi-task)
+                if has_pointers:
+                    batch_X, batch_y, batch_start, batch_end = batch_data
+                    batch_X = batch_X.to(self.device, non_blocking=True)
+                    batch_y = batch_y.to(self.device, non_blocking=True)
+                    batch_start = batch_start.to(self.device, non_blocking=True)
+                    batch_end = batch_end.to(self.device, non_blocking=True)
+                else:
+                    batch_X, batch_y = batch_data
+                    batch_X = batch_X.to(self.device, non_blocking=True)
+                    batch_y = batch_y.to(self.device, non_blocking=True)
 
                 # Apply augmentation (mixup + cutmix)
+                # NOTE: Augmentation only applies to classification labels, not pointers
                 batch_X_aug, y_a, y_b, lam = mixup_cutmix(
                     batch_X, batch_y,
                     mixup_alpha=self.mixup_alpha,
@@ -466,8 +638,26 @@ class CnnTransformerModel(BaseModel):
                 # Forward pass with mixed precision
                 if self.use_amp:
                     with torch.cuda.amp.autocast():
-                        logits = self.model(batch_X_aug)
-                        loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
+                        outputs = self.model(batch_X_aug)
+
+                        if has_pointers:
+                            # Multi-task loss
+                            targets = {
+                                'class': batch_y,
+                                'start_idx': batch_start,
+                                'end_idx': batch_end
+                            }
+                            loss, loss_dict = compute_multitask_loss(
+                                outputs, targets,
+                                alpha=self.loss_alpha,
+                                beta=self.loss_beta,
+                                device=str(self.device)
+                            )
+                            logits = outputs['classification']
+                        else:
+                            # Single-task classification loss
+                            logits = outputs
+                            loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
 
                     # Backward pass with gradient scaling
                     scaler.scale(loss).backward()
@@ -475,8 +665,27 @@ class CnnTransformerModel(BaseModel):
                     scaler.update()
                 else:
                     # Standard forward/backward pass
-                    logits = self.model(batch_X_aug)
-                    loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
+                    outputs = self.model(batch_X_aug)
+
+                    if has_pointers:
+                        # Multi-task loss
+                        targets = {
+                            'class': batch_y,
+                            'start_idx': batch_start,
+                            'end_idx': batch_end
+                        }
+                        loss, loss_dict = compute_multitask_loss(
+                            outputs, targets,
+                            alpha=self.loss_alpha,
+                            beta=self.loss_beta,
+                            device=str(self.device)
+                        )
+                        logits = outputs['classification']
+                    else:
+                        # Single-task classification loss
+                        logits = outputs
+                        loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
+
                     loss.backward()
                     optimizer.step()
 
@@ -485,6 +694,11 @@ class CnnTransformerModel(BaseModel):
                 _, predicted = torch.max(logits, 1)
                 correct += (predicted == batch_y).sum().item()
                 total += batch_y.size(0)
+
+                # Log multi-task losses periodically
+                if has_pointers and (batch_idx % 10 == 0) and (epoch % max(1, self.n_epochs // 10) == 0):
+                    print(f"  Batch {batch_idx:3d} | Class: {loss_dict['class']:.4f} | "
+                          f"Start: {loss_dict['start']:.4f} | End: {loss_dict['end']:.4f}")
 
             avg_train_loss = total_loss / len(train_dataloader)
             train_accuracy = correct / total
@@ -497,17 +711,60 @@ class CnnTransformerModel(BaseModel):
                 val_total = 0
 
                 with torch.no_grad():
-                    for batch_X, batch_y in val_dataloader:
-                        batch_X = batch_X.to(self.device, non_blocking=True)
-                        batch_y = batch_y.to(self.device, non_blocking=True)
+                    for batch_data in val_dataloader:
+                        # Unpack batch (handles both single-task and multi-task)
+                        if has_pointers:
+                            batch_X, batch_y, batch_start, batch_end = batch_data
+                            batch_X = batch_X.to(self.device, non_blocking=True)
+                            batch_y = batch_y.to(self.device, non_blocking=True)
+                            batch_start = batch_start.to(self.device, non_blocking=True)
+                            batch_end = batch_end.to(self.device, non_blocking=True)
+                        else:
+                            batch_X, batch_y = batch_data
+                            batch_X = batch_X.to(self.device, non_blocking=True)
+                            batch_y = batch_y.to(self.device, non_blocking=True)
 
                         if self.use_amp:
                             with torch.cuda.amp.autocast():
-                                logits = self.model(batch_X)
-                                loss = criterion(logits, batch_y)
+                                outputs = self.model(batch_X)
+
+                                if has_pointers:
+                                    # Multi-task loss
+                                    targets = {
+                                        'class': batch_y,
+                                        'start_idx': batch_start,
+                                        'end_idx': batch_end
+                                    }
+                                    loss, _ = compute_multitask_loss(
+                                        outputs, targets,
+                                        alpha=self.loss_alpha,
+                                        beta=self.loss_beta,
+                                        device=str(self.device)
+                                    )
+                                    logits = outputs['classification']
+                                else:
+                                    logits = outputs
+                                    loss = criterion(logits, batch_y)
                         else:
-                            logits = self.model(batch_X)
-                            loss = criterion(logits, batch_y)
+                            outputs = self.model(batch_X)
+
+                            if has_pointers:
+                                # Multi-task loss
+                                targets = {
+                                    'class': batch_y,
+                                    'start_idx': batch_start,
+                                    'end_idx': batch_end
+                                }
+                                loss, _ = compute_multitask_loss(
+                                    outputs, targets,
+                                    alpha=self.loss_alpha,
+                                    beta=self.loss_beta,
+                                    device=str(self.device)
+                                )
+                                logits = outputs['classification']
+                            else:
+                                logits = outputs
+                                loss = criterion(logits, batch_y)
 
                         val_loss += loss.item()
                         _, predicted = torch.max(logits, 1)
@@ -546,6 +803,9 @@ class CnnTransformerModel(BaseModel):
 
         Returns:
             Predicted labels of shape [N]
+
+        Note:
+            For pointer predictions, use predict_with_pointers()
         """
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -563,7 +823,14 @@ class CnnTransformerModel(BaseModel):
 
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(X_tensor)
+            outputs = self.model(X_tensor)
+
+            # Handle multi-task output
+            if isinstance(outputs, dict):
+                logits = outputs['classification']
+            else:
+                logits = outputs
+
             _, predicted = torch.max(logits, 1)
 
         # Convert indices back to original labels
@@ -579,6 +846,9 @@ class CnnTransformerModel(BaseModel):
 
         Returns:
             Class probabilities of shape [N, C]
+
+        Note:
+            For pointer predictions, use predict_with_pointers()
         """
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -596,10 +866,99 @@ class CnnTransformerModel(BaseModel):
 
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(X_tensor)
+            outputs = self.model(X_tensor)
+
+            # Handle multi-task output
+            if isinstance(outputs, dict):
+                logits = outputs['classification']
+            else:
+                logits = outputs
+
             probs = F.softmax(logits, dim=1)
 
         return probs.cpu().numpy()
+
+    def predict_with_pointers(self, X: np.ndarray) -> dict:
+        """Predict class labels AND pointer start/end (if model trained for pointers).
+
+        This method returns comprehensive predictions including classification and
+        pointer localization within the inner window [30:75].
+
+        Args:
+            X: Feature matrix of shape [N, D] or [N, T, D]
+                For OHLC data: [N, 105, 4] or flattened [N, 420]
+
+        Returns:
+            Dictionary containing:
+            {
+                'labels': [N] predicted class labels (strings),
+                'probabilities': [N, 3] class probabilities,
+                'start_probabilities': [N, 45] pointer start probabilities (sigmoid),
+                'end_probabilities': [N, 45] pointer end probabilities (sigmoid),
+                'start_predictions': [N] predicted start indices (argmax) in [0, 44],
+                'end_predictions': [N] predicted end indices (argmax) in [0, 44]
+            }
+
+        Raises:
+            ValueError: If model not trained with predict_pointers=True
+
+        Example:
+            >>> model = CnnTransformerModel(predict_pointers=True)
+            >>> model.fit(X_train, y_train, pointer_starts=starts, pointer_ends=ends)
+            >>> results = model.predict_with_pointers(X_test)
+            >>> print(results['labels'])  # ['consolidation', 'retracement', ...]
+            >>> print(results['start_predictions'])  # [5, 12, 8, ...]
+        """
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+
+        if not self.predict_pointers:
+            raise ValueError(
+                "Model not trained with pointer prediction. "
+                "Set predict_pointers=True when initializing the model."
+            )
+
+        # Reshape input
+        if X.ndim == 2:
+            N, D = X.shape
+            if D % 4 == 0:
+                T = D // 4
+                X = X.reshape(N, T, 4)
+            else:
+                X = X.reshape(N, 1, D)
+
+        X_tensor = torch.FloatTensor(X).to(self.device)
+
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+
+            # Extract outputs
+            class_logits = outputs['classification']
+            start_logits = outputs['start']
+            end_logits = outputs['end']
+
+            # Classification predictions
+            class_probs = F.softmax(class_logits, dim=1)
+            _, class_preds = torch.max(class_logits, 1)
+
+            # Pointer predictions (apply sigmoid to logits)
+            start_probs = torch.sigmoid(start_logits)
+            end_probs = torch.sigmoid(end_logits)
+            start_preds = torch.argmax(start_probs, dim=1)
+            end_preds = torch.argmax(end_probs, dim=1)
+
+        # Convert to numpy and original labels
+        predicted_labels = np.array([self.idx_to_label[idx.item()] for idx in class_preds])
+
+        return {
+            'labels': predicted_labels,
+            'probabilities': class_probs.cpu().numpy(),
+            'start_probabilities': start_probs.cpu().numpy(),
+            'end_probabilities': end_probs.cpu().numpy(),
+            'start_predictions': start_preds.cpu().numpy(),
+            'end_predictions': end_preds.cpu().numpy()
+        }
 
     def save(self, path: Path) -> None:
         """Save model to disk using PyTorch format.
@@ -616,12 +975,15 @@ class CnnTransformerModel(BaseModel):
             'idx_to_label': self.idx_to_label if hasattr(self, 'idx_to_label') else None,
             'n_classes': self.n_classes,
             'input_dim': self.input_dim,
+            'predict_pointers': self.predict_pointers,
             'hyperparams': {
                 'cnn_channels': self.cnn_channels,
                 'cnn_kernels': self.cnn_kernels,
                 'transformer_layers': self.transformer_layers,
                 'transformer_heads': self.transformer_heads,
                 'dropout_rate': self.dropout_rate,
+                'loss_alpha': self.loss_alpha,
+                'loss_beta': self.loss_beta,
             }
         }
 
@@ -643,6 +1005,7 @@ class CnnTransformerModel(BaseModel):
         self.idx_to_label = checkpoint['idx_to_label']
         self.n_classes = checkpoint['n_classes']
         self.input_dim = checkpoint['input_dim']
+        self.predict_pointers = checkpoint.get('predict_pointers', False)  # Default False for backward compatibility
 
         # Restore hyperparameters
         hyperparams = checkpoint['hyperparams']
@@ -651,6 +1014,8 @@ class CnnTransformerModel(BaseModel):
         self.transformer_layers = hyperparams['transformer_layers']
         self.transformer_heads = hyperparams['transformer_heads']
         self.dropout_rate = hyperparams['dropout_rate']
+        self.loss_alpha = hyperparams.get('loss_alpha', 0.5)  # Default for backward compatibility
+        self.loss_beta = hyperparams.get('loss_beta', 0.25)   # Default for backward compatibility
 
         # Rebuild and load model
         self.model = self._build_model(self.input_dim, self.n_classes)

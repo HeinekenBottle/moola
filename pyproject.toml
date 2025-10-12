@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Moola Maintainer" }]
 dependencies = [
-  "numpy>=1.26",
+  "numpy>=1.26,<2.0",
   "pandas>=2.2",
   "pydantic>=2.8",
   "pyyaml>=6.0",

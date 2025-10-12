@@ -98,44 +98,119 @@ class XGBModel(BaseModel):
         """Train XGBoost model.
 
         Args:
-            X: Feature matrix of shape [N, D]
+            X: Feature matrix of shape [N, D] or [N, T, F]
             y: Target labels of shape [N] (can be strings or numeric)
 
         Returns:
             Self for method chaining
         """
+        from ..features.price_action_features import engineer_classical_features
+
+        # Transform raw OHLC to engineered features
+        if X.shape[1] == 420:  # Flattened [105*4]
+            X = X.reshape(-1, 105, 4)
+
+        if X.ndim == 3:  # [N, T, F] format
+            X_engineered = engineer_classical_features(X)
+        else:
+            X_engineered = X
+
+        # Ensure X_engineered is numeric
+        X_engineered = np.array(X_engineered, dtype=np.float64)
+        print(f"[DEBUG] X_engineered shape: {X_engineered.shape}, dtype: {X_engineered.dtype}")
+
         # Encode labels if they are strings
         y_encoded = self.label_encoder.fit_transform(y)
-        self.model.fit(X, y_encoded)
-        self.is_fitted = True
-        return self
+
+        # Apply SMOTE to oversample minority classes
+        try:
+            from imblearn.over_sampling import SMOTE
+
+            unique_classes, class_counts = np.unique(y_encoded, return_counts=True)
+            print(f"[CLASS BALANCE] Original distribution: {dict(zip(unique_classes, class_counts))}")
+
+            # SMOTE requires at least 2 samples per class for k_neighbors=1
+            # Use k_neighbors=1 since we have very small minority classes (reversal=19)
+            smote = SMOTE(random_state=self.seed, k_neighbors=1)
+            X_resampled, y_resampled = smote.fit_resample(X_engineered, y_encoded)
+
+            unique_classes_new, class_counts_new = np.unique(y_resampled, return_counts=True)
+            print(f"[CLASS BALANCE] After SMOTE: {dict(zip(unique_classes_new, class_counts_new))}")
+
+            # Fit with resampled data
+            self.model.fit(X_resampled, y_resampled)
+            self.is_fitted = True
+            return self
+
+        except ImportError:
+            print("[WARNING] imbalanced-learn not installed. Falling back to sample weights.")
+            # Fallback to sample weighting
+            unique_classes, class_counts = np.unique(y_encoded, return_counts=True)
+            n_samples = len(y_encoded)
+            n_classes = len(unique_classes)
+
+            # Calculate balanced class weights: n_samples / (n_classes * class_count)
+            class_weights = n_samples / (n_classes * class_counts)
+
+            # Map weights to each sample
+            sample_weights = np.array([class_weights[cls] for cls in y_encoded])
+
+            print(f"[CLASS BALANCE] Class weights: {dict(zip(unique_classes, class_weights))}")
+            print(f"[CLASS BALANCE] Class distribution: {dict(zip(unique_classes, class_counts))}")
+
+            # Fit with sample weights
+            self.model.fit(X_engineered, y_encoded, sample_weight=sample_weights)
+            self.is_fitted = True
+            return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Predict class labels.
 
         Args:
-            X: Feature matrix of shape [N, D]
+            X: Feature matrix of shape [N, D] or [N, T, F]
 
         Returns:
             Predicted labels of shape [N] (in original label space)
         """
+        from ..features.price_action_features import engineer_classical_features
+
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
-        y_pred_encoded = self.model.predict(X)
+
+        if X.shape[1] == 420:
+            X = X.reshape(-1, 105, 4)
+
+        if X.ndim == 3:
+            X_engineered = engineer_classical_features(X)
+        else:
+            X_engineered = X
+
+        y_pred_encoded = self.model.predict(X_engineered)
         return self.label_encoder.inverse_transform(y_pred_encoded)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
-            X: Feature matrix of shape [N, D]
+            X: Feature matrix of shape [N, D] or [N, T, F]
 
         Returns:
             Class probabilities of shape [N, C]
         """
+        from ..features.price_action_features import engineer_classical_features
+
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
-        return self.model.predict_proba(X)
+
+        if X.shape[1] == 420:
+            X = X.reshape(-1, 105, 4)
+
+        if X.ndim == 3:
+            X_engineered = engineer_classical_features(X)
+        else:
+            X_engineered = X
+
+        return self.model.predict_proba(X_engineered)
 
     def save(self, path: Path) -> None:
         """Save model and label encoder to disk.
