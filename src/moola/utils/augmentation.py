@@ -118,8 +118,8 @@ def cutmix(
 def mixup_cutmix(
     x: torch.Tensor,
     y: torch.Tensor,
-    mixup_alpha: float = 0.3,
-    cutmix_alpha: float = 1.0,
+    mixup_alpha: float = 0.2,
+    cutmix_alpha: float = 0.3,
     cutmix_prob: float = 0.5,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
     """Apply either mixup or cutmix with specified probability.
@@ -127,8 +127,8 @@ def mixup_cutmix(
     Args:
         x: Input batch of shape [B, T, F] or [B, F]
         y: Target labels of shape [B] (class indices)
-        mixup_alpha: Beta parameter for mixup
-        cutmix_alpha: Beta parameter for cutmix
+        mixup_alpha: Beta parameter for mixup (default: 0.2 for gentler mixing)
+        cutmix_alpha: Beta parameter for cutmix (default: 0.3 for gentler mixing)
         cutmix_prob: Probability of applying cutmix vs mixup
 
     Returns:

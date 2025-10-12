@@ -9,14 +9,15 @@ Architecture:
 - Transformer encoder with relative positional encoding
 - 3 layers × 4 heads
 
-Channels: 3× [64, 128, 128] with dropout 0.3 (increased from 0.2 to reduce fold variance)
+Channels: 3× [64, 128, 128] with dropout 0.25 (balanced regularization)
 
 Training Enhancements:
-- Mixup + CutMix augmentation (alpha=0.3, cutmix_prob=0.5)
-- Early stopping with patience=10
-- Learning rate: 3e-4 (reduced from 1e-3)
+- Mixup + CutMix augmentation (alpha=0.2, gentler mixing for small dataset)
+- Early stopping with patience=20 (increased from 10 to allow convergence)
+- Learning rate: 5e-4 (increased from 3e-4 for faster convergence)
 - Max epochs: 60 (increased from 10)
 - AdamW optimizer with weight_decay=1e-4
+- Validation split: 15% (~20 samples for stable early stopping)
 """
 
 from pathlib import Path
@@ -162,16 +163,16 @@ class CnnTransformerModel(BaseModel):
         cnn_kernels: list[int] = None,
         transformer_layers: int = 3,
         transformer_heads: int = 4,
-        dropout: float = 0.3,
+        dropout: float = 0.25,
         n_epochs: int = 60,
         batch_size: int = 32,
-        learning_rate: float = 3e-4,
+        learning_rate: float = 5e-4,
         device: str = "cpu",
         use_amp: bool = True,
         num_workers: int = 4,
-        early_stopping_patience: int = 10,
-        val_split: float = 0.1,
-        mixup_alpha: float = 0.3,
+        early_stopping_patience: int = 20,
+        val_split: float = 0.15,
+        mixup_alpha: float = 0.2,
         cutmix_prob: float = 0.5,
         **kwargs,
     ):
@@ -183,16 +184,16 @@ class CnnTransformerModel(BaseModel):
             cnn_kernels: CNN kernel sizes (default: [3, 5, 9] - final kernel increased)
             transformer_layers: Number of Transformer encoder layers
             transformer_heads: Number of attention heads
-            dropout: Dropout rate (increased to 0.3 to reduce fold variance)
+            dropout: Dropout rate (0.25 for balanced regularization)
             n_epochs: Number of training epochs (increased to 60 with early stopping)
             batch_size: Training batch size
-            learning_rate: Learning rate for optimizer (reduced to 3e-4 for stability)
+            learning_rate: Learning rate for optimizer (5e-4 for faster convergence)
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
-            early_stopping_patience: Epochs to wait before stopping (default: 10)
-            val_split: Validation split ratio for early stopping (default: 0.1)
-            mixup_alpha: Mixup interpolation strength (default: 0.3)
+            early_stopping_patience: Epochs to wait before stopping (default: 20)
+            val_split: Validation split ratio for early stopping (default: 0.15, ~20 samples)
+            mixup_alpha: Mixup interpolation strength (default: 0.2, gentler for small dataset)
             cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
             **kwargs: Additional parameters
         """

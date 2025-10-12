@@ -5,16 +5,17 @@ It uses causal recurrence with instance normalization for stable sequential mode
 
 Architecture:
 - Multi-scale patching with sizes [7, 15, 21, 35]
-- Recurrent state-space blocks with d_model=96 (reduced from 128 to prevent overfitting)
+- Recurrent state-space blocks with d_model=128 (restored from 96 for better capacity)
 - Instance normalization for stable training
 - Dropout regularization
 
 Training Enhancements:
-- Mixup + CutMix augmentation (alpha=0.3, cutmix_prob=0.5)
-- Early stopping with patience=10
-- Learning rate: 3e-4 (reduced from 1e-3)
+- Mixup + CutMix augmentation (alpha=0.2, gentler mixing for small dataset)
+- Early stopping with patience=20 (increased from 10 to allow convergence)
+- Learning rate: 5e-4 (increased from 3e-4 for faster convergence)
 - Max epochs: 60 (increased from 10)
 - AdamW optimizer with weight_decay=1e-4
+- Validation split: 15% (~20 samples for stable early stopping)
 
 Reference:
     RWKV: Reinventing RNNs for the Transformer Era
@@ -119,20 +120,20 @@ class RWKVTSModel(BaseModel):
     def __init__(
         self,
         seed: int = 1337,
-        d_model: int = 96,
+        d_model: int = 128,
         n_layers: int = 4,
         patch_sizes: list[int] = None,
         dropout: float = 0.2,
         instance_norm: bool = True,
         n_epochs: int = 60,
         batch_size: int = 32,
-        learning_rate: float = 3e-4,
+        learning_rate: float = 5e-4,
         device: str = "cpu",
         use_amp: bool = True,
         num_workers: int = 4,
-        early_stopping_patience: int = 10,
-        val_split: float = 0.1,
-        mixup_alpha: float = 0.3,
+        early_stopping_patience: int = 20,
+        val_split: float = 0.15,
+        mixup_alpha: float = 0.2,
         cutmix_prob: float = 0.5,
         **kwargs,
     ):
@@ -140,20 +141,20 @@ class RWKVTSModel(BaseModel):
 
         Args:
             seed: Random seed for reproducibility
-            d_model: Model dimension (reduced from 128 to 96 to prevent overfitting)
+            d_model: Model dimension (128 for adequate capacity on 420 features)
             n_layers: Number of RWKV blocks
             patch_sizes: Multi-scale patch sizes for temporal features
             dropout: Dropout rate
             instance_norm: Whether to use instance normalization
             n_epochs: Number of training epochs (increased to 60 with early stopping)
             batch_size: Training batch size
-            learning_rate: Learning rate for optimizer (reduced to 3e-4 for stability)
+            learning_rate: Learning rate for optimizer (5e-4 for faster convergence)
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
-            early_stopping_patience: Epochs to wait before stopping (default: 10)
-            val_split: Validation split ratio for early stopping (default: 0.1)
-            mixup_alpha: Mixup interpolation strength (default: 0.3)
+            early_stopping_patience: Epochs to wait before stopping (default: 20)
+            val_split: Validation split ratio for early stopping (default: 0.15, ~20 samples)
+            mixup_alpha: Mixup interpolation strength (default: 0.2, gentler for small dataset)
             cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
             **kwargs: Additional parameters
         """
