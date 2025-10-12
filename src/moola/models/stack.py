@@ -20,20 +20,23 @@ class StackModel(BaseModel):
     to class imbalance and improved performance on small datasets.
     """
 
-    def __init__(self, seed: int = 1337, n_estimators: int = 1000, device: str = "cpu", **kwargs):
+    def __init__(self, seed: int = 1337, n_estimators: int = 1000, max_depth: int = 12, device: str = "cpu", **kwargs):
         """Initialize stacking meta-learner.
 
         Args:
             seed: Random seed for reproducibility
             n_estimators: Number of trees in the forest (default 1000)
+            max_depth: Maximum tree depth (default 12, balances speed/accuracy)
             device: Device parameter (ignored for sklearn models, kept for API consistency)
             **kwargs: Additional sklearn RandomForestClassifier parameters
         """
         super().__init__(seed=seed)
         self.n_estimators = n_estimators
+        self.max_depth = max_depth
         self.kwargs = kwargs
         self.model = RandomForestClassifier(
             n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
             class_weight="balanced_subsample",
             random_state=self.seed,
             max_features="sqrt",

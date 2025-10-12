@@ -4,12 +4,19 @@ This model combines local pattern detection via CNNs with global context modelin
 via Transformers. Designed for time series classification.
 
 Architecture:
-- Multi-scale CNN blocks (Conv1d with kernels {3, 5, 7})
+- Multi-scale CNN blocks (Conv1d with kernels {3, 5, 9} - final kernel increased to capture longer trends)
 - Causal padding for temporal consistency
 - Transformer encoder with relative positional encoding
 - 3 layers × 4 heads
 
-Channels: 3× [64, 128, 128] with dropout 0.2
+Channels: 3× [64, 128, 128] with dropout 0.3 (increased from 0.2 to reduce fold variance)
+
+Training Enhancements:
+- Mixup + CutMix augmentation (alpha=0.3, cutmix_prob=0.5)
+- Early stopping with patience=10
+- Learning rate: 3e-4 (reduced from 1e-3)
+- Max epochs: 60 (increased from 10)
+- AdamW optimizer with weight_decay=1e-4
 """
 
 from pathlib import Path
@@ -18,7 +25,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.model_selection import train_test_split
 
+from ..utils.augmentation import mixup_criterion, mixup_cutmix
+from ..utils.early_stopping import EarlyStopping
 from ..utils.seeds import get_device, set_seed
 from .base import BaseModel
 
@@ -152,13 +162,17 @@ class CnnTransformerModel(BaseModel):
         cnn_kernels: list[int] = None,
         transformer_layers: int = 3,
         transformer_heads: int = 4,
-        dropout: float = 0.2,
-        n_epochs: int = 10,
+        dropout: float = 0.3,
+        n_epochs: int = 60,
         batch_size: int = 32,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 3e-4,
         device: str = "cpu",
         use_amp: bool = True,
         num_workers: int = 4,
+        early_stopping_patience: int = 10,
+        val_split: float = 0.1,
+        mixup_alpha: float = 0.3,
+        cutmix_prob: float = 0.5,
         **kwargs,
     ):
         """Initialize CNN→Transformer model.
@@ -166,21 +180,25 @@ class CnnTransformerModel(BaseModel):
         Args:
             seed: Random seed for reproducibility
             cnn_channels: CNN channel sizes (default: [64, 128, 128])
-            cnn_kernels: CNN kernel sizes (default: [3, 5, 7])
+            cnn_kernels: CNN kernel sizes (default: [3, 5, 9] - final kernel increased)
             transformer_layers: Number of Transformer encoder layers
             transformer_heads: Number of attention heads
-            dropout: Dropout rate
-            n_epochs: Number of training epochs
+            dropout: Dropout rate (increased to 0.3 to reduce fold variance)
+            n_epochs: Number of training epochs (increased to 60 with early stopping)
             batch_size: Training batch size
-            learning_rate: Learning rate for optimizer
+            learning_rate: Learning rate for optimizer (reduced to 3e-4 for stability)
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
+            early_stopping_patience: Epochs to wait before stopping (default: 10)
+            val_split: Validation split ratio for early stopping (default: 0.1)
+            mixup_alpha: Mixup interpolation strength (default: 0.3)
+            cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
             **kwargs: Additional parameters
         """
         super().__init__(seed=seed)
         self.cnn_channels = cnn_channels or [64, 128, 128]
-        self.cnn_kernels = cnn_kernels or [3, 5, 7]
+        self.cnn_kernels = cnn_kernels or [3, 5, 9]
         self.transformer_layers = transformer_layers
         self.transformer_heads = transformer_heads
         self.dropout_rate = dropout
@@ -191,6 +209,10 @@ class CnnTransformerModel(BaseModel):
         self.device = get_device(device)
         self.use_amp = use_amp and (device == "cuda") and torch.cuda.is_available()
         self.num_workers = num_workers
+        self.early_stopping_patience = early_stopping_patience
+        self.val_split = val_split
+        self.mixup_alpha = mixup_alpha
+        self.cutmix_prob = cutmix_prob
 
         set_seed(seed)
 
@@ -273,10 +295,14 @@ class CnnTransformerModel(BaseModel):
                 # Transpose back to [batch, seq_len, d_model] for Transformer
                 x = x.transpose(1, 2)
 
-                # Add relative positional encoding (simplified - just add to values)
-                # Note: Full relative positional attention would require modifying attention mechanism
-                # For now, we use absolute positional encoding as a fallback
+                # Add relative positional encoding
+                # Simplified approach: use mean of relative position embeddings as additive bias
+                # Full implementation would require modifying attention mechanism
                 B, T, C = x.shape
+                rel_pos_encoding = self.rel_pos_enc(T)  # [T, T, C]
+                # Average over relative positions for each position
+                pos_bias = rel_pos_encoding.mean(dim=1)  # [T, C]
+                x = x + pos_bias.unsqueeze(0)  # Add positional bias [1, T, C]
 
                 # Apply Transformer encoder
                 x = self.transformer(x)
@@ -353,15 +379,26 @@ class CnnTransformerModel(BaseModel):
             print(f"[GPU] Memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
             print(f"[GPU] Mixed precision (FP16): {self.use_amp}")
 
-        # Convert data to tensors (keep on CPU initially for DataLoader)
-        X_tensor = torch.FloatTensor(X)
+        # Convert labels to indices
         y_indices = np.array([self.label_to_idx[label] for label in y])
-        y_tensor = torch.LongTensor(y_indices)
 
-        # Create dataset and dataloader with GPU optimizations
-        dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
+        # Split into train/val for early stopping if val_split > 0
+        if self.val_split > 0:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y_indices, test_size=self.val_split, random_state=self.seed, stratify=y_indices
+            )
+        else:
+            X_train, y_train = X, y_indices
+            X_val, y_val = None, None
+
+        # Convert training data to tensors
+        X_train_tensor = torch.FloatTensor(X_train)
+        y_train_tensor = torch.LongTensor(y_train)
+
+        # Create training dataset and dataloader
+        train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers if self.device.type == "cuda" else 0,
@@ -369,6 +406,20 @@ class CnnTransformerModel(BaseModel):
             persistent_workers=True if self.num_workers > 0 and self.device.type == "cuda" else False,
             prefetch_factor=2 if self.num_workers > 0 else None,
         )
+
+        # Create validation dataloader if needed
+        val_dataloader = None
+        if X_val is not None:
+            X_val_tensor = torch.FloatTensor(X_val)
+            y_val_tensor = torch.LongTensor(y_val)
+            val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
+            val_dataloader = torch.utils.data.DataLoader(
+                val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=0,  # Use 0 for validation to avoid overhead
+                pin_memory=True if self.device.type == "cuda" else False,
+            )
 
         # Setup optimizer and loss
         optimizer = torch.optim.AdamW(
@@ -379,25 +430,42 @@ class CnnTransformerModel(BaseModel):
         # Setup mixed precision training
         scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
 
+        # Setup early stopping if validation data available
+        early_stopping = None
+        if val_dataloader is not None:
+            early_stopping = EarlyStopping(
+                patience=self.early_stopping_patience,
+                mode="min",
+                verbose=True
+            )
+
         # Training loop
-        self.model.train()
         for epoch in range(self.n_epochs):
+            # Training phase
+            self.model.train()
             total_loss = 0.0
             correct = 0
             total = 0
 
-            for batch_X, batch_y in dataloader:
+            for batch_X, batch_y in train_dataloader:
                 # CRITICAL: Move batch to GPU
                 batch_X = batch_X.to(self.device, non_blocking=True)
                 batch_y = batch_y.to(self.device, non_blocking=True)
+
+                # Apply augmentation (mixup + cutmix)
+                batch_X_aug, y_a, y_b, lam = mixup_cutmix(
+                    batch_X, batch_y,
+                    mixup_alpha=self.mixup_alpha,
+                    cutmix_prob=self.cutmix_prob,
+                )
 
                 optimizer.zero_grad()
 
                 # Forward pass with mixed precision
                 if self.use_amp:
                     with torch.cuda.amp.autocast():
-                        logits = self.model(batch_X)
-                        loss = criterion(logits, batch_y)
+                        logits = self.model(batch_X_aug)
+                        loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
 
                     # Backward pass with gradient scaling
                     scaler.scale(loss).backward()
@@ -405,23 +473,65 @@ class CnnTransformerModel(BaseModel):
                     scaler.update()
                 else:
                     # Standard forward/backward pass
-                    logits = self.model(batch_X)
-                    loss = criterion(logits, batch_y)
+                    logits = self.model(batch_X_aug)
+                    loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
                     loss.backward()
                     optimizer.step()
 
-                # Track metrics
+                # Track metrics (using original labels for accuracy)
                 total_loss += loss.item()
                 _, predicted = torch.max(logits, 1)
                 correct += (predicted == batch_y).sum().item()
                 total += batch_y.size(0)
 
-            avg_loss = total_loss / len(dataloader)
-            accuracy = correct / total
+            avg_train_loss = total_loss / len(train_dataloader)
+            train_accuracy = correct / total
 
-            if (epoch + 1) % max(1, self.n_epochs // 5) == 0:
-                gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
-                print(f"Epoch [{epoch+1}/{self.n_epochs}] Loss: {avg_loss:.4f} Acc: {accuracy:.4f}{gpu_mem}")
+            # Validation phase
+            if val_dataloader is not None:
+                self.model.eval()
+                val_loss = 0.0
+                val_correct = 0
+                val_total = 0
+
+                with torch.no_grad():
+                    for batch_X, batch_y in val_dataloader:
+                        batch_X = batch_X.to(self.device, non_blocking=True)
+                        batch_y = batch_y.to(self.device, non_blocking=True)
+
+                        if self.use_amp:
+                            with torch.cuda.amp.autocast():
+                                logits = self.model(batch_X)
+                                loss = criterion(logits, batch_y)
+                        else:
+                            logits = self.model(batch_X)
+                            loss = criterion(logits, batch_y)
+
+                        val_loss += loss.item()
+                        _, predicted = torch.max(logits, 1)
+                        val_correct += (predicted == batch_y).sum().item()
+                        val_total += batch_y.size(0)
+
+                avg_val_loss = val_loss / len(val_dataloader)
+                val_accuracy = val_correct / val_total
+
+                # Check early stopping
+                if early_stopping(avg_val_loss, self.model):
+                    print(f"Early stopping triggered at epoch {epoch + 1}")
+                    break
+
+                if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
+                    gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
+                    print(f"Epoch [{epoch+1}/{self.n_epochs}] Train Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f} | "
+                          f"Val Loss: {avg_val_loss:.4f} Acc: {val_accuracy:.4f}{gpu_mem}")
+            else:
+                if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
+                    gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
+                    print(f"Epoch [{epoch+1}/{self.n_epochs}] Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f}{gpu_mem}")
+
+        # Restore best model if early stopping was used
+        if early_stopping is not None:
+            early_stopping.load_best_model(self.model)
 
         self.is_fitted = True
         return self

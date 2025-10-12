@@ -5,9 +5,16 @@ It uses causal recurrence with instance normalization for stable sequential mode
 
 Architecture:
 - Multi-scale patching with sizes [7, 15, 21, 35]
-- Recurrent state-space blocks with d_model=128
+- Recurrent state-space blocks with d_model=96 (reduced from 128 to prevent overfitting)
 - Instance normalization for stable training
 - Dropout regularization
+
+Training Enhancements:
+- Mixup + CutMix augmentation (alpha=0.3, cutmix_prob=0.5)
+- Early stopping with patience=10
+- Learning rate: 3e-4 (reduced from 1e-3)
+- Max epochs: 60 (increased from 10)
+- AdamW optimizer with weight_decay=1e-4
 
 Reference:
     RWKV: Reinventing RNNs for the Transformer Era
@@ -19,7 +26,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.model_selection import train_test_split
 
+from ..utils.augmentation import mixup_criterion, mixup_cutmix
+from ..utils.early_stopping import EarlyStopping
 from ..utils.seeds import get_device, set_seed
 from .base import BaseModel
 
@@ -109,34 +119,42 @@ class RWKVTSModel(BaseModel):
     def __init__(
         self,
         seed: int = 1337,
-        d_model: int = 128,
+        d_model: int = 96,
         n_layers: int = 4,
         patch_sizes: list[int] = None,
         dropout: float = 0.2,
         instance_norm: bool = True,
-        n_epochs: int = 10,
+        n_epochs: int = 60,
         batch_size: int = 32,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 3e-4,
         device: str = "cpu",
         use_amp: bool = True,
         num_workers: int = 4,
+        early_stopping_patience: int = 10,
+        val_split: float = 0.1,
+        mixup_alpha: float = 0.3,
+        cutmix_prob: float = 0.5,
         **kwargs,
     ):
         """Initialize RWKV-TS model.
 
         Args:
             seed: Random seed for reproducibility
-            d_model: Model dimension
+            d_model: Model dimension (reduced from 128 to 96 to prevent overfitting)
             n_layers: Number of RWKV blocks
             patch_sizes: Multi-scale patch sizes for temporal features
             dropout: Dropout rate
             instance_norm: Whether to use instance normalization
-            n_epochs: Number of training epochs
+            n_epochs: Number of training epochs (increased to 60 with early stopping)
             batch_size: Training batch size
-            learning_rate: Learning rate for optimizer
+            learning_rate: Learning rate for optimizer (reduced to 3e-4 for stability)
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
+            early_stopping_patience: Epochs to wait before stopping (default: 10)
+            val_split: Validation split ratio for early stopping (default: 0.1)
+            mixup_alpha: Mixup interpolation strength (default: 0.3)
+            cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
             **kwargs: Additional parameters
         """
         super().__init__(seed=seed)
@@ -152,6 +170,10 @@ class RWKVTSModel(BaseModel):
         self.device = get_device(device)
         self.use_amp = use_amp and (device == "cuda") and torch.cuda.is_available()
         self.num_workers = num_workers
+        self.early_stopping_patience = early_stopping_patience
+        self.val_split = val_split
+        self.mixup_alpha = mixup_alpha
+        self.cutmix_prob = cutmix_prob
 
         set_seed(seed)
 
@@ -302,15 +324,26 @@ class RWKVTSModel(BaseModel):
             print(f"[GPU] Memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
             print(f"[GPU] Mixed precision (FP16): {self.use_amp}")
 
-        # Convert data to tensors (keep on CPU initially for DataLoader)
-        X_tensor = torch.FloatTensor(X)
+        # Convert labels to indices
         y_indices = np.array([self.label_to_idx[label] for label in y])
-        y_tensor = torch.LongTensor(y_indices)
 
-        # Create dataset and dataloader with GPU optimizations
-        dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
+        # Split into train/val for early stopping if val_split > 0
+        if self.val_split > 0:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y_indices, test_size=self.val_split, random_state=self.seed, stratify=y_indices
+            )
+        else:
+            X_train, y_train = X, y_indices
+            X_val, y_val = None, None
+
+        # Convert training data to tensors
+        X_train_tensor = torch.FloatTensor(X_train)
+        y_train_tensor = torch.LongTensor(y_train)
+
+        # Create training dataset and dataloader
+        train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers if self.device.type == "cuda" else 0,
@@ -318,6 +351,20 @@ class RWKVTSModel(BaseModel):
             persistent_workers=True if self.num_workers > 0 and self.device.type == "cuda" else False,
             prefetch_factor=2 if self.num_workers > 0 else None,
         )
+
+        # Create validation dataloader if needed
+        val_dataloader = None
+        if X_val is not None:
+            X_val_tensor = torch.FloatTensor(X_val)
+            y_val_tensor = torch.LongTensor(y_val)
+            val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
+            val_dataloader = torch.utils.data.DataLoader(
+                val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=0,  # Use 0 for validation to avoid overhead
+                pin_memory=True if self.device.type == "cuda" else False,
+            )
 
         # Setup optimizer and loss
         optimizer = torch.optim.AdamW(
@@ -328,25 +375,42 @@ class RWKVTSModel(BaseModel):
         # Setup mixed precision training
         scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
 
+        # Setup early stopping if validation data available
+        early_stopping = None
+        if val_dataloader is not None:
+            early_stopping = EarlyStopping(
+                patience=self.early_stopping_patience,
+                mode="min",
+                verbose=True
+            )
+
         # Training loop
-        self.model.train()
         for epoch in range(self.n_epochs):
+            # Training phase
+            self.model.train()
             total_loss = 0.0
             correct = 0
             total = 0
 
-            for batch_X, batch_y in dataloader:
+            for batch_X, batch_y in train_dataloader:
                 # CRITICAL: Move batch to GPU
                 batch_X = batch_X.to(self.device, non_blocking=True)
                 batch_y = batch_y.to(self.device, non_blocking=True)
+
+                # Apply augmentation (mixup + cutmix)
+                batch_X_aug, y_a, y_b, lam = mixup_cutmix(
+                    batch_X, batch_y,
+                    mixup_alpha=self.mixup_alpha,
+                    cutmix_prob=self.cutmix_prob,
+                )
 
                 optimizer.zero_grad()
 
                 # Forward pass with mixed precision
                 if self.use_amp:
                     with torch.cuda.amp.autocast():
-                        logits = self.model(batch_X)
-                        loss = criterion(logits, batch_y)
+                        logits = self.model(batch_X_aug)
+                        loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
 
                     # Backward pass with gradient scaling
                     scaler.scale(loss).backward()
@@ -354,23 +418,65 @@ class RWKVTSModel(BaseModel):
                     scaler.update()
                 else:
                     # Standard forward/backward pass
-                    logits = self.model(batch_X)
-                    loss = criterion(logits, batch_y)
+                    logits = self.model(batch_X_aug)
+                    loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
                     loss.backward()
                     optimizer.step()
 
-                # Track metrics
+                # Track metrics (using original labels for accuracy)
                 total_loss += loss.item()
                 _, predicted = torch.max(logits, 1)
                 correct += (predicted == batch_y).sum().item()
                 total += batch_y.size(0)
 
-            avg_loss = total_loss / len(dataloader)
-            accuracy = correct / total
+            avg_train_loss = total_loss / len(train_dataloader)
+            train_accuracy = correct / total
 
-            if (epoch + 1) % max(1, self.n_epochs // 5) == 0:
-                gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
-                print(f"Epoch [{epoch+1}/{self.n_epochs}] Loss: {avg_loss:.4f} Acc: {accuracy:.4f}{gpu_mem}")
+            # Validation phase
+            if val_dataloader is not None:
+                self.model.eval()
+                val_loss = 0.0
+                val_correct = 0
+                val_total = 0
+
+                with torch.no_grad():
+                    for batch_X, batch_y in val_dataloader:
+                        batch_X = batch_X.to(self.device, non_blocking=True)
+                        batch_y = batch_y.to(self.device, non_blocking=True)
+
+                        if self.use_amp:
+                            with torch.cuda.amp.autocast():
+                                logits = self.model(batch_X)
+                                loss = criterion(logits, batch_y)
+                        else:
+                            logits = self.model(batch_X)
+                            loss = criterion(logits, batch_y)
+
+                        val_loss += loss.item()
+                        _, predicted = torch.max(logits, 1)
+                        val_correct += (predicted == batch_y).sum().item()
+                        val_total += batch_y.size(0)
+
+                avg_val_loss = val_loss / len(val_dataloader)
+                val_accuracy = val_correct / val_total
+
+                # Check early stopping
+                if early_stopping(avg_val_loss, self.model):
+                    print(f"Early stopping triggered at epoch {epoch + 1}")
+                    break
+
+                if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
+                    gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
+                    print(f"Epoch [{epoch+1}/{self.n_epochs}] Train Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f} | "
+                          f"Val Loss: {avg_val_loss:.4f} Acc: {val_accuracy:.4f}{gpu_mem}")
+            else:
+                if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
+                    gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
+                    print(f"Epoch [{epoch+1}/{self.n_epochs}] Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f}{gpu_mem}")
+
+        # Restore best model if early stopping was used
+        if early_stopping is not None:
+            early_stopping.load_best_model(self.model)
 
         self.is_fitted = True
         return self
