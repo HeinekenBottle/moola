@@ -124,11 +124,16 @@ def train(cfg_dir, over, model, device):
     from sklearn.model_selection import train_test_split
 
     from .models import get_model
+    from .utils.seeds import print_gpu_info
 
     cfg = _load_cfg(Path(cfg_dir), list(over))
     paths = resolve_paths()
     log = setup_logging(paths.logs)
-    log.info("Train start | model=%s seed=%s", model, cfg.seed)
+    log.info("Train start | model=%s seed=%s device=%s", model, cfg.seed, device)
+
+    # GPU verification for deep learning models
+    if device == "cuda" and model in ["rwkv_ts", "cnn_transformer"]:
+        print_gpu_info()
 
     # Load training data
     train_path = paths.data / "processed" / "train.parquet"
@@ -353,6 +358,7 @@ def oof(cfg_dir, over, model, seed, device):
     import pandas as pd
 
     from .pipelines import generate_oof
+    from .utils.seeds import print_gpu_info
 
     cfg = _load_cfg(Path(cfg_dir), list(over))
     paths = resolve_paths()
@@ -362,7 +368,11 @@ def oof(cfg_dir, over, model, seed, device):
     seed = seed if seed is not None else cfg.seed
     k = cfg.get("cv_folds", 5)
 
-    log.info("OOF generation start | model=%s seed=%s k=%s", model, seed, k)
+    log.info("OOF generation start | model=%s seed=%s k=%s device=%s", model, seed, k, device)
+
+    # GPU verification for deep learning models
+    if device == "cuda" and model in ["rwkv_ts", "cnn_transformer"]:
+        print_gpu_info()
 
     # Load training data
     train_path = paths.data / "processed" / "train.parquet"

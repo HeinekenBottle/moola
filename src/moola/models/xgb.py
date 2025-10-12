@@ -43,8 +43,8 @@ class XGBModel(BaseModel):
             colsample_bytree: Fraction of features for training each tree
             reg_lambda: L2 regularization term on weights
             eval_metric: Evaluation metric (logloss, error, auc)
-            tree_method: Tree construction algorithm ('hist' for speed)
-            device: Device parameter ('cpu' or 'cuda', XGBoost supports GPU)
+            tree_method: Tree construction algorithm ('hist' for CPU, 'gpu_hist' for GPU)
+            device: Device parameter ('cpu' or 'cuda')
             **kwargs: Additional xgboost parameters
         """
         super().__init__(seed=seed)
@@ -55,9 +55,30 @@ class XGBModel(BaseModel):
         self.colsample_bytree = colsample_bytree
         self.reg_lambda = reg_lambda
         self.eval_metric = eval_metric
-        self.tree_method = tree_method
+        self.device = device
         self.kwargs = kwargs
         self.label_encoder = LabelEncoder()
+
+        # Auto-configure GPU settings
+        if device == "cuda":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    self.tree_method = "gpu_hist"
+                    # XGBoost uses 'cuda' for device parameter
+                    self.device_param = "cuda"
+                    print(f"[GPU] XGBoost using GPU acceleration: {torch.cuda.get_device_name(0)}")
+                else:
+                    print("[WARNING] CUDA requested but not available. Falling back to CPU.")
+                    self.tree_method = tree_method
+                    self.device_param = "cpu"
+            except ImportError:
+                print("[WARNING] PyTorch not found. Cannot detect CUDA. Using CPU.")
+                self.tree_method = tree_method
+                self.device_param = "cpu"
+        else:
+            self.tree_method = tree_method
+            self.device_param = "cpu"
 
         self.model = XGBClassifier(
             n_estimators=self.n_estimators,
@@ -68,6 +89,7 @@ class XGBModel(BaseModel):
             reg_lambda=self.reg_lambda,
             eval_metric=self.eval_metric,
             tree_method=self.tree_method,
+            device=self.device_param,
             random_state=self.seed,
             **self.kwargs,
         )

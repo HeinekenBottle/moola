@@ -118,6 +118,8 @@ class RWKVTSModel(BaseModel):
         batch_size: int = 32,
         learning_rate: float = 1e-3,
         device: str = "cpu",
+        use_amp: bool = True,
+        num_workers: int = 4,
         **kwargs,
     ):
         """Initialize RWKV-TS model.
@@ -133,6 +135,8 @@ class RWKVTSModel(BaseModel):
             batch_size: Training batch size
             learning_rate: Learning rate for optimizer
             device: Device to train on ('cpu' or 'cuda')
+            use_amp: Use automatic mixed precision (FP16) when device='cuda'
+            num_workers: Number of DataLoader worker processes
             **kwargs: Additional parameters
         """
         super().__init__(seed=seed)
@@ -146,6 +150,8 @@ class RWKVTSModel(BaseModel):
         self.learning_rate = learning_rate
         self.device_str = device
         self.device = get_device(device)
+        self.use_amp = use_amp and (device == "cuda") and torch.cuda.is_available()
+        self.num_workers = num_workers
 
         set_seed(seed)
 
@@ -290,15 +296,27 @@ class RWKVTSModel(BaseModel):
         # Build model
         self.model = self._build_model(self.input_dim, self.n_classes)
 
-        # Convert data to tensors
-        X_tensor = torch.FloatTensor(X).to(self.device)
-        y_indices = np.array([self.label_to_idx[label] for label in y])
-        y_tensor = torch.LongTensor(y_indices).to(self.device)
+        # GPU diagnostic logging
+        if self.device.type == "cuda":
+            print(f"[GPU] Training on: {torch.cuda.get_device_name(0)}")
+            print(f"[GPU] Memory allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+            print(f"[GPU] Mixed precision (FP16): {self.use_amp}")
 
-        # Create dataset and dataloader
+        # Convert data to tensors (keep on CPU initially for DataLoader)
+        X_tensor = torch.FloatTensor(X)
+        y_indices = np.array([self.label_to_idx[label] for label in y])
+        y_tensor = torch.LongTensor(y_indices)
+
+        # Create dataset and dataloader with GPU optimizations
         dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
         dataloader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers if self.device.type == "cuda" else 0,
+            pin_memory=True if self.device.type == "cuda" else False,
+            persistent_workers=True if self.num_workers > 0 and self.device.type == "cuda" else False,
+            prefetch_factor=2 if self.num_workers > 0 else None,
         )
 
         # Setup optimizer and loss
@@ -306,6 +324,9 @@ class RWKVTSModel(BaseModel):
             self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4
         )
         criterion = nn.CrossEntropyLoss()
+
+        # Setup mixed precision training
+        scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
 
         # Training loop
         self.model.train()
@@ -315,15 +336,28 @@ class RWKVTSModel(BaseModel):
             total = 0
 
             for batch_X, batch_y in dataloader:
+                # CRITICAL: Move batch to GPU
+                batch_X = batch_X.to(self.device, non_blocking=True)
+                batch_y = batch_y.to(self.device, non_blocking=True)
+
                 optimizer.zero_grad()
 
-                # Forward pass
-                logits = self.model(batch_X)
-                loss = criterion(logits, batch_y)
+                # Forward pass with mixed precision
+                if self.use_amp:
+                    with torch.cuda.amp.autocast():
+                        logits = self.model(batch_X)
+                        loss = criterion(logits, batch_y)
 
-                # Backward pass
-                loss.backward()
-                optimizer.step()
+                    # Backward pass with gradient scaling
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    # Standard forward/backward pass
+                    logits = self.model(batch_X)
+                    loss = criterion(logits, batch_y)
+                    loss.backward()
+                    optimizer.step()
 
                 # Track metrics
                 total_loss += loss.item()
@@ -335,7 +369,8 @@ class RWKVTSModel(BaseModel):
             accuracy = correct / total
 
             if (epoch + 1) % max(1, self.n_epochs // 5) == 0:
-                print(f"Epoch [{epoch+1}/{self.n_epochs}] Loss: {avg_loss:.4f} Acc: {accuracy:.4f}")
+                gpu_mem = f" GPU: {torch.cuda.memory_allocated(0) / 1024**3:.2f}GB" if self.device.type == "cuda" else ""
+                print(f"Epoch [{epoch+1}/{self.n_epochs}] Loss: {avg_loss:.4f} Acc: {accuracy:.4f}{gpu_mem}")
 
         self.is_fitted = True
         return self
