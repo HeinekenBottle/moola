@@ -1,12 +1,18 @@
 # Moola Configuration
 #
 # Training Mode: 2-class (consolidation vs retracement)
+#   - Current: 2 classes (consolidation: 65, retracement: 50) = 115 samples
 #   - Reversal class removed due to insufficient samples (19 → need 150+)
-#   - data/processed/train.parquet → symlink to train_2class.parquet (115 samples)
-#   - data/processed/reversals_archive.parquet → archived for future use
-#   - To restore 3-class: ln -sf train_3class.parquet train.parquet
 #
-# Model architecture automatically adapts to n_classes via len(np.unique(y))
+# Data Files:
+#   - data/processed/train.parquet → 115 samples, 2 classes (CURRENT)
+#   - data/processed/reversal_holdout.parquet → 19 reversal samples (ARCHIVED)
+#   - data/processed/train_3class_backup.parquet → 134 samples, 3 classes (BACKUP)
+#
+# To restore 3-class training:
+#   cp data/processed/train_3class_backup.parquet data/processed/train.parquet
+#
+# Note: Model architecture automatically adapts to num_classes via len(np.unique(y))
 
 moola:
   run_id: ${env:MOOLA_RUN_ID, "dev"}

@@ -1,0 +1,124 @@
+# 2-Class Transition PRD
+
+## Objective
+Transition from 3-class (134 samples) to 2-class (115 samples) problem by extracting reversal samples to holdout set and retraining all models on the more balanced consolidation vs retracement classification task.
+
+## Background
+Current state: 3-class problem with imbalanced classes (consolidation: 65, retracement: 50, reversal: 19). The reversal class is small and ambiguous. Better to focus on the main binary classification problem.
+
+## Tasks
+
+### 1. Extract Reversal Holdout
+Create extraction script to separate reversal samples from training data.
+- Read current train.parquet (134 samples)
+- Filter out reversal samples (19 samples)
+- Save reversal samples to reversal_holdout.parquet
+- Save remaining samples (115) back to train.parquet
+- Verify class distribution after extraction
+
+Implementation:
+```python
+import pandas as pd
+from pathlib import Path
+
+df = pd.read_parquet("data/processed/train.parquet")
+print(f"Before: {len(df)} samples\n{df.label.value_counts()}\n")
+
+reversal = df[df.label == 'reversal'].copy()
+train = df[df.label != 'reversal'].copy()
+
+train.to_parquet("data/processed/train.parquet")
+reversal.to_parquet("data/processed/reversal_holdout.parquet")
+
+print(f"After: {len(train)} train, {len(reversal)} holdout")
+print(train.label.value_counts())
+```
+
+### 2. Clean Stale Artifacts
+Remove all 3-class training artifacts before retraining.
+- Delete OOF predictions: data/artifacts/oof/*/v1/*.npy
+- Delete stack models: data/artifacts/models/stack/*
+- Delete CV splits: data/artifacts/splits/v1/*.json
+- Keep model architecture files (.pkl for logreg/rf/xgb)
+
+Commands:
+```bash
+rm -rf data/artifacts/oof/*/v1/*.npy
+rm -rf data/artifacts/models/stack/*
+rm -rf data/artifacts/splits/v1/*.json
+```
+
+### 3. Update Model Configurations
+Update default config for 2-class problem.
+- Edit configs/default.yaml
+- Set num_classes: 2
+- Set class_names: ['consolidation', 'retracement']
+- Verify no hardcoded 3-class assumptions in model code
+
+### 4. Retrain Classical Models
+Retrain CPU-based models on 115-sample 2-class dataset.
+- Train Logistic Regression (CPU, fast baseline)
+- Train Random Forest (CPU, ensemble)
+- Train XGBoost (CPU with SMOTE, handles imbalance)
+- Expected: Higher accuracy due to less ambiguous classes
+
+Commands:
+```bash
+moola oof --model logreg --device cpu --seed 1337
+moola oof --model rf --device cpu --seed 1337
+moola oof --model xgb --device cpu --seed 1337
+```
+
+### 5. Retrain Deep Learning Models
+Retrain GPU-based models on 2-class problem.
+- Train RWKV-TS (GPU, sequential model)
+- Train CNN-Transformer (GPU, hybrid architecture)
+- Use early stopping, mixup/cutmix augmentation
+- Expected: Better convergence on balanced problem
+
+Commands:
+```bash
+moola oof --model rwkv_ts --device cuda --seed 1337
+moola oof --model cnn_transformer --device cuda --seed 1337
+```
+
+### 6. Train Stacking Ensemble
+Train meta-learner on 2-class OOF predictions.
+- Combine all 5 model predictions
+- Train Random Forest meta-learner
+- Expected: 52-58% accuracy, better F1 score
+- Better calibration (ECE < 0.1)
+
+Command:
+```bash
+moola stack-train --stacker rf --seed 1337
+```
+
+### 7. Compare Performance
+Analyze improvement from 3-class to 2-class transition.
+- Compare accuracy: 3-class (56.7%) vs 2-class (target: 52-58%)
+- Compare F1 scores: 3-class (0.394) vs 2-class (expected higher)
+- Analyze per-class precision/recall
+- Document findings
+
+### 8. Deploy to RunPod
+Deploy updated 2-class models to RunPod.
+- Update deployment scripts with 2-class config
+- Sync new artifacts to network storage
+- Test end-to-end training pipeline
+- Verify GPU training works correctly
+
+## Success Criteria
+- Reversal holdout: 19 samples extracted
+- Training set: 115 samples (consolidation: 65, retracement: 50)
+- All 5 models retrained with num_classes=2
+- Stack accuracy: 52-58% (reasonable for balanced binary problem)
+- F1 score improved from 0.394
+- All artifacts consistent (134,2) → (115,2) shapes
+
+## Expected Improvements
+- Better class balance (65/50 vs 65/50/19)
+- Less ambiguous classification task
+- Higher F1 score due to balanced classes
+- Better model convergence
+- Cleaner decision boundary

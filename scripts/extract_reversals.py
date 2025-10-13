@@ -35,8 +35,8 @@ def extract_reversals():
     # Paths
     data_dir = repo_root / "data" / "processed"
     input_path = data_dir / "train.parquet"
-    reversals_path = data_dir / "reversals_archive.parquet"
-    output_path = data_dir / "train_2class.parquet"
+    reversals_path = data_dir / "reversal_holdout.parquet"
+    output_path = data_dir / "train.parquet"  # Overwrite original
 
     print("=" * 60)
     print("EXTRACTING REVERSALS & PREPARING 2-CLASS TRAINING DATA")
@@ -53,6 +53,12 @@ def extract_reversals():
     df = pd.read_parquet(input_path)
     print(f"   Loaded: {len(df)} samples")
     print(f"   Columns: {list(df.columns)}")
+
+    # Create backup before modifying
+    backup_path = data_dir / "train_3class_backup.parquet"
+    print(f"\n💾 Creating backup: {backup_path}")
+    df.to_parquet(backup_path, index=False)
+    print(f"   ✅ Backup saved ({len(df)} samples)")
     print()
 
     # Show original distribution
@@ -107,17 +113,18 @@ def extract_reversals():
     print("=" * 60)
     print()
     print("1. Verify 2-class data:")
-    print("   python3 -c \"import pandas as pd; df = pd.read_parquet('data/processed/train_2class.parquet'); print(df['label'].value_counts())\"")
+    print("   python3 -c \"import pandas as pd; df = pd.read_parquet('data/processed/train.parquet'); print(df['label'].value_counts())\"")
     print()
-    print("2. Run local smoke test:")
-    print("   python3 -m moola.cli oof --model xgb --folds 5 --device cpu --seed 1337")
+    print("2. Clean 3-class training artifacts:")
+    print("   rm -rf data/artifacts/oof/*/v1/*.npy data/artifacts/models/stack/* data/artifacts/splits/v1/*.json")
     print()
-    print("3. If accuracy >55%, proceed to RunPod Phase A:")
-    print("   bash .runpod/sync-to-storage.sh all")
-    print("   # Then SSH to RunPod and run training")
+    print("3. Update configs for 2-class problem:")
+    print("   Edit configs/default.yaml: set num_classes: 2")
     print()
-    print("💡 Reversal samples are safely archived and can be merged back")
-    print("   when more data is collected (target: 150+ reversal samples)")
+    print("4. Retrain all models on 2-class dataset")
+    print()
+    print("💡 Original 3-class data backed up to train_3class_backup.parquet")
+    print("   Reversal samples archived to reversal_holdout.parquet")
     print()
 
 

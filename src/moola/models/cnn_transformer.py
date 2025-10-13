@@ -14,7 +14,7 @@ Channels: 3× [64, 128, 128] with dropout 0.25 (balanced regularization)
 Multi-Task Learning (Phase 3):
 - Shared backbone: CNN + Transformer feature extractor
 - Task-specific heads:
-  1. Classification head: Predict pattern type (consolidation/retracement/reversal)
+  1. Classification head: Predict pattern type (currently: consolidation/retracement; dynamically adapts to num_classes)
   2. Pointer start head: Identify expansion start within inner window [30:75]
   3. Pointer end head: Identify expansion end within inner window [30:75]
 - Balanced loss weighting: alpha=0.5 (class), beta=0.25 (each pointer)
@@ -436,7 +436,7 @@ class CnnTransformerModel(BaseModel):
             X: Feature matrix of shape [N, D] or [N, T, D]
                 For OHLC data: [N, 105, 4] or flattened [N, 420]
             y: Target labels of shape [N]
-                Classification labels (e.g., 'consolidation', 'retracement', 'reversal')
+                Classification labels (e.g., 'consolidation', 'retracement'; model adapts to available classes)
             expansion_start: Optional expansion start indices of shape [N] (unused for single-task, can be used for multi-task pointer prediction)
             expansion_end: Optional expansion end indices of shape [N] (unused for single-task, can be used for multi-task pointer prediction)
 

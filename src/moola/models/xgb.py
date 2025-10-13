@@ -132,7 +132,7 @@ class XGBModel(BaseModel):
             print(f"[CLASS BALANCE] Original distribution: {dict(zip(unique_classes, class_counts))}")
 
             # SMOTE requires at least 2 samples per class for k_neighbors=1
-            # Use k_neighbors=1 since we have very small minority classes (reversal=19)
+            # Use k_neighbors=1 for small class sizes (consolidation: 65, retracement: 50)
             smote = SMOTE(random_state=self.seed, k_neighbors=1)
             X_resampled, y_resampled = smote.fit_resample(X_engineered, y_encoded)
 
