@@ -133,7 +133,7 @@ class RWKVTSModel(BaseModel):
         self,
         seed: int = 1337,
         d_model: int = 128,
-        n_layers: int = 4,
+        n_layers: int = 6,
         patch_sizes: list[int] = None,
         dropout: float = 0.2,
         instance_norm: bool = True,
@@ -154,7 +154,7 @@ class RWKVTSModel(BaseModel):
         Args:
             seed: Random seed for reproducibility
             d_model: Model dimension (128 for adequate capacity on 420 features)
-            n_layers: Number of RWKV blocks
+            n_layers: Number of RWKV blocks (6 layers = ~42 bar receptive field for 105-bar sequences)
             patch_sizes: Multi-scale patch sizes for temporal features
             dropout: Dropout rate
             instance_norm: Whether to use instance normalization

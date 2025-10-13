@@ -17,6 +17,63 @@ from ..models import get_model
 from ..utils.manifest import create_manifest, write_manifest
 from ..utils.metrics import calculate_ece
 from ..utils.splits import load_splits
+from scipy.stats import entropy as scipy_entropy
+
+
+def add_meta_features(oof_predictions: list[np.ndarray]) -> np.ndarray:
+    """Add diversity-based meta-features to improve stacking ensemble.
+
+    Computes 3 additional features that capture model disagreement and uncertainty:
+    1. Model agreement (std of max probabilities) - measures prediction variance
+    2. Ensemble entropy (uncertainty) - measures overall uncertainty
+    3. Max confidence (highest probability) - measures strongest prediction
+
+    Args:
+        oof_predictions: List of OOF predictions [N, C] from each base model
+
+    Returns:
+        Meta-features array of shape [N, 3]
+
+    Example:
+        For 5 models with 2 classes (consolidation, retracement):
+        - Model 1: [0.8, 0.2] → max = 0.8 (high confidence in consolidation)
+        - Model 2: [0.6, 0.4] → max = 0.6 (lower confidence)
+        - Model 3: [0.55, 0.45] → max = 0.55 (near-uniform)
+        - Model 4: [0.7, 0.3] → max = 0.7
+        - Model 5: [0.9, 0.1] → max = 0.9 (very high confidence)
+
+        Meta-features:
+        - agreement_std = std([0.8, 0.6, 0.55, 0.7, 0.9]) = 0.13
+        - ensemble_entropy = entropy([0.71, 0.29]) = 0.61 (avg across models)
+        - max_confidence = max([0.8, 0.6, 0.55, 0.7, 0.9]) = 0.9
+    """
+    n_samples = oof_predictions[0].shape[0]
+    n_models = len(oof_predictions)
+
+    # Initialize meta-features
+    agreement_std = np.zeros(n_samples)
+    ensemble_entropy = np.zeros(n_samples)
+    max_confidence = np.zeros(n_samples)
+
+    for i in range(n_samples):
+        # Extract predictions for this sample across all models
+        sample_probs = [pred[i] for pred in oof_predictions]  # List of [C] arrays
+
+        # 1. Model agreement: std of max probabilities
+        max_probs = [np.max(probs) for probs in sample_probs]
+        agreement_std[i] = np.std(max_probs)
+
+        # 2. Ensemble entropy: uncertainty in averaged predictions
+        avg_probs = np.mean(sample_probs, axis=0)
+        ensemble_entropy[i] = scipy_entropy(avg_probs + 1e-10)  # Add epsilon for numerical stability
+
+        # 3. Max confidence: highest probability across all models
+        max_confidence[i] = np.max(max_probs)
+
+    # Stack features into [N, 3] matrix
+    meta_features = np.column_stack([agreement_std, ensemble_entropy, max_confidence])
+
+    return meta_features
 
 
 def train_stack(
@@ -78,12 +135,18 @@ def train_stack(
     X_stack = np.concatenate(oof_predictions, axis=1)
     logger.info(f"Concatenated OOF matrix | shape={X_stack.shape}")
 
+    # Add diversity-based meta-features [N, 3]
+    meta_features = add_meta_features(oof_predictions)
+    X_stack = np.concatenate([X_stack, meta_features], axis=1)
+    logger.info(f"Added meta-features | final shape={X_stack.shape} (3 diversity features)")
+
     # Get number of samples and classes
     n_samples = len(y)
     n_classes = len(np.unique(y))
     n_base_models = len(base_models)
-    assert X_stack.shape == (n_samples, n_base_models * n_classes), (
-        f"Expected shape ({n_samples}, {n_base_models * n_classes}), got {X_stack.shape}"
+    expected_features = n_base_models * n_classes + 3  # +3 for meta-features
+    assert X_stack.shape == (n_samples, expected_features), (
+        f"Expected shape ({n_samples}, {expected_features}), got {X_stack.shape}"
     )
 
     # Load splits for cross-validation

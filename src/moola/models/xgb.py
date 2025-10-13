@@ -21,11 +21,13 @@ class XGBModel(BaseModel):
     def __init__(
         self,
         seed: int = 1337,
-        n_estimators: int = 500,
-        max_depth: int = 6,
-        learning_rate: float = 0.05,
+        n_estimators: int = 200,
+        max_depth: int = 4,
+        learning_rate: float = 0.1,
         subsample: float = 0.8,
         colsample_bytree: float = 0.8,
+        min_child_weight: float = 5,
+        reg_alpha: float = 0.1,
         reg_lambda: float = 1.0,
         eval_metric: str = "logloss",
         tree_method: str = "hist",
@@ -36,11 +38,13 @@ class XGBModel(BaseModel):
 
         Args:
             seed: Random seed for reproducibility
-            n_estimators: Number of boosting rounds
-            max_depth: Maximum tree depth (controls model complexity)
-            learning_rate: Step size shrinkage (smaller = more conservative)
+            n_estimators: Number of boosting rounds (reduced to 200 to prevent overfitting)
+            max_depth: Maximum tree depth (reduced to 4 for better generalization)
+            learning_rate: Step size shrinkage (increased to 0.1 for faster convergence)
             subsample: Fraction of samples for training each tree
             colsample_bytree: Fraction of features for training each tree
+            min_child_weight: Minimum sum of instance weight needed in a child (5 for small dataset)
+            reg_alpha: L1 regularization term on weights
             reg_lambda: L2 regularization term on weights
             eval_metric: Evaluation metric (logloss, error, auc)
             tree_method: Tree construction algorithm ('hist' for CPU, 'gpu_hist' for GPU)
@@ -53,6 +57,8 @@ class XGBModel(BaseModel):
         self.learning_rate = learning_rate
         self.subsample = subsample
         self.colsample_bytree = colsample_bytree
+        self.min_child_weight = min_child_weight
+        self.reg_alpha = reg_alpha
         self.reg_lambda = reg_lambda
         self.eval_metric = eval_metric
         self.device = device
@@ -86,6 +92,8 @@ class XGBModel(BaseModel):
             learning_rate=self.learning_rate,
             subsample=self.subsample,
             colsample_bytree=self.colsample_bytree,
+            min_child_weight=self.min_child_weight,
+            reg_alpha=self.reg_alpha,
             reg_lambda=self.reg_lambda,
             eval_metric=self.eval_metric,
             tree_method=self.tree_method,
