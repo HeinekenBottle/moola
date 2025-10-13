@@ -59,9 +59,10 @@ deploy_to_runpod_fast() {
     mkdir -p "$DEPLOY_DIR/src"
     cp -r "$PROJECT_ROOT/src" "$DEPLOY_DIR/"
 
-    # 4. Dependencies
+    # 4. Dependencies and metadata
     cp "$PROJECT_ROOT/pyproject.toml" "$DEPLOY_DIR/"
     cp "$PROJECT_ROOT/requirements-runpod.txt" "$DEPLOY_DIR/"
+    cp "$PROJECT_ROOT/README.md" "$DEPLOY_DIR/"
 
     # 5. Deployment scripts
     mkdir -p "$DEPLOY_DIR/scripts"
