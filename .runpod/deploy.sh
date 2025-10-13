@@ -102,6 +102,10 @@ if [[ ! -d "venv" ]]; then
     python3 -m venv venv --system-site-packages
     source venv/bin/activate
 
+    # Upgrade build tools first (fixes packaging.licenses error)
+    echo "📦 Upgrading build tools..."
+    pip install --no-cache-dir --upgrade pip setuptools wheel packaging
+
     # Install ONLY moola-specific packages (~50MB, 30-60 seconds)
     echo "📦 Installing moola-specific packages..."
     pip install --no-cache-dir -r requirements-runpod.txt
