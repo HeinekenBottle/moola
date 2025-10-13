@@ -6,6 +6,7 @@ It uses causal recurrence with instance normalization for stable sequential mode
 Architecture:
 - Multi-scale patching with sizes [7, 15, 21, 35]
 - Recurrent state-space blocks with d_model=128 (restored from 96 for better capacity)
+- 4 layers (reverted from 6 - too many parameters for small dataset)
 - Instance normalization for stable training
 - Dropout regularization
 
@@ -16,6 +17,9 @@ Training Enhancements:
 - Max epochs: 60 (increased from 10)
 - AdamW optimizer with weight_decay=1e-4
 - Validation split: 15% (~20 samples for stable early stopping)
+
+Note: 6 layers caused severe overfitting (982K params for 115 samples = 8,540:1 ratio)
+      4 layers provides 655K params (5,695:1 ratio - still high but more stable)
 
 Reference:
     RWKV: Reinventing RNNs for the Transformer Era
@@ -133,7 +137,7 @@ class RWKVTSModel(BaseModel):
         self,
         seed: int = 1337,
         d_model: int = 128,
-        n_layers: int = 6,
+        n_layers: int = 4,
         patch_sizes: list[int] = None,
         dropout: float = 0.2,
         instance_norm: bool = True,
@@ -154,7 +158,7 @@ class RWKVTSModel(BaseModel):
         Args:
             seed: Random seed for reproducibility
             d_model: Model dimension (128 for adequate capacity on 420 features)
-            n_layers: Number of RWKV blocks (6 layers = ~42 bar receptive field for 105-bar sequences)
+            n_layers: Number of RWKV blocks (4 layers = ~28 bar receptive field for 105-bar sequences)
             patch_sizes: Multi-scale patch sizes for temporal features
             dropout: Dropout rate
             instance_norm: Whether to use instance normalization

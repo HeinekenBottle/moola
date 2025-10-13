@@ -19,10 +19,11 @@ Multi-Task Learning (Phase 3):
   3. Pointer end head: Identify expansion end within inner window [30:75]
 - Balanced loss weighting: alpha=0.5 (class), beta=0.25 (each pointer)
 
-Training Enhancements:
+Training Enhancements (REVERTED from Phase 1 optimizations):
 - Mixup + CutMix augmentation (alpha=0.2, gentler mixing for small dataset)
-- Early stopping with patience=20 (increased from 10 to allow convergence)
-- Learning rate: 5e-4 (increased from 3e-4 for faster convergence)
+- Early stopping with patience=20 (reverted from 30 to prevent training collapsed models)
+- Learning rate: 5e-4 (reverted from 1e-3 - higher LR caused gradient explosion)
+- Dropout: 0.25 (reverted from 0.1 - essential regularization for small dataset)
 - Max epochs: 60 (increased from 10)
 - AdamW optimizer with weight_decay=1e-4
 - Validation split: 15% (~20 samples for stable early stopping)
@@ -199,14 +200,14 @@ class CnnTransformerModel(BaseModel):
         cnn_kernels: list[int] = None,
         transformer_layers: int = 3,
         transformer_heads: int = 4,
-        dropout: float = 0.1,
+        dropout: float = 0.25,
         n_epochs: int = 60,
         batch_size: int = 32,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 5e-4,
         device: str = "cpu",
         use_amp: bool = True,
         num_workers: int = 4,
-        early_stopping_patience: int = 30,
+        early_stopping_patience: int = 20,
         val_split: float = 0.15,
         mixup_alpha: float = 0.2,
         cutmix_prob: float = 0.5,
@@ -223,14 +224,14 @@ class CnnTransformerModel(BaseModel):
             cnn_kernels: CNN kernel sizes (default: [3, 5, 9] - final kernel increased)
             transformer_layers: Number of Transformer encoder layers
             transformer_heads: Number of attention heads
-            dropout: Dropout rate (0.1 reduced to prevent signal suppression)
+            dropout: Dropout rate (0.25 balanced regularization for small dataset)
             n_epochs: Number of training epochs (increased to 60 with early stopping)
             batch_size: Training batch size
-            learning_rate: Learning rate for optimizer (1e-3 increased for better gradient updates)
+            learning_rate: Learning rate for optimizer (5e-4 stable for small dataset)
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
-            early_stopping_patience: Epochs to wait before stopping (default: 30)
+            early_stopping_patience: Epochs to wait before stopping (default: 20)
             val_split: Validation split ratio for early stopping (default: 0.15, ~20 samples)
             mixup_alpha: Mixup interpolation strength (default: 0.2, gentler for small dataset)
             cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
