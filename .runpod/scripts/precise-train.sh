@@ -9,7 +9,7 @@ echo "=========================================================="
 
 # Environment
 cd /workspace/moola
-source /workspace/venv/bin/activate
+source /tmp/moola-venv/bin/activate
 
 # Verify environment
 echo "🔍 Environment verification..."

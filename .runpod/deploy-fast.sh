@@ -63,8 +63,13 @@ deploy_to_runpod_fast() {
     # 4. Dependencies
     cp "$PROJECT_ROOT/pyproject.toml" "$DEPLOY_DIR/"
 
-    # 5. Deployment script (will be created below)
+    # 5. Deployment scripts
     mkdir -p "$DEPLOY_DIR/scripts"
+    # Copy optimized setup script
+    cp "$SCRIPT_DIR/scripts/optimized-setup.sh" "$DEPLOY_DIR/scripts/"
+    cp "$SCRIPT_DIR/scripts/fast-train.sh" "$DEPLOY_DIR/scripts/"
+    cp "$SCRIPT_DIR/scripts/precise-train.sh" "$DEPLOY_DIR/scripts/"
+    chmod +x "$DEPLOY_DIR/scripts/"*.sh
 
     success "Package created at $DEPLOY_DIR"
 
@@ -94,26 +99,28 @@ echo "✅ Storage found at: $STORAGE_PATH"
 WORKSPACE="$STORAGE_PATH"
 cd "$WORKSPACE"
 
-# Create virtual environment if it doesn't exist
-if [[ ! -d "venv" ]]; then
-    echo "📦 Creating Python environment..."
-    python3 -m venv venv
-    source venv/bin/activate
+# Use optimized venv (template already has PyTorch!)
+if [[ ! -d "/tmp/moola-venv" ]]; then
+    echo "📦 Creating lightweight venv (template has PyTorch)..."
+    # Use --system-site-packages to inherit torch/numpy/pandas from template
+    python3 -m venv /tmp/moola-venv --system-site-packages
+    source /tmp/moola-venv/bin/activate
 
-    # Install system dependencies
-    pip install --upgrade pip setuptools wheel
+    # Install ONLY extras not in template (~50MB, 30-60 seconds)
+    echo "📦 Installing extras (loguru, xgboost, etc.)..."
+    pip install --no-cache-dir \
+        loguru click rich typer xgboost pandera pyarrow \
+        pydantic pyyaml hydra-core python-dotenv
 
-    # Install PyTorch first (critical)
-    echo "🧠 Installing PyTorch..."
-    pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 \
-        --index-url https://download.pytorch.org/whl/cu118
+    # Install moola package (editable, no deps)
+    echo "📦 Installing moola..."
+    pip install --no-cache-dir -e . --no-deps
 
-    # Install project dependencies
-    echo "📦 Installing project dependencies..."
-    pip install -e .
+    echo "✅ Lightweight venv created (~50MB vs 4GB)"
+    echo "💾 Storage saved: 4GB (no PyTorch duplication)"
 else
-    echo "♻️  Using existing environment..."
-    source venv/bin/activate
+    echo "♻️  Using existing lightweight venv..."
+    source /tmp/moola-venv/bin/activate
 fi
 
 # Verify setup

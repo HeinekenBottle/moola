@@ -9,7 +9,8 @@ echo "=================================="
 
 # Environment
 cd /workspace/moola
-source /workspace/venv/bin/activate
+source /tmp/moola-venv/bin/activate
+export PYTHONPATH="/workspace/moola/src:$PYTHONPATH"
 
 # Verify setup
 echo "🔍 Quick verification..."

@@ -27,9 +27,12 @@ sync_from_s3() {
 
     echo "📥 Downloading $description..."
     mkdir -p "$dest"
-    aws s3 sync "$src" "$dest" \
+    # Use cp with --recursive for better reliability vs sync with pagination issues
+    aws s3 cp "$src" "$dest" \
+        --recursive \
         --region "$RUNPOD_S3_REGION" \
-        --endpoint-url "$RUNPOD_S3_ENDPOINT"
+        --endpoint-url "$RUNPOD_S3_ENDPOINT" \
+        --no-progress 2>&1 | grep -v "Completed" || true
     echo "✅ $description downloaded"
 }
 
