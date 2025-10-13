@@ -167,7 +167,8 @@ if [[ "$1" == "--train" ]] || [[ "$1" == "-t" ]]; then
     python -m moola.cli oof --model rf --device cpu --seed 1337
     python -m moola.cli oof --model xgb --device cpu --seed 1337
 
-    if torch.cuda.is_available(); then
+    # Check GPU availability
+    if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
         echo "🧠 Deep learning models (GPU)..."
         python -m moola.cli oof --model cnn_transformer --device cuda --seed 1337
         python -m moola.cli oof --model rwkv_ts --device cuda --seed 1337
