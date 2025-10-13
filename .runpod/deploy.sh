@@ -51,10 +51,9 @@ deploy_to_runpod() {
 
     # 2. Data (only what we need)
     mkdir -p "$DEPLOY_DIR/data/processed"
-    cp "$PROJECT_ROOT/data/processed/train_2class.parquet" "$DEPLOY_DIR/data/processed/"
-    cp "$PROJECT_ROOT/data/processed/reversals_archive.parquet" "$DEPLOY_DIR/data/processed/" 2>/dev/null || true
+    cp "$PROJECT_ROOT/data/processed/train_pivot_134.parquet" "$DEPLOY_DIR/data/processed/"
     cd "$DEPLOY_DIR/data/processed/"
-    ln -sf train_2class.parquet train.parquet
+    ln -sf train_pivot_134.parquet train.parquet
     cd "$PROJECT_ROOT"
 
     # 3. Project source
@@ -63,6 +62,7 @@ deploy_to_runpod() {
 
     # 4. Dependencies
     cp "$PROJECT_ROOT/pyproject.toml" "$DEPLOY_DIR/"
+    cp "$PROJECT_ROOT/requirements-runpod.txt" "$DEPLOY_DIR/"
 
     # 5. Deployment script (will be created below)
     mkdir -p "$DEPLOY_DIR/scripts"
@@ -95,25 +95,24 @@ echo "✅ Storage found at: $STORAGE_PATH"
 WORKSPACE="$STORAGE_PATH"
 cd "$WORKSPACE"
 
-# Create virtual environment if it doesn't exist
+# Create lightweight venv if it doesn't exist
 if [[ ! -d "venv" ]]; then
-    echo "📦 Creating Python environment..."
-    python3 -m venv venv
+    echo "📦 Creating lightweight venv (template already has PyTorch)..."
+    # Use --system-site-packages to inherit torch/numpy/pandas from template
+    python3 -m venv venv --system-site-packages
     source venv/bin/activate
 
-    # Install system dependencies
-    pip install --upgrade pip setuptools wheel
+    # Install ONLY moola-specific packages (~50MB, 30-60 seconds)
+    echo "📦 Installing moola-specific packages..."
+    pip install --no-cache-dir -r requirements-runpod.txt
 
-    # Install PyTorch first (critical)
-    echo "🧠 Installing PyTorch..."
-    pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 \
-        --index-url https://download.pytorch.org/whl/cu118
+    # Install moola package (editable, no deps)
+    pip install --no-cache-dir -e . --no-deps
 
-    # Install project dependencies
-    echo "📦 Installing project dependencies..."
-    pip install -e .
+    echo "✅ Lightweight venv created (~50MB vs 4GB)"
+    echo "💾 Storage saved: 4GB (no PyTorch duplication)"
 else
-    echo "♻️  Using existing environment..."
+    echo "♻️  Using existing lightweight venv..."
     source venv/bin/activate
 fi
 

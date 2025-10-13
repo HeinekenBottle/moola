@@ -41,7 +41,8 @@ from loguru import logger
 
 # Paths
 REPO_ROOT = Path(__file__).parent.parent
-PIVOT_PARQUETS = Path("/Users/jack/pivot-experiments/data/processed/windows105/train")
+# Pivot is at same level as moola repo - use relative path from repo root
+PIVOT_PARQUETS = REPO_ROOT.parent / "pivot-experiments" / "data" / "processed" / "windows105" / "train"
 DEFAULT_OUTPUT = REPO_ROOT / "data" / "processed" / "train_pivot_134.parquet"
 
 # Add src to path

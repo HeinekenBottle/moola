@@ -5,6 +5,10 @@ Comprehensive test summary for XGBoost pipeline with expansion indices.
 
 import json
 from datetime import datetime
+from pathlib import Path
+
+# Get repo root for relative paths
+REPO_ROOT = Path(__file__).parent.parent
 
 # Training results from the pipeline run
 training_results = {
@@ -207,7 +211,8 @@ print()
 print("="*80)
 
 # Save report to JSON
-output_path = "/Users/jack/projects/moola/data/artifacts/test_report.json"
+output_path = REPO_ROOT / "data" / "artifacts" / "test_report.json"
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(training_results, f, indent=2)
 

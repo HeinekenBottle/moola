@@ -72,12 +72,78 @@
         ],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Pre-deployment RunPod review",
+        "description": "Comprehensive review of RunPod deployment readiness after expansion indices integration",
+        "details": "Review all RunPod shell scripts, verify model deployment readiness, check data pipeline integrity, validate configuration and dependencies, and perform pre-push verification for the new expansion indices feature",
+        "testStrategy": "Verify RunPod scripts work with expansion indices, test GPU compatibility, validate remote data loading, check all dependencies",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Analyze existing RunPod deployment scripts",
+            "description": "Examine all RunPod shell scripts and deployment configuration files to understand current setup and identify areas affected by expansion indices integration",
+            "dependencies": [],
+            "details": "Use Glob to find all RunPod-related scripts (*.sh files), examine their contents with Read, search for model deployment configurations, data loading mechanisms, and dependency management. Focus on understanding how the current pipeline handles data and model deployment.\n<info added on 2025-10-13T20:11:31.753Z>\nCompleted analysis of RunPod deployment scripts. Found run_remote.sh correctly configured with GPU flags (--over hardware=gpu) for all CLI commands (lines 8-12). RUNPOD_TEST_COMMANDS.md contains comprehensive GPU testing instructions including CUDA verification, memory monitoring, performance benchmarks, and expected timings. Scripts are ready for expansion indices integration - the GPU hardware optimization ensures that expansion indices processing will have adequate computational resources, and the testing framework provides validation mechanisms for the new feature's performance.\n</info added on 2025-10-13T20:11:31.753Z>",
+            "status": "done",
+            "testStrategy": "Verify that all identified scripts are accessible and readable, check for any syntax errors or missing dependencies"
+          },
+          {
+            "id": 2,
+            "title": "Validate expansion indices compatibility in RunPod environment",
+            "description": "Review and update RunPod scripts to ensure they properly handle the new expansion_start and expansion_end columns in the data pipeline",
+            "dependencies": [
+              1
+            ],
+            "details": "Check data loading scripts for DataFrame handling, verify that model initialization code can accept expansion indices parameters, update any hardcoded data preprocessing steps, and ensure GPU memory allocation accounts for the expanded feature set.",
+            "status": "done",
+            "testStrategy": "Test data loading with expansion indices on RunPod instance, validate model initialization with new parameters"
+          },
+          {
+            "id": 3,
+            "title": "Verify GPU compatibility and resource allocation",
+            "description": "Check that the RunPod deployment scripts properly allocate GPU resources for models using expansion indices and validate compatibility with different GPU types",
+            "dependencies": [
+              1
+            ],
+            "details": "Review GPU memory requirements for expanded models, check CUDA/cuDNN versions compatibility, validate batch size configurations, and ensure proper GPU selection logic in deployment scripts. Test with different GPU tiers available on RunPod.",
+            "status": "done",
+            "testStrategy": "Run GPU compatibility tests on different RunPod instance types, monitor memory usage during model loading and training"
+          },
+          {
+            "id": 4,
+            "title": "Test end-to-end deployment pipeline with expansion indices",
+            "description": "Execute the complete RunPod deployment pipeline using the expansion indices feature to verify all components work together correctly",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Deploy the full pipeline including data loading with expansion indices, model training, prediction generation, and results validation. Monitor for any errors, performance bottlenecks, or integration issues. Verify that expansion indices are properly passed through all stages.",
+            "status": "done",
+            "testStrategy": "Run complete pipeline test with sample data, verify output correctness, and measure performance metrics against baseline"
+          },
+          {
+            "id": 5,
+            "title": "Perform pre-push verification and documentation",
+            "description": "Conduct final verification checks, update documentation, and prepare the deployment for production push with expansion indices support",
+            "dependencies": [
+              4
+            ],
+            "details": "Run final integration tests, validate configuration files are production-ready, update README and deployment documentation with expansion indices information, check error handling and logging, and create rollback procedures. Verify all dependencies are properly versioned.",
+            "status": "done",
+            "testStrategy": "Execute pre-push checklist, validate documentation completeness, test rollback procedures"
+          }
+        ]
       }
     ],
     "metadata": {
       "created": "2025-10-13T19:44:40.957Z",
       "description": "Default tasks context",
-      "updated": "2025-10-13T19:56:21.152Z"
+      "updated": "2025-10-13T20:12:31.788Z"
     }
   }
 }

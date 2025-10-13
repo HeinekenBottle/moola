@@ -1,0 +1,26 @@
+# Moola-specific packages for RunPod deployment
+# PyTorch template already has: torch, numpy, pandas, scikit-learn, scipy, matplotlib
+# Use with: pip install --no-cache-dir -r requirements-runpod.txt
+
+# Core ML packages (not in template or need specific version)
+xgboost>=2.0,<3.0
+imbalanced-learn==0.14.0
+
+# Logging & CLI
+loguru>=0.7
+click>=8.1
+typer>=0.12
+rich>=13.7
+
+# Config & validation
+pydantic>=2.8
+pyyaml>=6.0
+hydra-core>=1.3
+python-dotenv>=1.0
+pandera>=0.26.1
+
+# Data handling
+pyarrow>=14.0
+
+# NOTE: DO NOT include torch, numpy, pandas, scikit-learn, scipy
+# These are pre-installed in RunPod PyTorch templates

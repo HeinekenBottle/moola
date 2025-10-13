@@ -50,10 +50,9 @@ deploy_to_runpod_fast() {
 
     # 2. Data (only what we need)
     mkdir -p "$DEPLOY_DIR/data/processed"
-    cp "$PROJECT_ROOT/data/processed/train_2class.parquet" "$DEPLOY_DIR/data/processed/"
-    cp "$PROJECT_ROOT/data/processed/reversals_archive.parquet" "$DEPLOY_DIR/data/processed/" 2>/dev/null || true
+    cp "$PROJECT_ROOT/data/processed/train_pivot_134.parquet" "$DEPLOY_DIR/data/processed/"
     cd "$DEPLOY_DIR/data/processed/"
-    ln -sf train_2class.parquet train.parquet
+    ln -sf train_pivot_134.parquet train.parquet
     cd "$PROJECT_ROOT"
 
     # 3. Project source
@@ -62,14 +61,21 @@ deploy_to_runpod_fast() {
 
     # 4. Dependencies
     cp "$PROJECT_ROOT/pyproject.toml" "$DEPLOY_DIR/"
+    cp "$PROJECT_ROOT/requirements-runpod.txt" "$DEPLOY_DIR/"
 
     # 5. Deployment scripts
     mkdir -p "$DEPLOY_DIR/scripts"
-    # Copy optimized setup script
-    cp "$SCRIPT_DIR/scripts/optimized-setup.sh" "$DEPLOY_DIR/scripts/"
-    cp "$SCRIPT_DIR/scripts/fast-train.sh" "$DEPLOY_DIR/scripts/"
-    cp "$SCRIPT_DIR/scripts/precise-train.sh" "$DEPLOY_DIR/scripts/"
-    chmod +x "$DEPLOY_DIR/scripts/"*.sh
+    # Copy optimized setup scripts if they exist
+    if [[ -f "$SCRIPT_DIR/scripts/optimized-setup.sh" ]]; then
+        cp "$SCRIPT_DIR/scripts/optimized-setup.sh" "$DEPLOY_DIR/scripts/"
+    fi
+    if [[ -f "$SCRIPT_DIR/scripts/fast-train.sh" ]]; then
+        cp "$SCRIPT_DIR/scripts/fast-train.sh" "$DEPLOY_DIR/scripts/"
+    fi
+    if [[ -f "$SCRIPT_DIR/scripts/precise-train.sh" ]]; then
+        cp "$SCRIPT_DIR/scripts/precise-train.sh" "$DEPLOY_DIR/scripts/"
+    fi
+    chmod +x "$DEPLOY_DIR/scripts/"*.sh 2>/dev/null || true
 
     success "Package created at $DEPLOY_DIR"
 
@@ -106,11 +112,9 @@ if [[ ! -d "/tmp/moola-venv" ]]; then
     python3 -m venv /tmp/moola-venv --system-site-packages
     source /tmp/moola-venv/bin/activate
 
-    # Install ONLY extras not in template (~50MB, 30-60 seconds)
-    echo "📦 Installing extras (loguru, xgboost, etc.)..."
-    pip install --no-cache-dir \
-        loguru click rich typer xgboost pandera pyarrow \
-        pydantic pyyaml hydra-core python-dotenv
+    # Install ONLY moola-specific packages (~50MB, 30-60 seconds)
+    echo "📦 Installing moola-specific packages..."
+    pip install --no-cache-dir -r requirements-runpod.txt
 
     # Install moola package (editable, no deps)
     echo "📦 Installing moola..."

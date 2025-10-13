@@ -46,4 +46,48 @@ node_modules/
 # tasks/
 
 # MCP configuration with API keys
-.mcp.json 
+.mcp.json
+
+# Python cache (additional)
+*.pyc
+*.pyo
+.Python
+*.so
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.coverage
+coverage.xml
+htmlcov/
+
+# ML artifacts
+*.pkl
+*.joblib
+*.h5
+*.ckpt
+*.pth
+*.pt
+wandb/
+mlruns/
+
+# Moola-specific
+moola-sdk/
+data/artifacts/**/*.pkl
+data/artifacts/**/*.npy
+
+# macOS
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Temporary
+*.tmp
+*.temp
+.cache/
