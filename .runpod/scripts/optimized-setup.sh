@@ -34,14 +34,14 @@ else
     echo "✅ Data linked to network storage"
 fi
 
-# Ensure train.parquet symlink exists
-if [[ ! -f "/workspace/moola/data/processed/train.parquet" ]]; then
-    if [[ -f "/workspace/moola/data/processed/train_2class.parquet" ]]; then
-        cd /workspace/moola/data/processed/
-        ln -sf train_2class.parquet train.parquet
-        echo "✅ Created train.parquet symlink"
+# Ensure train.parquet symlink exists in network storage
+if [[ ! -f "/workspace/data/processed/train.parquet" ]]; then
+    if [[ -f "/workspace/data/processed/train_pivot_134.parquet" ]]; then
+        cd /workspace/data/processed/
+        ln -sf train_pivot_134.parquet train.parquet
+        echo "✅ Created train.parquet symlink in network storage"
     else
-        echo "⚠️ Warning: training data not found"
+        echo "⚠️ Warning: training data not found at /workspace/data/processed/"
     fi
 fi
 echo ""
@@ -79,9 +79,12 @@ else
 fi
 echo ""
 
-# 4. Set PYTHONPATH permanently
+# 4. Set environment variables permanently
 echo "⚙️  Step 4/6: Configuring environment..."
 export PYTHONPATH="/workspace/moola/src:$PYTHONPATH"
+export MOOLA_DATA_DIR="/workspace/data"
+export MOOLA_ARTIFACTS_DIR="/workspace/artifacts"
+export MOOLA_LOG_DIR="/workspace/logs"
 
 # Add to .bashrc for future sessions
 if ! grep -q "PYTHONPATH.*moola" ~/.bashrc 2>/dev/null; then
@@ -89,6 +92,9 @@ if ! grep -q "PYTHONPATH.*moola" ~/.bashrc 2>/dev/null; then
 
 # Moola environment
 export PYTHONPATH="/workspace/moola/src:$PYTHONPATH"
+export MOOLA_DATA_DIR="/workspace/data"
+export MOOLA_ARTIFACTS_DIR="/workspace/artifacts"
+export MOOLA_LOG_DIR="/workspace/logs"
 
 # Activate venv automatically
 if [[ -d "/tmp/moola-venv" ]]; then
@@ -97,7 +103,7 @@ fi
 
 # Quick commands
 alias moola-train='cd /workspace/moola && bash /workspace/scripts/fast-train.sh'
-alias moola-status='ls -lh /workspace/moola/data/artifacts/oof/*/v1/ 2>/dev/null || echo "No training done yet"'
+alias moola-status='ls -lh /workspace/artifacts/oof/*/v1/ 2>/dev/null || echo "No training done yet"'
 EOF
     echo "✅ Environment configured in .bashrc"
 else
@@ -132,16 +138,22 @@ except Exception as e:
     print(f'❌ Import failed: {e}')
     sys.exit(1)
 
-# Check data
+# Check data (uses MOOLA_DATA_DIR if set, otherwise defaults)
 import pandas as pd
 from pathlib import Path
-train_path = Path('/workspace/moola/data/processed/train.parquet')
+import os
+
+data_dir = Path(os.getenv('MOOLA_DATA_DIR', '/workspace/data'))
+train_path = data_dir / 'processed' / 'train.parquet'
+
 if train_path.exists():
     df = pd.read_parquet(train_path)
     print(f'✅ Data: {df.shape[0]} samples, {len(df[\"label\"].unique())} classes')
     print(f'   Classes: {sorted(df[\"label\"].unique())}')
+    print(f'   Location: {train_path}')
 else:
-    print('⚠️ Training data not found at', train_path)
+    print(f'⚠️ Training data not found at {train_path}')
+    print(f'   Checked: MOOLA_DATA_DIR={os.getenv(\"MOOLA_DATA_DIR\", \"not set\")}')
 "
 echo ""
 

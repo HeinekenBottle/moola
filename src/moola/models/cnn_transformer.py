@@ -427,8 +427,8 @@ class CnnTransformerModel(BaseModel):
         self,
         X: np.ndarray,
         y: np.ndarray,
-        pointer_starts: Optional[np.ndarray] = None,
-        pointer_ends: Optional[np.ndarray] = None,
+        expansion_start: Optional[np.ndarray] = None,
+        expansion_end: Optional[np.ndarray] = None,
     ) -> "CnnTransformerModel":
         """Train CNN→Transformer model with optional multi-task pointer prediction.
 
@@ -437,10 +437,8 @@ class CnnTransformerModel(BaseModel):
                 For OHLC data: [N, 105, 4] or flattened [N, 420]
             y: Target labels of shape [N]
                 Classification labels (e.g., 'consolidation', 'retracement', 'reversal')
-            pointer_starts: Optional pointer start indices [N] in range [0, 44]
-                Relative to inner window [30:75]. Required if predict_pointers=True
-            pointer_ends: Optional pointer end indices [N] in range [0, 44]
-                Relative to inner window [30:75]. Required if predict_pointers=True
+            expansion_start: Optional expansion start indices of shape [N] (unused for single-task, can be used for multi-task pointer prediction)
+            expansion_end: Optional expansion end indices of shape [N] (unused for single-task, can be used for multi-task pointer prediction)
 
         Returns:
             Self for method chaining
@@ -450,6 +448,10 @@ class CnnTransformerModel(BaseModel):
             ValueError: If pointer labels provided but predict_pointers=False (warning only)
         """
         set_seed(self.seed)
+
+        # Map expansion parameters to pointer parameters for internal use
+        pointer_starts = expansion_start
+        pointer_ends = expansion_end
 
         # Validate multi-task mode configuration
         has_pointers = (pointer_starts is not None) and (pointer_ends is not None)
@@ -795,11 +797,13 @@ class CnnTransformerModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class labels.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D]
+            expansion_start: Optional expansion start indices of shape [N] (unused for deep learning models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for deep learning models)
 
         Returns:
             Predicted labels of shape [N]
@@ -838,11 +842,13 @@ class CnnTransformerModel(BaseModel):
 
         return predicted_labels
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D]
+            expansion_start: Optional expansion start indices of shape [N] (unused for deep learning models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for deep learning models)
 
         Returns:
             Class probabilities of shape [N, C]

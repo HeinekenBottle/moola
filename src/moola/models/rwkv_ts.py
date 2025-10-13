@@ -293,12 +293,14 @@ class RWKVTSModel(BaseModel):
 
         return model.to(self.device)
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "RWKVTSModel":
+    def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "RWKVTSModel":
         """Train RWKV-TS model.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D] for sequences
             y: Target labels of shape [N]
+            expansion_start: Optional expansion start indices of shape [N] (unused for deep learning models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for deep learning models)
 
         Returns:
             Self for method chaining
@@ -510,11 +512,13 @@ class RWKVTSModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class labels.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D]
+            expansion_start: Optional expansion start indices of shape [N] (unused for deep learning models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for deep learning models)
 
         Returns:
             Predicted labels of shape [N]
@@ -543,11 +547,13 @@ class RWKVTSModel(BaseModel):
 
         return predicted_labels
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D]
+            expansion_start: Optional expansion start indices of shape [N] (unused for deep learning models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for deep learning models)
 
         Returns:
             Class probabilities of shape [N, C]

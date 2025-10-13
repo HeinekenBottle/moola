@@ -29,12 +29,14 @@ class LogRegModel(BaseModel):
             random_state=self.seed, max_iter=self.max_iter, **self.kwargs
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "LogRegModel":
+    def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "LogRegModel":
         """Train logistic regression model.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
             y: Target labels of shape [N]
+            expansion_start: Optional expansion start indices of shape [N] (unused for classical models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for classical models)
 
         Returns:
             Self for method chaining
@@ -54,11 +56,13 @@ class LogRegModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class labels.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
+            expansion_start: Optional expansion start indices of shape [N] (unused for classical models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for classical models)
 
         Returns:
             Predicted labels of shape [N]
@@ -78,11 +82,13 @@ class LogRegModel(BaseModel):
 
         return self.model.predict(X_engineered)
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
+            expansion_start: Optional expansion start indices of shape [N] (unused for classical models)
+            expansion_end: Optional expansion end indices of shape [N] (unused for classical models)
 
         Returns:
             Class probabilities of shape [N, C]

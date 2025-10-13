@@ -11,6 +11,8 @@ echo "=================================="
 cd /workspace/moola
 source /tmp/moola-venv/bin/activate
 export PYTHONPATH="/workspace/moola/src:$PYTHONPATH"
+export MOOLA_DATA_DIR="/workspace/data"
+export MOOLA_ARTIFACTS_DIR="/workspace/artifacts"
 
 # Verify setup
 echo "🔍 Quick verification..."
