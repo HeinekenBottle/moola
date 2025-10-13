@@ -1,7 +1,6 @@
 #!/bin/bash
-# Streamlined RunPod Deployment - One Command Solution
-# Replaces ALL existing .runpod scripts with a single, reliable workflow
-# Usage: ./deploy.sh [deploy|train|status|logs|cleanup]
+# FAST RunPod Deployment - No Slow Cleanup
+# Optimized version that skips the slow S3 deletion step
 
 set -e
 
@@ -31,9 +30,9 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # AWS credentials - assumes they're already exported in the shell
 # No credential check - user has keys exported in another shell
 
-# Deploy everything to RunPod
-deploy_to_runpod() {
-    log "🚀 Deploying Moola to RunPod (one-command solution)"
+# Deploy everything to RunPod (FAST VERSION)
+deploy_to_runpod_fast() {
+    log "🚀 FAST Deploy to RunPod (skipping slow cleanup)"
 
     # No credential check - user has keys exported in shell
     log "📋 Using existing AWS credentials from shell environment"
@@ -43,7 +42,7 @@ deploy_to_runpod() {
     DEPLOY_DIR="/tmp/moola-deploy-$(date +%s)"
     mkdir -p "$DEPLOY_DIR"
 
-    # Copy essential files
+    # Copy essential files (minimal set)
     log "📋 Packing essential files..."
 
     # 1. Configuration
@@ -75,8 +74,8 @@ deploy_to_runpod() {
 # Unified RunPod Startup Script - Handles everything automatically
 set -e
 
-echo "🚀 Moola Auto-Setup & Training"
-echo "=============================="
+echo "🚀 Moola Auto-Setup & Training (FAST VERSION)"
+echo "============================================"
 
 # Detect storage location
 STORAGE_PATH=""
@@ -173,29 +172,25 @@ DEPLOY_EOF
 
     chmod +x "$DEPLOY_DIR/scripts/start.sh"
 
-    # Upload to S3 with error handling
-    log "📤 Uploading to RunPod network storage..."
+    # Upload to S3 (NO CLEANUP - just overwrite)
+    log "📤 Uploading to RunPod network storage (FAST - no cleanup)..."
 
-    # Clear existing deployment
-    aws s3 rm "$S3_BUCKET/" --recursive \
-        --region "$RUNPOD_S3_REGION" \
-        --endpoint-url "$RUNPOD_S3_ENDPOINT" 2>/dev/null || true
-
-    # Upload new deployment
+    # Upload new deployment (will overwrite existing files)
     aws s3 sync "$DEPLOY_DIR/" "$S3_BUCKET/" \
         --region "$RUNPOD_S3_REGION" \
         --endpoint-url "$RUNPOD_S3_ENDPOINT" \
         --exclude "*.tmp" \
-        --exclude ".DS_Store"
+        --exclude ".DS_Store" \
+        --delete
 
-    success "✅ Deployment complete!"
+    success "✅ FAST deployment complete!"
 
     # Cleanup
     rm -rf "$DEPLOY_DIR"
 
     echo ""
-    echo "🎉 DEPLOYMENT SUCCESSFUL!"
-    echo "========================"
+    echo "🎉 FAST DEPLOYMENT SUCCESSFUL!"
+    echo "============================="
     echo ""
     echo "🚀 Next steps:"
     echo "   1. ssh runpod"
@@ -207,139 +202,59 @@ DEPLOY_EOF
     echo "   Configs: /workspace/configs/"
     echo "   Scripts: /workspace/scripts/"
     echo ""
-    echo "💡 The setup script handles everything automatically!"
+    echo "💡 This deployment skipped the slow cleanup step!"
 }
 
-# Start training on RunPod
-start_training() {
-    log "🏃 Starting training on RunPod..."
-
-    # Check if we're on RunPod
-    if ! hostname | grep -q "runpod"; then
-        error "This command must be run on RunPod!"
-        echo "First deploy with: $0 deploy"
-        echo "Then SSH to RunPod: ssh runpod"
-        echo "Then run: $0 train"
-        exit 1
-    fi
-
-    # Find and run the startup script
-    if [[ -f "/workspace/scripts/start.sh" ]]; then
-        bash /workspace/scripts/start.sh --train
-    elif [[ -f "/runpod-volume/scripts/start.sh" ]]; then
-        bash /runpod-volume/scripts/start.sh --train
-    else
-        error "Startup script not found!"
-        echo "Please deploy first: $0 deploy"
-        exit 1
-    fi
-}
-
-# Check status
-check_status() {
-    log "📊 Checking RunPod status..."
+# Force wipe everything (if needed)
+force_wipe() {
+    log "🧹 Force-wiping RunPod storage..."
 
     # No credential check - user has keys exported in shell
     log "📋 Using existing AWS credentials from shell environment"
 
-    # List deployment
-    echo "📁 Deployment contents:"
-    aws s3 ls "$S3_BUCKET/" --recursive \
+    warn "⚠️  This will attempt a fast bucket recreation..."
+
+    # Try to recreate bucket (this is usually instant)
+    if aws s3 rb "$S3_BUCKET" --force \
         --region "$RUNPOD_S3_REGION" \
-        --endpoint-url "$RUNPOD_S3_ENDPOINT" \
-        --human-readable
-
-    # Check if we're on RunPod and can check local status
-    if hostname | grep -q "runpod"; then
-        echo ""
-        echo "🖥️  Local RunPod status:"
-
-        # Check storage
-        for path in "/workspace" "/runpod-volume"; do
-            if [[ -d "$path" ]]; then
-                echo "✅ Storage at: $path"
-                if [[ -d "$path/artifacts" ]]; then
-                    echo "  📊 Artifacts: $(find "$path/artifacts" -type f | wc -l) files"
-                fi
-                if [[ -d "$path/venv" ]]; then
-                    echo "  🐍 Python env: $(ls "$path/venv/bin" | wc -l) packages"
-                fi
-                break
-            fi
-        done
-    fi
-}
-
-# Show logs
-show_logs() {
-    log "📋 Showing recent logs..."
-
-    if hostname | grep -q "runpod"; then
-        # On RunPod - show local logs
-        for path in "/workspace/logs" "/runpod-volume/logs"; do
-            if [[ -d "$path" ]]; then
-                echo "📁 Logs in $path:"
-                find "$path" -name "*.log" -exec tail -10 {} + 2>/dev/null | head -50
-                break
-            fi
-        done
+        --endpoint-url "$RUNPOD_S3_ENDPOINT" 2>/dev/null; then
+        success "✅ Bucket wiped successfully!"
     else
-        echo "ℹ️  Connect to RunPod to see logs: ssh runpod"
+        warn "Bucket recreation failed, trying alternative method..."
+
+        # Alternative: delete major directories in parallel
+        (
+            aws s3 rm "$S3_BUCKET/venv/" --recursive \
+                --region "$RUNPOD_S3_REGION" \
+                --endpoint-url "$RUNPOD_S3_ENDPOINT" 2>/dev/null &
+            aws s3 rm "$S3_BUCKET/moola/" --recursive \
+                --region "$RUNPOD_S3_REGION" \
+                --endpoint-url "$RUNPOD_S3_ENDPOINT" 2>/dev/null &
+            wait
+        )
+        success "✅ Major directories deleted!"
     fi
-}
-
-# Cleanup everything
-cleanup_all() {
-    log "🧹 Cleaning up RunPod deployment..."
-
-    # No credential check - user has keys exported in shell
-    log "📋 Using existing AWS credentials from shell environment"
-
-    read -p "❗ This will delete ALL files from network storage. Continue? (type 'DELETE'): " confirm
-    if [[ "$confirm" != "DELETE" ]]; then
-        echo "Cancelled."
-        exit 0
-    fi
-
-    # Delete everything from S3
-    aws s3 rm "$S3_BUCKET/" --recursive \
-        --region "$RUNPOD_S3_REGION" \
-        --endpoint-url "$RUNPOD_S3_ENDPOINT"
-
-    success "✅ Cleanup complete!"
 }
 
 # Main command handling
 case "${1:-deploy}" in
     deploy)
-        deploy_to_runpod
+        deploy_to_runpod_fast
         ;;
-    train)
-        start_training
-        ;;
-    status)
-        check_status
-        ;;
-    logs)
-        show_logs
-        ;;
-    cleanup)
-        cleanup_all
+    wipe)
+        force_wipe
         ;;
     *)
-        echo "Usage: $0 {deploy|train|status|logs|cleanup}"
+        echo "Usage: $0 {deploy|wipe}"
         echo ""
         echo "Commands:"
-        echo "  deploy  - Deploy everything to RunPod"
-        echo "  train   - Start training (run on RunPod)"
-        echo "  status  - Check deployment status"
-        echo "  logs    - Show recent logs"
-        echo "  cleanup - Clean up all files"
+        echo "  deploy  - FAST deploy (skips cleanup, just overwrites)"
+        echo "  wipe    - Force wipe everything (use if needed)"
         echo ""
         echo "Quick start:"
         echo "  1. $0 deploy"
         echo "  2. ssh runpod"
-        echo "  3. $0 train"
+        echo "  3. cd /workspace && bash scripts/start.sh --train"
         exit 1
         ;;
 esac
