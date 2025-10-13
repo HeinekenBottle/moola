@@ -94,12 +94,14 @@ class XGBModel(BaseModel):
             **self.kwargs,
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "XGBModel":
+    def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "XGBModel":
         """Train XGBoost model.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
             y: Target labels of shape [N] (can be strings or numeric)
+            expansion_start: Optional expansion start indices of shape [N]
+            expansion_end: Optional expansion end indices of shape [N]
 
         Returns:
             Self for method chaining
@@ -111,7 +113,7 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:  # [N, T, F] format
-            X_engineered = engineer_classical_features(X)
+            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
         else:
             X_engineered = X
 
@@ -163,11 +165,13 @@ class XGBModel(BaseModel):
             self.is_fitted = True
             return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class labels.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
+            expansion_start: Optional expansion start indices of shape [N]
+            expansion_end: Optional expansion end indices of shape [N]
 
         Returns:
             Predicted labels of shape [N] (in original label space)
@@ -181,18 +185,20 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X)
+            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
         else:
             X_engineered = X
 
         y_pred_encoded = self.model.predict(X_engineered)
         return self.label_encoder.inverse_transform(y_pred_encoded)
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
+            expansion_start: Optional expansion start indices of shape [N]
+            expansion_end: Optional expansion end indices of shape [N]
 
         Returns:
             Class probabilities of shape [N, C]
@@ -206,7 +212,7 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X)
+            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
         else:
             X_engineered = X
 

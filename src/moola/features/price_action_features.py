@@ -21,16 +21,23 @@ import numpy as np
 from scipy.stats import linregress
 
 
-def engineer_classical_features(X: np.ndarray) -> np.ndarray:
+def engineer_classical_features(
+    X: np.ndarray,
+    expansion_start: np.ndarray = None,
+    expansion_end: np.ndarray = None
+) -> np.ndarray:
     """Transform raw OHLC time series to engineered price action features.
 
     This function extracts ICT-aligned features that capture market microstructure,
-    liquidity dynamics, and geometric patterns. Features focus on the inner prediction
-    window [30:75] with context from surrounding buffers.
+    liquidity dynamics, and geometric patterns. Features are extracted from the
+    expansion region specified by expansion_start/end indices, or from the default
+    inner prediction window [30:75] if indices not provided.
 
     Args:
         X: Raw OHLC data of shape [N, 105, 4] or [N, 420]
             4 features are: Open, High, Low, Close
+        expansion_start: Start indices for expansion regions [N] (optional)
+        expansion_end: End indices for expansion regions [N] (optional)
 
     Returns:
         Engineered features of shape [N, ~40] containing:
@@ -51,62 +58,131 @@ def engineer_classical_features(X: np.ndarray) -> np.ndarray:
 
     N = X.shape[0]
 
-    # Split into regions
-    from ..utils.windowing import get_window_regions
+    # Use expansion indices if provided, otherwise use default windowing
+    if expansion_start is not None and expansion_end is not None:
+        # Extract expansion regions using provided indices
+        # We'll process each sample's expansion region individually
+        expansion_regions = []
+        for i in range(N):
+            start = int(expansion_start[i])
+            end = int(expansion_end[i]) + 1  # +1 for inclusive end
+            expansion_regions.append(X[i, start:end, :])
 
-    left_buffer, inner_window, right_buffer = get_window_regions(X)
+        # For uniform processing, we need to handle variable-length regions
+        # Extract OHLC from expansion regions
+        o_list, h_list, l_list, c_list = [], [], [], []
+        for region in expansion_regions:
+            o_list.append(region[:, 0])
+            h_list.append(region[:, 1])
+            l_list.append(region[:, 2])
+            c_list.append(region[:, 3])
 
-    # Extract OHLC from inner window
-    o = inner_window[:, :, 0]  # [N, 45]
-    h = inner_window[:, :, 1]
-    l = inner_window[:, :, 2]
-    c = inner_window[:, :, 3]
+        # For buffer context, use bars before and after expansion
+        o_left_list, h_left_list, l_left_list, c_left_list = [], [], [], []
+        c_right_list = []
 
-    # Also get buffer OHLC for context
-    o_left = left_buffer[:, :, 0]
-    h_left = left_buffer[:, :, 1]
-    l_left = left_buffer[:, :, 2]
-    c_left = left_buffer[:, :, 3]
+        for i in range(N):
+            start = int(expansion_start[i])
+            end = int(expansion_end[i])
 
-    # Collect all features
-    features = []
+            # Left context: 10 bars before expansion (or less if at start)
+            left_start = max(0, start - 10)
+            left_region = X[i, left_start:start, :]
 
-    # ===== 1. MARKET STRUCTURE =====
-    features.extend(_extract_market_structure(h, l, c))
+            # Right context: 10 bars after expansion (or less if at end)
+            right_end = min(105, end + 11)
+            right_region = X[i, end+1:right_end, :]
 
-    # ===== 2. LIQUIDITY ZONES =====
-    features.extend(_extract_liquidity_zones(h, l))
+            o_left_list.append(left_region[:, 0] if len(left_region) > 0 else np.array([X[i, start, 0]]))
+            h_left_list.append(left_region[:, 1] if len(left_region) > 0 else np.array([X[i, start, 1]]))
+            l_left_list.append(left_region[:, 2] if len(left_region) > 0 else np.array([X[i, start, 2]]))
+            c_left_list.append(left_region[:, 3] if len(left_region) > 0 else np.array([X[i, start, 3]]))
+            c_right_list.append(right_region[:, 3] if len(right_region) > 0 else np.array([X[i, end, 3]]))
 
-    # ===== 3. FAIR VALUE GAPS (FVG) =====
-    features.extend(_extract_fair_value_gaps(h, l))
+    else:
+        # Fall back to default windowing (legacy behavior)
+        from ..utils.windowing import get_window_regions
+        left_buffer, inner_window, right_buffer = get_window_regions(X)
 
-    # ===== 4. ORDER BLOCKS =====
-    features.extend(_extract_order_blocks(o, h, l, c))
+        # Extract OHLC from inner window
+        o_list = [inner_window[i, :, 0] for i in range(N)]
+        h_list = [inner_window[i, :, 1] for i in range(N)]
+        l_list = [inner_window[i, :, 2] for i in range(N)]
+        c_list = [inner_window[i, :, 3] for i in range(N)]
 
-    # ===== 5. IMBALANCE RATIOS =====
-    features.extend(_extract_imbalance_ratios(o, h, l, c))
+        o_left_list = [left_buffer[i, :, 0] for i in range(N)]
+        h_left_list = [left_buffer[i, :, 1] for i in range(N)]
+        l_left_list = [left_buffer[i, :, 2] for i in range(N)]
+        c_left_list = [left_buffer[i, :, 3] for i in range(N)]
+        c_right_list = [right_buffer[i, :, 3] for i in range(N)]
 
-    # ===== 6. GEOMETRY FEATURES =====
-    features.extend(_extract_geometry_features(c))
+    # Collect all features (process variable-length regions per-sample)
+    all_sample_features = []
 
-    # ===== 7. DISTANCE MEASURES =====
-    features.extend(_extract_distance_measures(h, l, c))
+    for i in range(N):
+        # Get this sample's expansion region
+        o_sample = o_list[i]
+        h_sample = h_list[i]
+        l_sample = l_list[i]
+        c_sample = c_list[i]
 
-    # ===== 8. CANDLE PATTERNS =====
-    features.extend(_extract_candle_patterns(o, h, l, c))
+        # Reshape to [1, T] for feature extraction functions
+        o_arr = o_sample.reshape(1, -1)
+        h_arr = h_sample.reshape(1, -1)
+        l_arr = l_sample.reshape(1, -1)
+        c_arr = c_sample.reshape(1, -1)
 
-    # ===== 9. WILLIAMS %R =====
-    features.extend(_extract_williams_r(h, l, c))
+        sample_features = []
 
-    # ===== 10. BUFFER CONTEXT =====
-    features.extend(_extract_buffer_context(
-        c_left, h_left, l_left,
-        inner_window[:, :, 3],  # inner close
-        right_buffer[:, :, 3]   # right close
-    ))
+        # ===== 1. MARKET STRUCTURE =====
+        sample_features.extend(_extract_market_structure(h_arr, l_arr, c_arr))
 
-    # Stack all features
-    feature_matrix = np.column_stack(features)
+        # ===== 2. LIQUIDITY ZONES =====
+        sample_features.extend(_extract_liquidity_zones(h_arr, l_arr))
+
+        # ===== 3. FAIR VALUE GAPS (FVG) =====
+        sample_features.extend(_extract_fair_value_gaps(h_arr, l_arr))
+
+        # ===== 4. ORDER BLOCKS =====
+        sample_features.extend(_extract_order_blocks(o_arr, h_arr, l_arr, c_arr))
+
+        # ===== 5. IMBALANCE RATIOS =====
+        sample_features.extend(_extract_imbalance_ratios(o_arr, h_arr, l_arr, c_arr))
+
+        # ===== 6. GEOMETRY FEATURES =====
+        sample_features.extend(_extract_geometry_features(c_arr))
+
+        # ===== 7. DISTANCE MEASURES =====
+        sample_features.extend(_extract_distance_measures(h_arr, l_arr, c_arr))
+
+        # ===== 8. CANDLE PATTERNS =====
+        sample_features.extend(_extract_candle_patterns(o_arr, h_arr, l_arr, c_arr))
+
+        # ===== 9. WILLIAMS %R =====
+        sample_features.extend(_extract_williams_r(h_arr, l_arr, c_arr))
+
+        # ===== 10. BUFFER CONTEXT =====
+        # Reshape buffer context arrays to [1, T_buffer]
+        c_left_arr = c_left_list[i].reshape(1, -1)
+        h_left_arr = h_left_list[i].reshape(1, -1)
+        l_left_arr = l_left_list[i].reshape(1, -1)
+        c_right_arr = c_right_list[i].reshape(1, -1)
+
+        sample_features.extend(_extract_buffer_context(
+            c_left_arr, h_left_arr, l_left_arr,
+            c_arr,  # inner close (expansion region)
+            c_right_arr  # right close
+        ))
+
+        # Flatten sample features and add to collection
+        sample_feature_vector = np.concatenate([
+            f.flatten() if isinstance(f, np.ndarray) else np.array([f])
+            for f in sample_features
+        ])
+        all_sample_features.append(sample_feature_vector)
+
+    # Stack all samples
+    feature_matrix = np.vstack(all_sample_features)
 
     # Handle any NaN or inf values
     feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
@@ -261,10 +337,11 @@ def _extract_order_blocks(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.nda
     N, T = o.shape
     features = []
 
-    # Identify strong moves (>2% in one candle)
+    # Identify strong moves (>0.05% for minute-level crypto data)
+    # Adjusted from 2% (stock dailies) to 0.05% (crypto 1-min bars)
     returns = (c - o) / (o + 1e-10)
-    strong_up = returns > 0.02
-    strong_down = returns < -0.02
+    strong_up = returns > 0.0005
+    strong_down = returns < -0.0005
 
     # Count order blocks (candles before strong moves)
     ob_count = np.zeros(N)

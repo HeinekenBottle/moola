@@ -145,27 +145,42 @@ def train(cfg_dir, over, model, device):
     log.info(f"Loaded {len(df)} training samples from {train_path}")
 
     # Extract features and labels
-    # Convert list of features to 2D numpy array
-    X = np.array(df["features"].tolist())
+    # Convert features to 3D numpy array [N, T, F]
+    # Each sample is a 1D array of numpy arrays (bars), stack into 2D, then stack samples into 3D
+    X = np.stack([np.stack(f) for f in df["features"]])
     y = df["label"].values
+
+    # Extract expansion indices if available
+    expansion_start = df["expansion_start"].values if "expansion_start" in df.columns else None
+    expansion_end = df["expansion_end"].values if "expansion_end" in df.columns else None
+
+    if expansion_start is not None and expansion_end is not None:
+        log.info(f"Loaded expansion indices | start range: [{expansion_start.min()}, {expansion_start.max()}] | end range: [{expansion_end.min()}, {expansion_end.max()}]")
 
     log.info(f"Feature shape: {X.shape} | Unique labels: {np.unique(y)}")
 
     # Stratified train/test split (80/20)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=cfg.seed, stratify=y
-    )
+    if expansion_start is not None and expansion_end is not None:
+        X_train, X_test, y_train, y_test, exp_start_train, exp_start_test, exp_end_train, exp_end_test = train_test_split(
+            X, y, expansion_start, expansion_end, test_size=0.2, random_state=cfg.seed, stratify=y
+        )
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=cfg.seed, stratify=y
+        )
+        exp_start_train, exp_start_test = None, None
+        exp_end_train, exp_end_test = None, None
 
     log.info(f"Train samples: {len(X_train)} | Test samples: {len(X_test)}")
 
     # Get model from registry and train
     # Pass device parameter for deep learning models
     model_instance = get_model(model, seed=cfg.seed, device=device)
-    model_instance.fit(X_train, y_train)
+    model_instance.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
 
     # Calculate accuracy using model's predict method (handles label encoding)
-    y_train_pred = model_instance.predict(X_train)
-    y_test_pred = model_instance.predict(X_test)
+    y_train_pred = model_instance.predict(X_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
+    y_test_pred = model_instance.predict(X_test, expansion_start=exp_start_test, expansion_end=exp_end_test)
     train_score = (y_train_pred == y_train).mean()
     test_score = (y_test_pred == y_test).mean()
     log.info(f"Train accuracy: {train_score:.3f} | Test accuracy: {test_score:.3f}")
@@ -219,8 +234,12 @@ def evaluate(cfg_dir, over, model):
         raise FileNotFoundError(f"Missing {train_path}")
 
     df = pd.read_parquet(train_path)
-    X = np.array(df["features"].tolist())
+    X = np.stack([np.stack(f) for f in df["features"]])
     y = df["label"].values
+
+    # Extract expansion indices if available
+    expansion_start = df["expansion_start"].values if "expansion_start" in df.columns else None
+    expansion_end = df["expansion_end"].values if "expansion_end" in df.columns else None
 
     # Load model
     model_dir = paths.artifacts / "models" / model
@@ -247,10 +266,18 @@ def evaluate(cfg_dir, over, model):
         X_train_fold, X_val_fold = X[train_idx], X[val_idx]
         y_train_fold, y_val_fold = y[train_idx], y[val_idx]
 
+        # Split expansion indices for this fold
+        if expansion_start is not None and expansion_end is not None:
+            exp_start_train, exp_start_val = expansion_start[train_idx], expansion_start[val_idx]
+            exp_end_train, exp_end_val = expansion_end[train_idx], expansion_end[val_idx]
+        else:
+            exp_start_train, exp_start_val = None, None
+            exp_end_train, exp_end_val = None, None
+
         # Create fresh model instance for this fold
         fold_model = get_model(model, seed=cfg.seed)
-        fold_model.fit(X_train_fold, y_train_fold)
-        y_pred_fold = fold_model.predict(X_val_fold)
+        fold_model.fit(X_train_fold, y_train_fold, expansion_start=exp_start_train, expansion_end=exp_end_train)
+        y_pred_fold = fold_model.predict(X_val_fold, expansion_start=exp_start_val, expansion_end=exp_end_val)
 
         # Calculate fold metrics
         acc = accuracy_score(y_val_fold, y_pred_fold)
@@ -381,8 +408,12 @@ def oof(cfg_dir, over, model, seed, device):
         raise FileNotFoundError(f"Missing {train_path}")
 
     df = pd.read_parquet(train_path)
-    X = np.array(df["features"].tolist())
+    X = np.stack([np.stack(f) for f in df["features"]])
     y = df["label"].values
+
+    # Extract expansion indices if available
+    expansion_start = df["expansion_start"].values if "expansion_start" in df.columns else None
+    expansion_end = df["expansion_end"].values if "expansion_end" in df.columns else None
 
     log.info(f"Loaded {len(df)} samples | shape={X.shape}")
 
@@ -402,6 +433,8 @@ def oof(cfg_dir, over, model, seed, device):
         splits_dir=splits_dir,
         output_path=oof_path,
         device=device,
+        expansion_start=expansion_start,
+        expansion_end=expansion_end,
     )
 
     log.info(f"OOF generation complete | shape={oof_predictions.shape}")

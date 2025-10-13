@@ -1,0 +1,83 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Update CLI to extract and pass expansion indices",
+        "description": "Modify src/moola/cli.py to extract expansion_start and expansion_end columns from the DataFrame and pass them to the model",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Update XGBoost model to use expansion indices",
+        "description": "Modify src/moola/models/xgb.py fit, predict, and predict_proba methods to accept and use expansion indices",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Update OOF pipeline for expansion indices",
+        "description": "Ensure the OOF training and prediction pipeline passes expansion indices correctly",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Test feature extraction with new data",
+        "description": "Verify feature engineering works correctly with expansion indices and produces good feature variance",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [
+          3
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Clean up deprecated scripts and datasets",
+        "description": "Remove old/unused scripts and ensure codebase is clean",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Verify RunPod training pipeline",
+        "description": "Ensure RunPod can train with new data structure and expansion indices",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-10-13T19:44:40.957Z",
+      "description": "Default tasks context",
+      "updated": "2025-10-13T19:56:21.152Z"
+    }
+  }
+}

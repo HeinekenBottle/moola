@@ -27,6 +27,8 @@ def generate_oof(
     splits_dir: Path,
     output_path: Path,
     device: str = "cpu",
+    expansion_start: np.ndarray = None,
+    expansion_end: np.ndarray = None,
     **model_kwargs,
 ) -> np.ndarray:
     """Generate out-of-fold predictions for a given model.
@@ -40,6 +42,8 @@ def generate_oof(
         splits_dir: Directory containing split manifests
         output_path: Path to save OOF predictions (.npy file)
         device: Device for training deep learning models ('cpu' or 'cuda')
+        expansion_start: Optional expansion start indices of shape [N]
+        expansion_end: Optional expansion end indices of shape [N]
         **model_kwargs: Additional model hyperparameters
 
     Returns:
@@ -73,19 +77,27 @@ def generate_oof(
         X_train, X_val = X[train_idx], X[val_idx]
         y_train, y_val = y[train_idx], y[val_idx]
 
+        # Split expansion indices for this fold
+        if expansion_start is not None and expansion_end is not None:
+            exp_start_train, exp_start_val = expansion_start[train_idx], expansion_start[val_idx]
+            exp_end_train, exp_end_val = expansion_end[train_idx], expansion_end[val_idx]
+        else:
+            exp_start_train, exp_start_val = None, None
+            exp_end_train, exp_end_val = None, None
+
         # Train model on K-1 folds
         # Pass device parameter for deep learning models
         model = get_model(model_name, seed=seed, device=device, **model_kwargs)
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
 
         # Predict probabilities on held-out fold
-        val_proba = model.predict_proba(X_val)
+        val_proba = model.predict_proba(X_val, expansion_start=exp_start_val, expansion_end=exp_end_val)
 
         # Store predictions in OOF matrix
         oof_predictions[val_idx] = val_proba
 
         # Log fold metrics
-        val_pred = model.predict(X_val)
+        val_pred = model.predict(X_val, expansion_start=exp_start_val, expansion_end=exp_end_val)
         fold_acc = (val_pred == y_val).mean()
         logger.info(f"Fold {fold_idx + 1} accuracy: {fold_acc:.3f}")
 
