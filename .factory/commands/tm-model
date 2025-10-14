@@ -1,0 +1,13 @@
+#!/bin/bash
+# Task Master model configuration
+MODEL="$1"
+if [ -z "$MODEL" ]; then
+    echo "Usage: /tm-model <model-id>"
+    echo "Example: /tm-model claude-sonnet-4-20250514"
+    exit 1
+fi
+taskmaster-ai.models \
+    --setMain "$MODEL" \
+    --setResearch "$MODEL" \
+    --setFallback "$MODEL" \
+    --projectRoot "$PWD"

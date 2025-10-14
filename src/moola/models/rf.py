@@ -77,7 +77,7 @@ class RFModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:  # [N, T, F] format
-            X_engineered = engineer_classical_features(X)
+            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
         else:
             X_engineered = X
 
@@ -105,7 +105,7 @@ class RFModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X)
+            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
         else:
             X_engineered = X
 
@@ -131,7 +131,7 @@ class RFModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X)
+            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
         else:
             X_engineered = X
 

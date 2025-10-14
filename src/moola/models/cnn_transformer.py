@@ -1031,3 +1031,82 @@ class CnnTransformerModel(BaseModel):
 
         self.is_fitted = True
         return self
+
+    def load_pretrained_encoder(self, encoder_path: Path) -> "CnnTransformerModel":
+        """Load pre-trained encoder weights from SSL pre-training.
+
+        This method loads weights from a TS-TCC pre-trained encoder and maps them
+        to this model's CNN and Transformer layers. The classification head
+        remains randomly initialized and will be trained on labeled data.
+
+        Args:
+            encoder_path: Path to pre-trained encoder weights (.pt file)
+                         Expected format: {'encoder_state_dict': {...}, 'hyperparams': {...}}
+
+        Returns:
+            Self with pre-trained encoder weights loaded
+
+        Example:
+            >>> model = CnnTransformerModel()
+            >>> model.load_pretrained_encoder('data/artifacts/pretrained/encoder_weights.pt')
+            >>> model.fit(X_train, y_train)  # Fine-tune on labeled data
+        """
+        print(f"[SSL] Loading pre-trained encoder from: {encoder_path}")
+
+        # Load checkpoint
+        checkpoint = torch.load(encoder_path, map_location=self.device)
+        encoder_state_dict = checkpoint['encoder_state_dict']
+        hyperparams = checkpoint['hyperparams']
+
+        # Verify architecture compatibility
+        if self.cnn_channels != hyperparams['cnn_channels']:
+            raise ValueError(
+                f"Architecture mismatch: cnn_channels {self.cnn_channels} != "
+                f"pre-trained {hyperparams['cnn_channels']}"
+            )
+        if self.cnn_kernels != hyperparams['cnn_kernels']:
+            raise ValueError(
+                f"Architecture mismatch: cnn_kernels {self.cnn_kernels} != "
+                f"pre-trained {hyperparams['cnn_kernels']}"
+            )
+
+        # Map encoder weights to model
+        # The TS-TCC encoder has the same structure as CnnTransformerNet:
+        # - cnn_blocks (CNN layers)
+        # - transformer (Transformer encoder)
+        # - rel_pos_enc (Relative positional encoding)
+        #
+        # We load these weights but keep the classification head randomly initialized
+
+        if self.model is None:
+            raise ValueError(
+                "Model not built yet. Call fit() first or build model manually "
+                "with _build_model()"
+            )
+
+        # Get current model state dict
+        model_state_dict = self.model.state_dict()
+
+        # Map encoder weights
+        pretrained_keys_loaded = 0
+        for key, value in encoder_state_dict.items():
+            # Encoder keys should match model keys directly
+            # (both use the same architecture)
+            if key in model_state_dict:
+                if model_state_dict[key].shape == value.shape:
+                    model_state_dict[key] = value
+                    pretrained_keys_loaded += 1
+                else:
+                    print(f"[SSL] WARNING: Shape mismatch for {key}: "
+                          f"{model_state_dict[key].shape} != {value.shape}")
+            else:
+                print(f"[SSL] WARNING: Key {key} not found in model")
+
+        # Load mapped weights
+        self.model.load_state_dict(model_state_dict)
+
+        print(f"[SSL] Loaded {pretrained_keys_loaded} pre-trained layers")
+        print(f"[SSL] Encoder pre-training complete - ready for fine-tuning on labeled data")
+        print(f"[SSL] Classification head will be trained from scratch")
+
+        return self

@@ -1,0 +1,11 @@
+#!/bin/bash
+# Task Master task creation
+PROMPT="$1"
+if [ -z "$PROMPT" ]; then
+    echo "Usage: /tm-add \"<task description>\""
+    echo "Example: /tm-add \"Fix the authentication bug\""
+    exit 1
+fi
+taskmaster-ai.add_task \
+    --prompt "$PROMPT" \
+    --projectRoot "$PWD"

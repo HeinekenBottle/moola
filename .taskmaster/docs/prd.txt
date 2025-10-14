@@ -1,0 +1,265 @@
+# Moola Technical Reference PRD
+
+**Last Updated:** October 13, 2025  
+**Project:** Financial pattern classifier for 1-minute futures data  
+**Objective:** 60%+ accuracy on ambiguous Consolidation vs Retracement classification
+
+---
+
+## Current Status Summary
+
+### Dataset
+- **115 labeled samples** (2-class: Consolidation vs Retracement)
+- **19 Reversal samples** extracted separately for cleaner problem
+- **118k unlabeled windows** available for SSL
+- **Input:** 105-bar OHLC windows (30-74 = prediction region, 0-29 & 75-104 = context buffers)
+- **Features:** 37 ICT engineered features (market structure, FVG, order blocks, etc.)
+
+### Class Distribution (2-class)
+```
+Consolidation: ~56 samples (48.7%)
+Retracement:   ~59 samples (51.3%)
+```
+
+### Current Ensemble
+1. **RWKV-TS** (temporal state-space model)
+   - Status: ⚠️ BROKEN (29% accuracy - worse than random!)
+   - Issue: Likely window-aware attention not working correctly
+   - Config: d_model=128, n_layers=4, patches=[7,15,21,35]
+
+2. **CNN→Transformer Hybrid**
+   - Status: ✅ Best base model (44% accuracy)
+   - Architecture: 3 Conv1d layers → 3-layer Transformer (4 heads)
+   - Config: kernels {3,5,7}, causal masking, relative positional encoding
+
+3. **XGBoost**
+   - Status: ✅ Working (39.6% accuracy)
+   - Config: 500 trees, gpu_hist, learning_rate=0.05, max_depth=6
+
+4. **Random Forest**
+   - Status: ✅ Baseline (35% accuracy)
+   - Config: 1000 trees, balanced_subsample, OOB scoring
+
+5. **Logistic Regression**
+   - Status: ✅ Baseline (35.6% accuracy)
+   - Purpose: Simple linear baseline
+
+6. **Stack Ensemble (RF Meta-Learner)**
+   - Status: ⚠️ INCOMPLETE (56.7% acc / 39.4% F1)
+   - **Critical Issue:** Only trained on {logreg, rf, xgb} - **excluded CNN-Trans**
+   - Missing OOF predictions from CNN-Trans and RWKV-TS at stack training time
+
+---
+
+## Recent Fixes (Past 48 Hours)
+
+### ✅ Completed
+1. **GPU Utilization** - All models now use CUDA properly (mixed precision, optimized DataLoaders)
+2. **Windowing Structure** - Proper context buffers implemented:
+   - Bars 0-29: Left buffer (context only)
+   - Bars 30-74: Inner window (prediction region)
+   - Bars 75-104: Right buffer (context only)
+3. **ICT Feature Engineering** - 37 features from expansion regions (not context buffers)
+4. **Class Simplification** - Moved from 3-class to 2-class by extracting Reversal samples
+
+### ❌ Current Problems
+1. **Catastrophic overfitting** - Fold variance 39 points (30.4% to 69.6% accuracy)
+   - Cause: 23 samples/fold with 37 features = too few samples
+   - Fold 3 worse than random (30.4%)!
+
+2. **RWKV-TS failure** - 29% accuracy (worse than RF baseline)
+   - Needs architectural debugging
+   - Possible issues: receptive field, attention mechanism, training instability
+
+3. **Class imbalance in minority class predictions** - F1 gap (56.7% acc vs 39.4% F1)
+   - Models likely still ignoring minority class patterns
+   - Need focal loss + class-aware sampling
+
+4. **Incomplete stack ensemble** - Missing best base model (CNN-Trans)
+   - OOF predictions generated but not found at stack training time
+   - File management issue or timing problem
+
+---
+
+## Training Commands
+
+### Local Testing (CPU)
+```bash
+cd ~/moola
+python3 -m moola.cli oof --model xgb --folds 1 --device cpu --seed 1337
+```
+
+### RunPod GPU Training (Full Pipeline)
+```bash
+# Sync to RunPod network volume
+rsync -avz ~/moola/ runpod:/root/moola/
+
+# SSH into RunPod
+ssh runpod
+cd ~/moola
+
+# Generate OOF predictions (5-fold CV)
+moola oof --model cnn_transformer --device cuda --seed 1337
+moola oof --model rwkv_ts --device cuda --seed 1337  # Currently broken
+moola oof --model xgb --device cuda --seed 1337
+moola oof --model rf --device cpu --seed 1337
+moola oof --model logreg --device cpu --seed 1337
+
+# Train stack ensemble
+moola stack-train --stacker rf --seed 1337
+
+# Evaluate
+moola audit
+```
+
+---
+
+## Key Metrics to Monitor
+
+### Red Flags 🚩
+- **Per-class recall <20%** → Class collapse (same failure mode as before)
+- **Fold variance >20%** → Overfitting on 115 samples
+- **GPU utilization <70%** during DL training → Still CPU-bound
+- **F1 << Accuracy** → Models ignoring minority class
+
+### Target Performance (2-class)
+```
+Base Models:
+- XGB/RF:          55-65% accuracy
+- CNN-Transformer: 58-68% accuracy
+- RWKV-TS:         50-60% accuracy (if fixed)
+
+Stack Ensemble:    62-72% accuracy
+```
+
+### Success Criteria
+- Per-class recall >30% for both classes
+- Fold variance <15%
+- ECE (Expected Calibration Error) <0.10
+- F1 within 5% of accuracy
+
+---
+
+## Project Structure
+
+```
+moola/
+├── src/moola/
+│   ├── models/              # All model implementations
+│   │   ├── rwkv_ts.py      # RWKV-TS (broken)
+│   │   ├── cnn_transformer.py  # Best base model
+│   │   ├── xgb.py
+│   │   ├── rf.py
+│   │   └── logreg.py
+│   ├── features/
+│   │   └── price_action_features.py  # 37 ICT features
+│   ├── pipelines/
+│   │   ├── oof.py          # Cross-validation pipeline
+│   │   └── stack.py        # Meta-learner training
+│   └── cli.py              # Command-line interface
+├── configs/
+│   ├── default.yaml        # Hyperparameters
+│   └── hardware/
+│       ├── cpu.yaml
+│       └── gpu.yaml
+├── data/
+│   ├── processed/
+│   │   └── train_2class.parquet  # 115 samples (symlink to Pivot v2.7)
+│   └── artifacts/
+│       ├── models/         # Trained model files
+│       ├── oof/            # Out-of-fold predictions
+│       ├── splits/         # CV fold definitions
+│       └── logs/           # Training logs
+└── docker/
+    ├── Dockerfile.cpu      # Local testing
+    └── Dockerfile.gpu      # RunPod training
+```
+
+---
+
+## Next Steps Priority
+
+### Week 1: Fix Critical Issues (Accuracy Focus)
+1. **Diagnose RWKV-TS failure** - Check window masking, receptive field, attention mechanism
+2. **Fix stack ensemble** - Ensure OOF predictions from all models persist and are loaded correctly
+3. **Implement feature normalization** - StandardScaler per OHLC channel (10-30% accuracy gain)
+4. **Add focal loss** - γ=2.0 with class weights [1.0, 1.3] for class imbalance
+
+### Week 2: Data Efficiency Strategies
+5. **Implement Mixup augmentation** - α=0.3, LatentMixUp++ (5-10% gain, 30 min implementation)
+6. **Add early stopping** - patience=3 to prevent overfitting
+7. **Gradient accumulation** - Better gradients with small batches
+
+### Week 3-4: SSL Strategy (15-30% Expected Improvement)
+8. **Contrastive pre-training** (TS-TCC) on 118k unlabeled windows (Phase 1)
+   - 50-75 epochs, batch size 256, ~2-3 GPU hours
+   - Creates class-agnostic representations
+9. **Fine-tune on 115 labeled** with focal loss + class weights (Phase 2)
+   - Expected: 64-68% accuracy (vs 60.9% baseline)
+10. **Adaptive pseudo-labeling** with class-aware thresholds (Phase 3)
+    - τ = {consolidation: 0.92, retracement: 0.85}
+    - Aim for 150 consolidation + 150 retracement pseudo-labels
+11. **Retrain on 115 real + ~185 pseudo** (Phase 4)
+    - Total: 300 samples (2.6× increase)
+    - Expected: 65-70% accuracy
+
+---
+
+## Known Constraints
+
+1. **Small dataset (115 samples)** - Requires aggressive regularization
+2. **Ambiguous patterns** - Some consolidation/retracement pairs are genuinely indistinguishable
+3. **Low volatility windows** - Some windows <0.5% range are hard to classify
+4. **Overfitting risk** - 23 samples/fold is extremely tight for 37 features
+
+---
+
+## Key Research Findings
+
+### Architecture Choices
+- **RWKV-TS**: O(L) time, O(1) space complexity, designed for few-shot learning
+- **CNN→Transformer Hybrid**: 30-45% error reductions in financial classification tasks
+- **Architecture mixing** outperforms temporal scale variants for small datasets
+
+### Ensemble Strategy
+- **Random Forest meta-learner**: 30-95% improvement over simple voting
+- **Architecture diversity** provides better generalization than single-architecture ensembles
+- **Stacking with cross-validation** prevents overfitting vs. simple averaging
+
+### SSL Approach
+- **Contrastive pre-training** (TS-TCC): 80-85% accuracy with 5-10% labeled data
+- **Adaptive pseudo-labeling** outperforms fixed-threshold FixMatch by 13.59%
+- **Class-aware thresholds** critical for imbalanced data
+
+### Data Augmentation
+- **Mixup/LatentMixUp++**: 1-15% accuracy improvements, minimal implementation cost
+- **Diffusion models**: 15-30% expected gain, but requires 2-3 GPU hours training
+- **Traditional augmentations**: Jittering (σ=0.2), magnitude warping, temporal warping (3-5% gain)
+
+---
+
+## Infrastructure Notes
+
+### Docker Environments
+- **moola:cpu** - Lightweight validation, audit, and testing
+- **moola:gpu** - Heavy model training on RunPod
+
+### RunPod Setup
+- Network volume mounted at `/runpod-volume/`
+- Git repository synced via rsync
+- A100/A6000 GPUs recommended
+- Cost: ~$0.50-0.80/hour for A6000
+
+### Reproducibility
+- All models use `seed=1337` for deterministic splits
+- 5-fold stratified cross-validation
+- OOF predictions tracked with SHA256 hashes in manifest.json
+
+---
+
+## References
+
+- Architecture decisions: See "Modern Architectures for Ambiguous Financial Pattern Classification"
+- SSL strategy: See "FixMatch Limitations and Advanced SSL Strategies for Imbalanced Financial Pattern Detection"
+- Training logs: `data/artifacts/logs/moola.log`
+- Hyperparameters: `configs/default.yaml`

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Task Master next task recommendation
+taskmaster-ai.next_task \
+    --projectRoot "$PWD"

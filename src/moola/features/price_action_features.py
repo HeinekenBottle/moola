@@ -13,12 +13,254 @@ ICT-aligned feature extraction focusing on:
 
 Features are extracted primarily from the inner prediction window [30:75]
 with context summaries from left and right buffers.
+
+NEW: Multi-scale feature engineering that separates:
+- Pattern-level features (computed on expansion region)
+- Context features (computed on fixed [30:75] window)
+- Relative position features (how pattern relates to context)
 """
 
 from typing import Tuple
 
 import numpy as np
 from scipy.stats import linregress
+
+
+def engineer_multiscale_features(
+    X: np.ndarray,
+    expansion_start: np.ndarray = None,
+    expansion_end: np.ndarray = None
+) -> np.ndarray:
+    """Multi-scale feature extraction for financial pattern classification.
+
+    Eliminates signal dilution by separating pattern-level, context, and relative features.
+    All features extracted from inner window [30:75] only (no buffer contamination).
+
+    Args:
+        X: Raw OHLC data of shape [N, 105, 4] or [N, 420]
+            4 features are: Open, High, Low, Close
+        expansion_start: Start indices for expansion regions [N] (required)
+        expansion_end: End indices for expansion regions [N] (required)
+
+    Returns:
+        Engineered features of shape [N, 21] containing:
+        - Scale 1 (Pattern): 5 features on expansion region
+        - Scale 2 (Context): 10 features on fixed [30:75] window
+        - Scale 3 (Relative): 5 features (pattern vs context)
+        - Scale 1+2 interaction: 1 feature (adaptive Williams %R)
+    """
+    # Reshape if needed
+    if X.ndim == 2 and X.shape[1] == 420:
+        X = X.reshape(-1, 105, 4)
+
+    N = X.shape[0]
+
+    # Validate expansion indices
+    if expansion_start is None or expansion_end is None:
+        raise ValueError("Multi-scale features require expansion_start and expansion_end indices")
+
+    # Ensure indices are within [30:75] constraint
+    expansion_start = np.clip(expansion_start, 30, 74)
+    expansion_end = np.clip(expansion_end, 30, 74)
+
+    # Extract fixed context window [30:75] for all samples
+    context_window = X[:, 30:75, :]  # [N, 45, 4]
+
+    all_features = []
+
+    for i in range(N):
+        start = int(expansion_start[i])
+        end = int(expansion_end[i])
+
+        # Extract pattern region (within [30:75])
+        pattern = X[i, start:end+1, :]  # [T_pattern, 4]
+        context = context_window[i]  # [45, 4]
+
+        # OHLC extraction
+        p_o, p_h, p_l, p_c = pattern[:, 0], pattern[:, 1], pattern[:, 2], pattern[:, 3]
+        c_o, c_h, c_l, c_c = context[:, 0], context[:, 1], context[:, 2], context[:, 3]
+
+        features = []
+
+        # ===== SCALE 1: PATTERN-LEVEL FEATURES (5) =====
+        # Simple, noise-resistant features computed on expansion region
+
+        # 1. Price change
+        if len(p_c) > 0:
+            price_change = (p_c[-1] - p_c[0]) / (p_c[0] + 1e-10)
+        else:
+            price_change = 0.0
+        features.append(price_change)
+
+        # 2. Direction
+        direction = 1.0 if price_change > 0 else -1.0
+        features.append(direction)
+
+        # 3. Range ratio
+        if len(p_h) > 0 and len(p_l) > 0 and len(p_c) > 0:
+            range_ratio = (p_h.max() - p_l.min()) / (p_c[0] + 1e-10)
+        else:
+            range_ratio = 0.0
+        features.append(range_ratio)
+
+        # 4. Body dominance
+        if len(p_o) > 0:
+            body = np.abs(p_c - p_o)
+            total_range = p_h - p_l + 1e-10
+            body_dominance = (body / total_range).mean()
+        else:
+            body_dominance = 0.5
+        features.append(body_dominance)
+
+        # 5. Wick balance (ratio bounded to [0, 1])
+        if len(p_o) > 0:
+            upper_wick = p_h - np.maximum(p_o, p_c)
+            lower_wick = np.minimum(p_o, p_c) - p_l
+            total_wick = upper_wick + lower_wick + 1e-10
+            wick_balance = (upper_wick / total_wick).mean()  # Now [0, 1]
+        else:
+            wick_balance = 0.5  # Neutral
+        features.append(wick_balance)
+
+        # ===== SCALE 2: CONTEXT FEATURES (10) =====
+        # Stable 45-bar indicators on fixed window
+
+        # 6. Williams %R (context, 14-period adapted)
+        williams_r_context = _adaptive_williams_r(c_h, c_l, c_c, min_period=14, max_period=14)
+        features.append(williams_r_context)
+
+        # 7. Volatility (20-bar)
+        if len(c_c) >= 20:
+            returns = np.diff(c_c) / (c_c[:-1] + 1e-10)
+            volatility_20 = returns[-20:].std()
+        else:
+            volatility_20 = 0.0
+        features.append(volatility_20)
+
+        # 8. Volatility (45-bar)
+        if len(c_c) > 1:
+            returns = np.diff(c_c) / (c_c[:-1] + 1e-10)
+            volatility_45 = returns.std()
+        else:
+            volatility_45 = 0.0
+        features.append(volatility_45)
+
+        # 9. Trend strength (slope * r_squared)
+        if len(c_c) > 1:
+            x = np.arange(len(c_c))
+            slope, _, r_value, _, _ = linregress(x, c_c)
+            trend_strength = slope * (r_value ** 2)
+        else:
+            trend_strength = 0.0
+        features.append(trend_strength)
+
+        # 10. Support distance
+        support = c_l.min()
+        support_dist = (c_c[-1] - support) / (c_h.max() - support + 1e-10)
+        features.append(support_dist)
+
+        # 11. Resistance distance
+        resistance = c_h.max()
+        resistance_dist = (resistance - c_c[-1]) / (resistance - c_l.min() + 1e-10)
+        features.append(resistance_dist)
+
+        # 12. Average body ratio
+        body = np.abs(c_c - c_o)
+        total_range = c_h - c_l + 1e-10
+        avg_body_ratio = (body / total_range).mean()
+        features.append(avg_body_ratio)
+
+        # 13. Average upper wick
+        upper_wick = c_h - np.maximum(c_o, c_c)
+        avg_upper_wick = (upper_wick / total_range).mean()
+        features.append(avg_upper_wick)
+
+        # 14. Average lower wick
+        lower_wick = np.minimum(c_o, c_c) - c_l
+        avg_lower_wick = (lower_wick / total_range).mean()
+        features.append(avg_lower_wick)
+
+        # 15. Position in range
+        position_in_range = (c_c[-1] - c_l.min()) / (c_h.max() - c_l.min() + 1e-10)
+        features.append(position_in_range)
+
+        # ===== SCALE 3: RELATIVE POSITION FEATURES (5) =====
+        # How pattern relates to surrounding context
+
+        # 16. Pattern position (where in window)
+        pattern_position = (start - 30) / 45.0
+        features.append(pattern_position)
+
+        # 17. Pattern coverage (what % of window)
+        pattern_coverage = (end - start) / 45.0
+        features.append(pattern_coverage)
+
+        # 18. Pre-pattern momentum
+        if start > 30:
+            pre_momentum = (c_c[start - 30] - c_c[0]) / (c_c[0] + 1e-10)
+        else:
+            pre_momentum = 0.0
+        features.append(pre_momentum)
+
+        # 19. Post-pattern momentum
+        if end < 74:
+            post_momentum = (c_c[-1] - c_c[end - 30]) / (c_c[end - 30] + 1e-10)
+        else:
+            post_momentum = 0.0
+        features.append(post_momentum)
+
+        # 20. Pattern vs window range
+        pattern_range = p_h.max() - p_l.min() if len(p_h) > 0 else 0.0
+        window_range = c_h.max() - c_l.min()
+        pattern_vs_window = pattern_range / (window_range + 1e-10)
+        features.append(pattern_vs_window)
+
+        # ===== SCALE 1+2 INTERACTION (1) =====
+        # Adaptive Williams %R on pattern
+
+        # 21. Williams %R (pattern, adaptive period)
+        williams_r_pattern = _adaptive_williams_r(p_h, p_l, p_c, min_period=5, max_period=14)
+        features.append(williams_r_pattern)
+
+        all_features.append(features)
+
+    # Convert to array
+    feature_matrix = np.array(all_features, dtype=np.float32)
+
+    # Handle any NaN or inf values
+    feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
+
+    return feature_matrix
+
+
+def _adaptive_williams_r(high: np.ndarray, low: np.ndarray, close: np.ndarray,
+                          min_period: int = 5, max_period: int = 14) -> float:
+    """Adaptive Williams %R that adjusts period based on available bars.
+
+    Args:
+        high, low, close: Price arrays
+        min_period: Minimum lookback period (default 5)
+        max_period: Maximum lookback period (default 14)
+
+    Returns:
+        Williams %R value between -100 and 0
+    """
+    n_bars = len(close)
+    if n_bars == 0:
+        return -50.0  # Neutral
+
+    # Adapt period to available bars
+    period = min(max_period, max(min_period, n_bars))
+
+    # Calculate Williams %R
+    highest = high[-period:].max() if len(high) >= period else high.max()
+    lowest = low[-period:].min() if len(low) >= period else low.min()
+    current_close = close[-1]
+
+    if highest == lowest:
+        return -50.0  # Neutral when range is zero
+
+    return -100.0 * (highest - current_close) / (highest - lowest)
 
 
 def engineer_classical_features(
