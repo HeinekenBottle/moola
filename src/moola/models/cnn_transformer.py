@@ -333,6 +333,31 @@ class CnnTransformerModel(BaseModel):
                     self.pointer_start_head = nn.Linear(self.d_model, 1)
                     self.pointer_end_head = nn.Linear(self.d_model, 1)
 
+            def _create_attention_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
+                """Prevent buffers [0:30] and [75:105] from attending to prediction region.
+
+                Creates an additive attention mask for the transformer.
+                - Buffers [0:30] and [75:105] can attend to each other but NOT to [30:75]
+                - Prediction region [30:75] can attend to itself
+
+                Args:
+                    seq_len: Sequence length (should be 105)
+                    device: Device to place mask on
+
+                Returns:
+                    Additive mask [seq_len, seq_len] where 0.0 = allow, -inf = block
+                """
+                # Start with all positions allowed (0.0)
+                mask = torch.zeros(seq_len, seq_len, device=device, dtype=torch.float32)
+
+                # Block left buffer [0:30] from attending to prediction region [30:75]
+                mask[0:30, 30:75] = float('-inf')
+
+                # Block right buffer [75:105] from attending to prediction region [30:75]
+                mask[75:105, 30:75] = float('-inf')
+
+                return mask
+
             def forward(self, x: torch.Tensor) -> Union[torch.Tensor, dict]:
                 """Forward pass with optional multi-task output.
 
@@ -371,12 +396,15 @@ class CnnTransformerModel(BaseModel):
                 pos_bias = rel_pos_encoding.mean(dim=1)  # [T, C]
                 x = x + pos_bias.unsqueeze(0)  # Add positional bias [1, T, C]
 
-                # Apply Transformer encoder (shared backbone)
-                x = self.transformer(x)  # [B, 105, d_model]
+                # Create attention mask: block buffers from attending to prediction region
+                attention_mask = self._create_attention_mask(T, x.device)  # [105, 105]
+
+                # Apply Transformer encoder with attention masking
+                x = self.transformer(x, mask=attention_mask)  # [B, 105, d_model]
 
                 # TASK 1: Classification head
-                # Global average pooling over sequence
-                pooled = x.mean(dim=1)  # [B, d_model]
+                # Region-specific pooling (only pool bars [30:75])
+                pooled = x[:, 30:75, :].mean(dim=1)  # [B, d_model]
                 pooled = self.output_norm(pooled)
                 pooled = self.dropout(pooled)
                 class_logits = self.classifier(pooled)  # [B, n_classes]

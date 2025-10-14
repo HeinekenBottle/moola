@@ -18,12 +18,98 @@ NEW: Multi-scale feature engineering that separates:
 - Pattern-level features (computed on expansion region)
 - Context features (computed on fixed [30:75] window)
 - Relative position features (how pattern relates to context)
+
+NEW: HopSketch 15-feature extraction from FULL 105-bar window
 """
 
 from typing import Tuple
 
 import numpy as np
 from scipy.stats import linregress
+
+
+def extract_hopsketch_features(X: np.ndarray) -> np.ndarray:
+    """Extract 15 geometric features from FULL 105-bar window.
+
+    NO smoothing, NO expansion region filtering. Features are extracted per-bar
+    from the entire window. This approach preserves all context information.
+
+    Based on HopSketch architecture from pivot/archive/hopsketch_spec1/.
+
+    Args:
+        X: [N, 105, 4] OHLC array (or [N, 420] flattened)
+
+    Returns:
+        features: [N, 105*15] = [N, 1575] flattened per-bar features
+
+    Features per bar (15 total):
+        - 4 OHLC normalized (by window statistics)
+        - 7 geometry (body, range, body_frac, wicks, positions)
+        - 4 context (direction, gap_prev, pct_up, run_length)
+    """
+    # Reshape if needed
+    if X.ndim == 2 and X.shape[1] == 420:
+        X = X.reshape(-1, 105, 4)
+
+    N = X.shape[0]
+    features_list = []
+
+    for sample_idx in range(N):
+        sample = X[sample_idx]  # [105, 4]
+        o, h, l, c = sample[:, 0], sample[:, 1], sample[:, 2], sample[:, 3]
+
+        # Window normalization (remove price-level dependence)
+        window_high = h.max()
+        window_low = l.min()
+        range_val = window_high - window_low + 1e-8
+
+        # OHLC normalized [4 features per bar]
+        o_norm = (o - window_low) / range_val
+        h_norm = (h - window_low) / range_val
+        l_norm = (l - window_low) / range_val
+        c_norm = (c - window_low) / range_val
+
+        # Geometry per bar [7 features]
+        body = np.abs(c - o)
+        bar_range = h - l + 1e-8
+        body_frac = body / bar_range
+        upper_wick = (h - np.maximum(o, c)) / bar_range
+        lower_wick = (np.minimum(o, c) - l) / bar_range
+        close_pos = (c - l) / bar_range
+        open_pos = (o - l) / bar_range
+
+        # Context per bar [4 features]
+        direction = np.sign(c - o)
+        gap_prev = np.concatenate([[0], o[1:] - c[:-1]]) / range_val
+        pct_up = (c > o).astype(float)
+
+        # Run length (consecutive same direction)
+        run_length = np.zeros(105)
+        current_run = 1
+        for i in range(1, 105):
+            if direction[i] == direction[i-1]:
+                current_run += 1
+            else:
+                current_run = 1
+            run_length[i] = current_run
+
+        # Stack all 15 features per bar: [105, 15]
+        sample_features = np.column_stack([
+            o_norm, h_norm, l_norm, c_norm,  # 4
+            body, bar_range, body_frac, upper_wick, lower_wick, close_pos, open_pos,  # 7
+            direction, gap_prev, pct_up, run_length  # 4
+        ])  # [105, 15]
+
+        # Flatten to [1575] for XGBoost
+        features_list.append(sample_features.flatten())
+
+    # Stack all samples: [N, 1575]
+    feature_matrix = np.array(features_list, dtype=np.float32)
+
+    # Handle any NaN or inf values
+    feature_matrix = np.nan_to_num(feature_matrix, nan=0.0, posinf=1e6, neginf=-1e6)
+
+    return feature_matrix
 
 
 def engineer_multiscale_features(

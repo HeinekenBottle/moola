@@ -103,31 +103,32 @@ class XGBModel(BaseModel):
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "XGBModel":
-        """Train XGBoost model.
+        """Train XGBoost model with HopSketch 15-feature extraction.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
             y: Target labels of shape [N] (can be strings or numeric)
-            expansion_start: Optional expansion start indices of shape [N]
-            expansion_end: Optional expansion end indices of shape [N]
+            expansion_start: Optional expansion start indices of shape [N] (UNUSED - kept for API compatibility)
+            expansion_end: Optional expansion end indices of shape [N] (UNUSED - kept for API compatibility)
 
         Returns:
             Self for method chaining
         """
-        from ..features.price_action_features import engineer_classical_features
+        from ..features.price_action_features import extract_hopsketch_features
 
-        # Transform raw OHLC to engineered features
+        # Transform raw OHLC to HopSketch features
         if X.shape[1] == 420:  # Flattened [105*4]
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:  # [N, T, F] format
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            # Extract 15 features per bar from FULL 105-bar window
+            X_engineered = extract_hopsketch_features(X)  # [N, 105*15] = [N, 1575]
         else:
             X_engineered = X
 
         # Ensure X_engineered is numeric
         X_engineered = np.array(X_engineered, dtype=np.float64)
-        print(f"[DEBUG] X_engineered shape: {X_engineered.shape}, dtype: {X_engineered.dtype}")
+        print(f"[HOPSKETCH] X_engineered shape: {X_engineered.shape}, dtype: {X_engineered.dtype}")
 
         # Encode labels if they are strings
         y_encoded = self.label_encoder.fit_transform(y)
@@ -174,17 +175,17 @@ class XGBModel(BaseModel):
             return self
 
     def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
-        """Predict class labels.
+        """Predict class labels with HopSketch features.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
-            expansion_start: Optional expansion start indices of shape [N]
-            expansion_end: Optional expansion end indices of shape [N]
+            expansion_start: Optional expansion start indices of shape [N] (UNUSED - kept for API compatibility)
+            expansion_end: Optional expansion end indices of shape [N] (UNUSED - kept for API compatibility)
 
         Returns:
             Predicted labels of shape [N] (in original label space)
         """
-        from ..features.price_action_features import engineer_classical_features
+        from ..features.price_action_features import extract_hopsketch_features
 
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -193,7 +194,7 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = extract_hopsketch_features(X)
         else:
             X_engineered = X
 
@@ -201,17 +202,17 @@ class XGBModel(BaseModel):
         return self.label_encoder.inverse_transform(y_pred_encoded)
 
     def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
-        """Predict class probabilities.
+        """Predict class probabilities with HopSketch features.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, F]
-            expansion_start: Optional expansion start indices of shape [N]
-            expansion_end: Optional expansion end indices of shape [N]
+            expansion_start: Optional expansion start indices of shape [N] (UNUSED - kept for API compatibility)
+            expansion_end: Optional expansion end indices of shape [N] (UNUSED - kept for API compatibility)
 
         Returns:
             Class probabilities of shape [N, C]
         """
-        from ..features.price_action_features import engineer_classical_features
+        from ..features.price_action_features import extract_hopsketch_features
 
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
@@ -220,7 +221,7 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = extract_hopsketch_features(X)
         else:
             X_engineered = X
 
