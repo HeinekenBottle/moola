@@ -402,6 +402,12 @@ class CnnTransformerModel(BaseModel):
                 # Apply Transformer encoder with attention masking
                 x = self.transformer(x, mask=attention_mask)  # [B, 105, d_model]
 
+                # DEBUG: Verify masking is active (log once per model instance)
+                if not hasattr(self, '_mask_verified'):
+                    blocked_positions = (attention_mask == float('-inf')).sum().item()
+                    print(f"[MASK] Attention mask applied | shape={attention_mask.shape} | blocked={blocked_positions}/11025")
+                    self._mask_verified = True
+
                 # TASK 1: Classification head
                 # Region-specific pooling (only pool bars [30:75])
                 pooled = x[:, 30:75, :].mean(dim=1)  # [B, d_model]
@@ -509,13 +515,21 @@ class CnnTransformerModel(BaseModel):
         N, T, F = X.shape
         self.input_dim = F
 
-        # Validate pointer indices if provided
+        # Validate and convert pointer indices if provided
         if has_pointers:
             assert pointer_starts.shape == (N,), f"pointer_starts shape mismatch: expected ({N},), got {pointer_starts.shape}"
             assert pointer_ends.shape == (N,), f"pointer_ends shape mismatch: expected ({N},), got {pointer_ends.shape}"
-            assert np.all((pointer_starts >= 0) & (pointer_starts < 45)), "pointer_starts must be in range [0, 44]"
-            assert np.all((pointer_ends >= 0) & (pointer_ends < 45)), "pointer_ends must be in range [0, 44]"
+
+            # Convert from absolute window positions [30:75] to relative inner window positions [0:44]
+            # The training data provides absolute positions in the 105-bar window
+            # We need positions relative to the inner window [30:75]
+            pointer_starts = np.clip(pointer_starts - 30, 0, 44)
+            pointer_ends = np.clip(pointer_ends - 30, 0, 44)
+
+            assert np.all((pointer_starts >= 0) & (pointer_starts < 45)), f"pointer_starts must be in range [0, 44], got {pointer_starts}"
+            assert np.all((pointer_ends >= 0) & (pointer_ends < 45)), f"pointer_ends must be in range [0, 44], got {pointer_ends}"
             print(f"[MULTI-TASK] Training with pointer prediction enabled")
+            print(f"[MULTI-TASK] Converted expansion indices from absolute to relative positions")
             print(f"[MULTI-TASK] Loss weights: alpha={self.loss_alpha}, beta={self.loss_beta}")
 
         # Get unique classes and build label mapping
@@ -637,6 +651,23 @@ class CnnTransformerModel(BaseModel):
 
         # Training loop
         for epoch in range(self.n_epochs):
+            # Progressive loss weighting: start classification-heavy, gradually add pointer tasks
+            # 97 samples too small for strong multi-task - let classification converge first
+            if has_pointers:
+                epoch_ratio = min(epoch / 50, 1.0)  # 0→1 over 50 epochs
+                current_alpha = 1.0  # Classification weight stays constant
+                current_beta = 0.1 * epoch_ratio  # Pointer weight: 0.0 → 0.1 over 50 epochs
+
+                if epoch == 0:
+                    print(f"[PROGRESSIVE LOSS] Epoch {epoch}: alpha={current_alpha:.2f}, beta={current_beta:.4f} (pointer tasks disabled)")
+                elif epoch == 10:
+                    print(f"[PROGRESSIVE LOSS] Epoch {epoch}: alpha={current_alpha:.2f}, beta={current_beta:.4f} (pointer tasks at {epoch_ratio*100:.0f}%)")
+                elif epoch == 50:
+                    print(f"[PROGRESSIVE LOSS] Epoch {epoch}: alpha={current_alpha:.2f}, beta={current_beta:.4f} (pointer tasks at full strength)")
+            else:
+                current_alpha = self.loss_alpha
+                current_beta = self.loss_beta
+
             # Training phase
             self.model.train()
             total_loss = 0.0
@@ -672,7 +703,7 @@ class CnnTransformerModel(BaseModel):
                         outputs = self.model(batch_X_aug)
 
                         if has_pointers:
-                            # Multi-task loss
+                            # Multi-task loss with progressive weighting
                             targets = {
                                 'class': batch_y,
                                 'start_idx': batch_start,
@@ -680,8 +711,8 @@ class CnnTransformerModel(BaseModel):
                             }
                             loss, loss_dict = compute_multitask_loss(
                                 outputs, targets,
-                                alpha=self.loss_alpha,
-                                beta=self.loss_beta,
+                                alpha=current_alpha,
+                                beta=current_beta,
                                 device=str(self.device)
                             )
                             logits = outputs['classification']
@@ -699,7 +730,7 @@ class CnnTransformerModel(BaseModel):
                     outputs = self.model(batch_X_aug)
 
                     if has_pointers:
-                        # Multi-task loss
+                        # Multi-task loss with progressive weighting
                         targets = {
                             'class': batch_y,
                             'start_idx': batch_start,
@@ -707,8 +738,8 @@ class CnnTransformerModel(BaseModel):
                         }
                         loss, loss_dict = compute_multitask_loss(
                             outputs, targets,
-                            alpha=self.loss_alpha,
-                            beta=self.loss_beta,
+                            alpha=current_alpha,
+                            beta=current_beta,
                             device=str(self.device)
                         )
                         logits = outputs['classification']
@@ -760,7 +791,7 @@ class CnnTransformerModel(BaseModel):
                                 outputs = self.model(batch_X)
 
                                 if has_pointers:
-                                    # Multi-task loss
+                                    # Multi-task loss with progressive weighting
                                     targets = {
                                         'class': batch_y,
                                         'start_idx': batch_start,
@@ -768,8 +799,8 @@ class CnnTransformerModel(BaseModel):
                                     }
                                     loss, _ = compute_multitask_loss(
                                         outputs, targets,
-                                        alpha=self.loss_alpha,
-                                        beta=self.loss_beta,
+                                        alpha=current_alpha,
+                                        beta=current_beta,
                                         device=str(self.device)
                                     )
                                     logits = outputs['classification']
@@ -780,7 +811,7 @@ class CnnTransformerModel(BaseModel):
                             outputs = self.model(batch_X)
 
                             if has_pointers:
-                                # Multi-task loss
+                                # Multi-task loss with progressive weighting
                                 targets = {
                                     'class': batch_y,
                                     'start_idx': batch_start,
@@ -788,8 +819,8 @@ class CnnTransformerModel(BaseModel):
                                 }
                                 loss, _ = compute_multitask_loss(
                                     outputs, targets,
-                                    alpha=self.loss_alpha,
-                                    beta=self.loss_beta,
+                                    alpha=current_alpha,
+                                    beta=current_beta,
                                     device=str(self.device)
                                 )
                                 logits = outputs['classification']

@@ -175,7 +175,12 @@ def train(cfg_dir, over, model, device):
 
     # Get model from registry and train
     # Pass device parameter for deep learning models
-    model_instance = get_model(model, seed=cfg.seed, device=device)
+    # Enable multi-task pointer prediction for CNN-Transformer
+    model_kwargs = {"seed": cfg.seed, "device": device}
+    if model == "cnn_transformer":
+        model_kwargs["predict_pointers"] = True
+
+    model_instance = get_model(model, **model_kwargs)
     model_instance.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
 
     # Calculate accuracy using model's predict method (handles label encoding)
@@ -408,6 +413,11 @@ def oof(cfg_dir, over, model, seed, device):
         raise FileNotFoundError(f"Missing {train_path}")
 
     df = pd.read_parquet(train_path)
+
+    # Clean data: remove samples with invalid expansion indices
+    from moola.data.load import validate_expansions
+    df = validate_expansions(df)
+
     X = np.stack([np.stack(f) for f in df["features"]])
     y = df["label"].values
 
@@ -424,6 +434,11 @@ def oof(cfg_dir, over, model, seed, device):
 
     # Generate OOF predictions
     # Pass device parameter for deep learning models
+    # Enable multi-task pointer prediction for CNN-Transformer
+    model_kwargs = {"device": device}
+    if model == "cnn_transformer":
+        model_kwargs["predict_pointers"] = True
+
     oof_predictions = generate_oof(
         X=X,
         y=y,
@@ -432,9 +447,9 @@ def oof(cfg_dir, over, model, seed, device):
         k=k,
         splits_dir=splits_dir,
         output_path=oof_path,
-        device=device,
         expansion_start=expansion_start,
         expansion_end=expansion_end,
+        **model_kwargs,
     )
 
     log.info(f"OOF generation complete | shape={oof_predictions.shape}")

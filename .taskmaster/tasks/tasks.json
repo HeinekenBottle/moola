@@ -55,6 +55,104 @@
         "dependencies": [],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Test task for MCP verification",
+        "description": "Quick test to verify GLM API is working through MCP",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Remove Bespoke integration from Moola",
+        "description": "Clean up and remove the Bespoke backend/frontend integration from Moola project. The candlesticks symlinked directory is now the primary annotation/meta system going forward.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Remove Bespoke backend and frontend directories",
+            "description": "Delete the bespoke_backend/ and bespoke_frontend/ directories and all their contents from the project root",
+            "dependencies": [],
+            "details": "Use rm -rf to completely remove the bespoke_backend/ and bespoke_frontend/ directories. Check git status to ensure these are untracked files that can be safely deleted without affecting version control.",
+            "status": "pending",
+            "testStrategy": "Verify directories are completely removed and project still functions correctly"
+          },
+          {
+            "id": 2,
+            "title": "Remove Bespoke-related scripts and files",
+            "description": "Delete all Bespoke integration scripts, configuration files, and documentation from the scripts/ directory and project root",
+            "dependencies": [
+              1
+            ],
+            "details": "Remove scripts/export_for_bespoke.py, scripts/run_bespoke_interface.py, start_bespoke.sh, and BESPOKE_INTEGRATION_GUIDE.md. Check for any other Bespoke references in configuration files or documentation.",
+            "status": "pending",
+            "testStrategy": "Search codebase for any remaining 'bespoke' references to ensure complete removal"
+          },
+          {
+            "id": 3,
+            "title": "Update code references and imports",
+            "description": "Remove any remaining code references, imports, or configurations that point to the removed Bespoke integration components",
+            "dependencies": [
+              2
+            ],
+            "details": "Search through Python files for any imports or references to bespoke modules. Update any CLI commands or configuration that might reference Bespoke functionality. Ensure the candlesticks system is properly configured as the primary annotation system.",
+            "status": "pending",
+            "testStrategy": "Run the main application and verify no import errors or missing module exceptions related to Bespoke components"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Commit current state before Bespoke removal",
+        "description": "Create a git commit to capture the current state of the codebase before removing Bespoke integration. This establishes a clear baseline for tracking what gets removed.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Deep codebase cleanup - remove legacy and unused files",
+        "description": "Comprehensive audit and removal of unused test files, outdated scripts, legacy code, broken implementations, heavy markdown documentation in root, and any other files adding token weight without value. Streamline the codebase to essential working components only for ensemble model operations.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Enforce modern Python standards and hooks",
+        "description": "Audit codebase for outdated Python patterns, ensure all hooks are properly called, validate ensemble model implementations follow correct data handling and methods. Enforce modern Python best practices throughout.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Prepare for cleanlab corrections integration",
+        "description": "Set up infrastructure for receiving and integrating cleanlab corrections data. Ensure data pipeline is ready for SMOT and other correction techniques to feed into the ensemble system.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -62,7 +160,7 @@
       "projectName": "moola",
       "version": "1.0.0",
       "description": "Tasks for master context",
-      "updated": "2025-10-14T19:17:08.377Z"
+      "updated": "2025-10-15T11:10:01.208Z"
     }
   }
 }

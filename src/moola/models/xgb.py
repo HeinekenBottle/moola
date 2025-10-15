@@ -122,13 +122,25 @@ class XGBModel(BaseModel):
 
         if X.ndim == 3:  # [N, T, F] format
             # Extract 15 features per bar from FULL 105-bar window
-            X_engineered = extract_hopsketch_features(X)  # [N, 105*15] = [N, 1575]
+            X_hopsketch = extract_hopsketch_features(X)  # [N, 1575]
+
+            # Reshape to [N, 105, 15] for temporal aggregation
+            X_hopsketch = X_hopsketch.reshape(-1, 105, 15)
+
+            # Aggregate across time dimension: [N, 60] features
+            # 4 statistics (mean, std, min, max) × 15 features = 60 total
+            X_engineered = np.column_stack([
+                X_hopsketch.mean(axis=1),   # [N, 15] mean per feature
+                X_hopsketch.std(axis=1),    # [N, 15] std per feature
+                X_hopsketch.min(axis=1),    # [N, 15] min per feature
+                X_hopsketch.max(axis=1),    # [N, 15] max per feature
+            ])  # [N, 60] total
         else:
             X_engineered = X
 
         # Ensure X_engineered is numeric
         X_engineered = np.array(X_engineered, dtype=np.float64)
-        print(f"[HOPSKETCH] X_engineered shape: {X_engineered.shape}, dtype: {X_engineered.dtype}")
+        print(f"[HOPSKETCH] Aggregated features shape: {X_engineered.shape}, dtype: {X_engineered.dtype}")
 
         # Encode labels if they are strings
         y_encoded = self.label_encoder.fit_transform(y)
@@ -194,7 +206,17 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = extract_hopsketch_features(X)
+            # Extract and aggregate HopSketch features
+            X_hopsketch = extract_hopsketch_features(X)  # [N, 1575]
+            X_hopsketch = X_hopsketch.reshape(-1, 105, 15)
+
+            # Aggregate to [N, 60]
+            X_engineered = np.column_stack([
+                X_hopsketch.mean(axis=1),
+                X_hopsketch.std(axis=1),
+                X_hopsketch.min(axis=1),
+                X_hopsketch.max(axis=1),
+            ])
         else:
             X_engineered = X
 
@@ -221,7 +243,17 @@ class XGBModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = extract_hopsketch_features(X)
+            # Extract and aggregate HopSketch features
+            X_hopsketch = extract_hopsketch_features(X)  # [N, 1575]
+            X_hopsketch = X_hopsketch.reshape(-1, 105, 15)
+
+            # Aggregate to [N, 60]
+            X_engineered = np.column_stack([
+                X_hopsketch.mean(axis=1),
+                X_hopsketch.std(axis=1),
+                X_hopsketch.min(axis=1),
+                X_hopsketch.max(axis=1),
+            ])
         else:
             X_engineered = X
 
