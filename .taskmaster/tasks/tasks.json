@@ -153,6 +153,17 @@
         "dependencies": [],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Mid-level directory cleanup and legacy code removal",
+        "description": "Comprehensive audit of mid-level directories (configs/, data/, docker/, docs/, examples/, hooks/, moola/, reports/, scripts/, src/) to remove legacy code, outdated configurations, and unused files that could interfere with current ensemble models and training pipelines. Preserve only essential working components for current model training infrastructure.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -160,7 +171,7 @@
       "projectName": "moola",
       "version": "1.0.0",
       "description": "Tasks for master context",
-      "updated": "2025-10-15T11:12:06.532Z"
+      "updated": "2025-10-15T11:19:35.938Z"
     }
   }
 }
