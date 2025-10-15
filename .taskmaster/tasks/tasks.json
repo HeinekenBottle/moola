@@ -83,7 +83,7 @@
             "description": "Delete the bespoke_backend/ and bespoke_frontend/ directories and all their contents from the project root",
             "dependencies": [],
             "details": "Use rm -rf to completely remove the bespoke_backend/ and bespoke_frontend/ directories. Check git status to ensure these are untracked files that can be safely deleted without affecting version control.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify directories are completely removed and project still functions correctly"
           },
           {
@@ -94,7 +94,7 @@
               1
             ],
             "details": "Remove scripts/export_for_bespoke.py, scripts/run_bespoke_interface.py, start_bespoke.sh, and BESPOKE_INTEGRATION_GUIDE.md. Check for any other Bespoke references in configuration files or documentation.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Search codebase for any remaining 'bespoke' references to ensure complete removal"
           },
           {
@@ -116,7 +116,7 @@
         "description": "Create a git commit to capture the current state of the codebase before removing Bespoke integration. This establishes a clear baseline for tracking what gets removed.",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -160,7 +160,7 @@
       "projectName": "moola",
       "version": "1.0.0",
       "description": "Tasks for master context",
-      "updated": "2025-10-15T11:10:01.208Z"
+      "updated": "2025-10-15T11:12:06.532Z"
     }
   }
 }
