@@ -88,6 +88,9 @@ data/artifacts/**/*.npy
 *.temp
 .cache/
 
+# Session tracking
+.watchdog/
+
 # Task files
 # tasks.json
 # tasks/ 
