@@ -207,6 +207,76 @@ SMOTE_K_NEIGHBORS = 5
 
 
 # ============================================================================
+# MASKED LSTM PRE-TRAINING (BIDIRECTIONAL)
+# ============================================================================
+
+# Architecture
+MASKED_LSTM_HIDDEN_DIM = 128
+"""LSTM hidden dimension per direction (bidirectional = 256 total)."""
+
+MASKED_LSTM_NUM_LAYERS = 2
+"""Number of stacked LSTM layers."""
+
+MASKED_LSTM_DROPOUT = 0.2
+"""Dropout rate for pre-training (lower than fine-tuning)."""
+
+# Pre-training objective
+MASKED_LSTM_MASK_RATIO = 0.15
+"""Proportion of timesteps to mask (15% = BERT-style)."""
+
+MASKED_LSTM_MASK_STRATEGY = "patch"
+"""Masking strategy: 'random', 'block', or 'patch' (PatchTST-inspired)."""
+
+MASKED_LSTM_PATCH_SIZE = 7
+"""Patch size for patch masking strategy (7 bars per patch)."""
+
+# Training
+MASKED_LSTM_N_EPOCHS = 50
+"""Maximum pre-training epochs."""
+
+MASKED_LSTM_LEARNING_RATE = 1e-3
+"""Learning rate for pre-training (higher than fine-tuning)."""
+
+MASKED_LSTM_BATCH_SIZE = 512
+"""Pre-training batch size (can be large for unlabeled data)."""
+
+MASKED_LSTM_VAL_SPLIT = 0.1
+"""Validation split for pre-training early stopping."""
+
+MASKED_LSTM_PATIENCE = 10
+"""Early stopping patience for pre-training."""
+
+# Data augmentation for unlabeled data generation
+MASKED_LSTM_AUG_NUM_VERSIONS = 4
+"""Number of augmented versions per unlabeled sample (1 original + 4 aug = 5x data)."""
+
+MASKED_LSTM_AUG_TIME_WARP_PROB = 0.5
+"""Probability of time warping augmentation."""
+
+MASKED_LSTM_AUG_TIME_WARP_SIGMA = 0.12
+"""Time warp magnitude: 12% temporal distortion (conservative for masked pre-training)."""
+
+MASKED_LSTM_AUG_JITTER_PROB = 0.5
+"""Probability of jittering augmentation."""
+
+MASKED_LSTM_AUG_JITTER_SIGMA = 0.05
+"""Jitter magnitude: 5% of feature std (increased from 3% for better noise robustness)."""
+
+MASKED_LSTM_AUG_VOLATILITY_SCALE_PROB = 0.3
+"""Probability of volatility scaling augmentation."""
+
+MASKED_LSTM_AUG_VOLATILITY_RANGE = (0.85, 1.15)
+"""Volatility scaling range: ±15% for simulating different market regimes."""
+
+# Transfer learning
+MASKED_LSTM_FREEZE_EPOCHS = 10
+"""Number of epochs to keep encoder frozen during fine-tuning."""
+
+MASKED_LSTM_UNFREEZE_LR_REDUCTION = 0.5
+"""LR multiplier when unfreezing encoder (0.5 = reduce LR by half)."""
+
+
+# ============================================================================
 # EXPORT ALL CONSTANTS
 # ============================================================================
 
@@ -268,4 +338,25 @@ __all__ = [
     # SMOTE
     "SMOTE_TARGET_COUNT",
     "SMOTE_K_NEIGHBORS",
+    # Masked LSTM pre-training
+    "MASKED_LSTM_HIDDEN_DIM",
+    "MASKED_LSTM_NUM_LAYERS",
+    "MASKED_LSTM_DROPOUT",
+    "MASKED_LSTM_MASK_RATIO",
+    "MASKED_LSTM_MASK_STRATEGY",
+    "MASKED_LSTM_PATCH_SIZE",
+    "MASKED_LSTM_N_EPOCHS",
+    "MASKED_LSTM_LEARNING_RATE",
+    "MASKED_LSTM_BATCH_SIZE",
+    "MASKED_LSTM_VAL_SPLIT",
+    "MASKED_LSTM_PATIENCE",
+    "MASKED_LSTM_AUG_NUM_VERSIONS",
+    "MASKED_LSTM_AUG_TIME_WARP_PROB",
+    "MASKED_LSTM_AUG_TIME_WARP_SIGMA",
+    "MASKED_LSTM_AUG_JITTER_PROB",
+    "MASKED_LSTM_AUG_JITTER_SIGMA",
+    "MASKED_LSTM_AUG_VOLATILITY_SCALE_PROB",
+    "MASKED_LSTM_AUG_VOLATILITY_RANGE",
+    "MASKED_LSTM_FREEZE_EPOCHS",
+    "MASKED_LSTM_UNFREEZE_LR_REDUCTION",
 ]

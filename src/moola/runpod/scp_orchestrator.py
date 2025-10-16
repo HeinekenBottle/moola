@@ -682,3 +682,169 @@ class RunPodOrchestrator:
         print("[CLEANUP] Manual cleanup required - implement version-based pruning")
 
         return True
+
+    def run_pretraining(
+        self,
+        unlabeled_data_path: str = "/workspace/data/processed/unlabeled_pretrain.parquet",
+        save_path: str = "/workspace/artifacts/pretrained/bilstm_encoder.pt",
+        n_epochs: int = 50,
+        batch_size: int = 512,
+        timeout: int = 3600,
+    ) -> int:
+        """
+        Execute masked LSTM pre-training on RunPod.
+
+        Args:
+            unlabeled_data_path: Path to unlabeled sequences (parquet)
+            save_path: Path to save pre-trained encoder
+            n_epochs: Number of pre-training epochs
+            batch_size: Batch size for pre-training
+            timeout: Pre-training timeout in seconds (default: 3600 = 1 hour)
+
+        Returns:
+            Exit code (0 = success)
+
+        Example:
+            >>> exit_code = orch.run_pretraining(
+            ...     unlabeled_data_path="/workspace/data/processed/unlabeled_pretrain.parquet",
+            ...     n_epochs=50,
+            ...     timeout=3600
+            ... )
+        """
+        print(f"[PRE-TRAINING] Starting masked LSTM pre-training...")
+        print(f"  Unlabeled data: {unlabeled_data_path}")
+        print(f"  Save path: {save_path}")
+        print(f"  Epochs: {n_epochs}")
+        print(f"  Batch size: {batch_size}")
+
+        # Build pre-training command
+        cmd = f"""
+        cd {self.workspace} && \\
+        source /tmp/moola-venv/bin/activate && \\
+        export PYTHONPATH="{self.workspace}/src:$PYTHONPATH" && \\
+        python3 -c '
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from moola.pretraining.masked_lstm_pretrain import MaskedLSTMPretrainer
+
+# Load unlabeled data
+df = pd.read_parquet("{unlabeled_data_path}")
+X_unlabeled = np.stack(df["ohlc_sequence"].values)
+print(f"[DATA] Loaded {{len(X_unlabeled)}} unlabeled sequences")
+
+# Initialize pre-trainer
+pretrainer = MaskedLSTMPretrainer(
+    device="cuda",
+    batch_size={batch_size},
+    seed=1337
+)
+
+# Run pre-training
+history = pretrainer.pretrain(
+    X_unlabeled=X_unlabeled,
+    n_epochs={n_epochs},
+    save_path=Path("{save_path}"),
+    verbose=True
+)
+
+print(f"[PRE-TRAINING] Complete! Best val loss: {{min(history[\\"val_loss\\"]):.4f}}")
+'
+        """
+
+        # Execute pre-training with streaming output
+        return_code = self.execute_command(cmd, timeout=timeout, stream_output=True)
+
+        if return_code == 0:
+            print(f"[PRE-TRAINING] ✓ Pre-training complete")
+            print(f"  Encoder saved: {save_path}")
+        else:
+            print(f"[PRE-TRAINING] ✗ Pre-training failed with exit code {return_code}")
+
+        return return_code
+
+    def monitor_pretraining(self) -> Dict[str, Any]:
+        """
+        Monitor pre-training progress and GPU stats.
+
+        Returns:
+            Dictionary with pre-training status and metrics
+        """
+        print(f"[MONITOR] Checking pre-training status...")
+
+        # Check for running Python pre-training process
+        ps_check = self.execute_command(
+            "ps aux | grep 'MaskedLSTMPretrainer\\|masked_lstm_pretrain' | grep -v grep",
+            stream_output=False,
+            timeout=10,
+        )
+
+        is_pretraining = (ps_check == 0)
+
+        # Get GPU stats
+        gpu_cmd = "nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits"
+        exit_code, gpu_output = self._run_command(
+            f"ssh root@{self.host} -p {self.port} -i {self.key_path} -o StrictHostKeyChecking=no '{gpu_cmd}'",
+            stream_output=False,
+            timeout=10,
+        )[:2]
+
+        gpu_stats = {"utilization": 0, "memory_used": 0, "memory_total": 24000, "temperature": 0}
+        if exit_code == 0:
+            parts = gpu_output.strip().split(',')
+            if len(parts) == 4:
+                gpu_stats = {
+                    "utilization": int(parts[0].strip()),
+                    "memory_used": int(parts[1].strip()),
+                    "memory_total": int(parts[2].strip()),
+                    "temperature": int(parts[3].strip()),
+                }
+
+        status = {
+            "is_pretraining": is_pretraining,
+            "gpu_stats": gpu_stats,
+        }
+
+        # Display status
+        print(f"\n[STATUS]")
+        if is_pretraining:
+            print(f"  ✅ Pre-training in progress")
+        else:
+            print(f"  ⚠️  No pre-training detected")
+
+        print(f"\n[GPU]")
+        print(f"  Utilization: {gpu_stats['utilization']}%")
+        print(f"  VRAM: {gpu_stats['memory_used']}/{gpu_stats['memory_total']} MB ({gpu_stats['memory_used']/gpu_stats['memory_total']*100:.1f}%)")
+        print(f"  Temperature: {gpu_stats['temperature']}°C")
+
+        return status
+
+    def download_pretrained_encoder(
+        self,
+        remote_path: str = "/workspace/artifacts/pretrained/bilstm_encoder.pt",
+        local_path: Union[str, Path] = "data/artifacts/pretrained/bilstm_encoder.pt",
+    ) -> bool:
+        """
+        Download pre-trained encoder from RunPod.
+
+        Args:
+            remote_path: Remote encoder path
+            local_path: Local save path
+
+        Returns:
+            True if download succeeded
+        """
+        print(f"[DOWNLOAD] Fetching pre-trained encoder...")
+        print(f"  Remote: {remote_path}")
+        print(f"  Local: {local_path}")
+
+        success = self.download_file(remote_path, local_path)
+
+        if success:
+            local_path = Path(local_path)
+            size_mb = local_path.stat().st_size / (1024 * 1024)
+            print(f"[DOWNLOAD] ✓ Encoder downloaded ({size_mb:.1f} MB)")
+        else:
+            print(f"[DOWNLOAD] ✗ Failed to download encoder")
+
+        return success

@@ -228,6 +228,7 @@ class SimpleLSTMModel(BaseModel):
         y: np.ndarray,
         expansion_start: np.ndarray = None,
         expansion_end: np.ndarray = None,
+        unfreeze_encoder_after: int = 0,
     ) -> "SimpleLSTMModel":
         """Train SimpleLSTM model.
 
@@ -236,6 +237,8 @@ class SimpleLSTMModel(BaseModel):
             y: Target labels of shape [N]
             expansion_start: Optional expansion start indices (unused)
             expansion_end: Optional expansion end indices (unused)
+            unfreeze_encoder_after: Epoch to unfreeze encoder (0 = never unfreeze,
+                                   >0 = unfreeze after N epochs). Used with pre-trained encoder.
 
         Returns:
             Self for method chaining
@@ -346,6 +349,18 @@ class SimpleLSTMModel(BaseModel):
 
         # Training loop
         for epoch in range(self.n_epochs):
+            # Unfreeze encoder if scheduled (for pre-trained models)
+            if unfreeze_encoder_after > 0 and epoch == unfreeze_encoder_after:
+                print(f"\n[SSL PRE-TRAINING] Unfreezing LSTM encoder at epoch {epoch + 1}")
+                for param in self.model.lstm.parameters():
+                    param.requires_grad = True
+
+                # Reduce learning rate after unfreezing (from config)
+                from ..config.training_config import MASKED_LSTM_UNFREEZE_LR_REDUCTION
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= MASKED_LSTM_UNFREEZE_LR_REDUCTION
+                print(f"[SSL PRE-TRAINING] Reduced LR to {optimizer.param_groups[0]['lr']:.6f}\n")
+
             # Training phase
             self.model.train()
             total_loss = 0.0
@@ -563,4 +578,101 @@ class SimpleLSTMModel(BaseModel):
         self.model.eval()
 
         self.is_fitted = True
+        return self
+
+    def load_pretrained_encoder(
+        self,
+        encoder_path: Path,
+        freeze_encoder: bool = True
+    ) -> "SimpleLSTMModel":
+        """Load pre-trained bidirectional LSTM encoder weights.
+
+        Maps bidirectional encoder weights to unidirectional LSTM.
+        The bidirectional encoder has 2x parameters (forward + backward),
+        so we extract only the forward direction weights.
+
+        Args:
+            encoder_path: Path to pre-trained encoder checkpoint (.pt file)
+            freeze_encoder: If True, freeze LSTM weights during initial training
+
+        Returns:
+            Self with pre-trained encoder loaded
+
+        Raises:
+            ValueError: If model not built yet or hidden size mismatch
+        """
+        if self.model is None:
+            raise ValueError(
+                "Model must be built first. Call fit() or _build_model() before loading encoder."
+            )
+
+        print(f"[SSL PRE-TRAINING] Loading pre-trained encoder from: {encoder_path}")
+
+        # Load checkpoint
+        checkpoint = torch.load(encoder_path, map_location=self.device)
+        encoder_state_dict = checkpoint['encoder_state_dict']
+        hyperparams = checkpoint['hyperparams']
+
+        # Verify architecture compatibility
+        pretrained_hidden = hyperparams['hidden_dim']
+        if self.hidden_size != pretrained_hidden:
+            raise ValueError(
+                f"Hidden size mismatch: SimpleLSTM={self.hidden_size}, "
+                f"Pre-trained encoder={pretrained_hidden}"
+            )
+
+        print(f"[SSL PRE-TRAINING] Architecture verified (hidden_dim={pretrained_hidden})")
+
+        # Map bidirectional LSTM weights to unidirectional LSTM
+        # PyTorch bidirectional LSTM structure:
+        #   - weight_ih_l0: Forward input-hidden weights [hidden*4, input]
+        #   - weight_ih_l0_reverse: Backward input-hidden weights [hidden*4, input]
+        #   - weight_hh_l0: Forward hidden-hidden weights [hidden*4, hidden]
+        #   - weight_hh_l0_reverse: Backward hidden-hidden weights [hidden*4, hidden]
+        #   - bias_ih_l0, bias_hh_l0: Forward biases [hidden*4]
+        #   - bias_ih_l0_reverse, bias_hh_l0_reverse: Backward biases [hidden*4]
+        #
+        # Strategy: Copy ONLY forward direction weights (ignore _reverse parameters)
+
+        model_state_dict = self.model.state_dict()
+        loaded_keys = []
+
+        for key in encoder_state_dict:
+            # Skip backward (reverse) direction weights
+            if '_reverse' in key:
+                continue
+
+            # Map encoder_lstm.weight_XX_lY → lstm.weight_XX_lY
+            model_key = key.replace('encoder_lstm.', 'lstm.')
+
+            if model_key in model_state_dict:
+                # Verify shapes match
+                encoder_shape = encoder_state_dict[key].shape
+                model_shape = model_state_dict[model_key].shape
+
+                if encoder_shape == model_shape:
+                    model_state_dict[model_key] = encoder_state_dict[key]
+                    loaded_keys.append(model_key)
+                else:
+                    print(f"[SSL PRE-TRAINING] WARNING: Shape mismatch for {model_key}:")
+                    print(f"  Expected: {model_shape}, Got: {encoder_shape}")
+            else:
+                print(f"[SSL PRE-TRAINING] WARNING: Key not found in model: {model_key}")
+
+        # Load mapped weights into model
+        self.model.load_state_dict(model_state_dict)
+
+        print(f"[SSL PRE-TRAINING] Loaded {len(loaded_keys)} parameter tensors:")
+        for key in loaded_keys:
+            print(f"  ✓ {key}")
+
+        # Freeze encoder if requested
+        if freeze_encoder:
+            print(f"[SSL PRE-TRAINING] Freezing LSTM encoder weights")
+            for param in self.model.lstm.parameters():
+                param.requires_grad = False
+            print(f"  → Encoder frozen. Only classifier will be trained initially.")
+        else:
+            print(f"[SSL PRE-TRAINING] Encoder unfrozen. All parameters trainable.")
+
         return self
