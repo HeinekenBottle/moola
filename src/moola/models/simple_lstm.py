@@ -642,8 +642,10 @@ class SimpleLSTMModel(BaseModel):
             if '_reverse' in key:
                 continue
 
-            # Map encoder_lstm.weight_XX_lY → lstm.weight_XX_lY
-            model_key = key.replace('encoder_lstm.', 'lstm.')
+            # Map encoder keys to SimpleLSTM's LSTM keys
+            # Encoder keys are like: weight_ih_l0, weight_hh_l0, bias_ih_l0, bias_hh_l0
+            # SimpleLSTM expects them as: lstm.weight_ih_l0, lstm.weight_hh_l0, etc.
+            model_key = f"lstm.{key}"
 
             if model_key in model_state_dict:
                 # Verify shapes match
