@@ -65,17 +65,31 @@ CNNTR_DROPOUT = 0.25
 """Dropout rate: 0.25 is balanced regularization for small dataset (~100 samples)."""
 
 # Training
-CNNTR_N_EPOCHS = 60
-"""Maximum epochs. Early stopping typically stops at 30-40 epochs."""
+CNNTR_N_EPOCHS = 80
+"""Maximum epochs. Increased to 80 for SSL transfer learning (needs 50+ epochs to converge)."""
 
 CNNTR_LEARNING_RATE = 5e-4
 """Learning rate: 5e-4 is stable for small datasets. Higher rates (1e-3) caused gradient explosion."""
 
-CNNTR_EARLY_STOPPING_PATIENCE = 20
-"""Patience for early stopping. Increase if underfitting."""
+CNNTR_EARLY_STOPPING_PATIENCE = 30
+"""Patience for early stopping. Increased to 30 for SSL transfer learning."""
 
 CNNTR_VAL_SPLIT = 0.15
 """Validation split for early stopping. 15% ≈ 15 samples for ~100 sample dataset."""
+
+# SSL Transfer Learning
+CNNTR_FREEZE_EPOCHS = 10
+"""Number of epochs to keep encoder frozen when using pre-trained weights."""
+
+CNNTR_GRADUAL_UNFREEZE = True
+"""Enable gradual unfreezing schedule for pre-trained encoder."""
+
+CNNTR_UNFREEZE_SCHEDULE = {
+    "stage1_epoch": 10,  # Unfreeze last transformer layer
+    "stage2_epoch": 20,  # Unfreeze all transformer layers
+    "stage3_epoch": 30,  # Unfreeze CNN blocks (full fine-tuning)
+}
+"""Gradual unfreezing schedule: epoch -> stage mapping."""
 
 # Data augmentation
 CNNTR_MIXUP_ALPHA = 0.4
@@ -88,11 +102,11 @@ CNNTR_CUTMIX_PROB = 0.5
 CNNTR_MULTI_TASK_ENABLED = False
 """Enable pointer start/end prediction alongside classification."""
 
-CNNTR_LOSS_ALPHA_CLASSIFICATION = 0.5
-"""Loss weight for classification task in multi-task mode."""
+CNNTR_LOSS_ALPHA_CLASSIFICATION = 1.0
+"""Loss weight for classification task. Set to 1.0 to prioritize classification."""
 
-CNNTR_LOSS_BETA_POINTER = 0.25
-"""Loss weight for each pointer task in multi-task mode."""
+CNNTR_LOSS_BETA_POINTER = 0.0
+"""Loss weight for each pointer task. Set to 0.0 to disable pointer tasks initially."""
 
 CNNTR_LOSS_PROGRESSIVE_WEIGHTING = True
 """Gradually increase pointer task weight during training (helps with small datasets)."""
@@ -223,6 +237,9 @@ __all__ = [
     "CNNTR_LOSS_ALPHA_CLASSIFICATION",
     "CNNTR_LOSS_BETA_POINTER",
     "CNNTR_LOSS_PROGRESSIVE_WEIGHTING",
+    "CNNTR_FREEZE_EPOCHS",
+    "CNNTR_GRADUAL_UNFREEZE",
+    "CNNTR_UNFREEZE_SCHEDULE",
     # RWKV-TS
     "RWKV_N_EPOCHS",
     "RWKV_LEARNING_RATE",

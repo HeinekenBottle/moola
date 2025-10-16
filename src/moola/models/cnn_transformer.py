@@ -578,9 +578,18 @@ class CnnTransformerModel(BaseModel):
         self.model = self._build_model(self.input_dim, self.n_classes)
 
         # Load pre-trained encoder if path was provided
+        use_pretrained = False
         if hasattr(self, '_pretrained_encoder_path'):
             print(f"[SSL] Loading pre-trained encoder from {self._pretrained_encoder_path}")
             self.load_pretrained_encoder(self._pretrained_encoder_path)
+            use_pretrained = True
+
+            # Freeze encoder initially
+            from ..config.training_config import CNNTR_FREEZE_EPOCHS, CNNTR_GRADUAL_UNFREEZE
+            if CNNTR_GRADUAL_UNFREEZE:
+                self.freeze_encoder()
+                print(f"[SSL] Encoder will be frozen for first {CNNTR_FREEZE_EPOCHS} epochs")
+                print(f"[SSL] Gradual unfreezing enabled: stages at epochs {CNNTR_FREEZE_EPOCHS}, {CNNTR_FREEZE_EPOCHS + 10}, {CNNTR_FREEZE_EPOCHS + 20}")
 
         # GPU diagnostic logging
         if self.device.type == "cuda":
@@ -679,6 +688,21 @@ class CnnTransformerModel(BaseModel):
 
         # Training loop
         for epoch in range(self.n_epochs):
+            # Gradual unfreezing for pre-trained encoder
+            if use_pretrained:
+                from ..config.training_config import CNNTR_FREEZE_EPOCHS, CNNTR_GRADUAL_UNFREEZE, CNNTR_UNFREEZE_SCHEDULE
+                if CNNTR_GRADUAL_UNFREEZE:
+                    stage1_epoch = CNNTR_UNFREEZE_SCHEDULE['stage1_epoch']
+                    stage2_epoch = CNNTR_UNFREEZE_SCHEDULE['stage2_epoch']
+                    stage3_epoch = CNNTR_UNFREEZE_SCHEDULE['stage3_epoch']
+
+                    if epoch == stage1_epoch:
+                        self.unfreeze_encoder_gradual(stage=1)
+                    elif epoch == stage2_epoch:
+                        self.unfreeze_encoder_gradual(stage=2)
+                    elif epoch == stage3_epoch:
+                        self.unfreeze_encoder_gradual(stage=3)
+
             # Progressive loss weighting: start classification-heavy, gradually add pointer tasks
             # 97 samples too small for strong multi-task - let classification converge first
             if has_pointers:
@@ -867,6 +891,31 @@ class CnnTransformerModel(BaseModel):
 
                 avg_val_loss = val_loss / len(val_dataloader)
                 val_accuracy = val_correct / val_total
+
+                # Per-class accuracy tracking (every 10 epochs or on collapse warning)
+                if (epoch + 1) % 10 == 0 or epoch < 5:
+                    from ..validation.training_validator import detect_class_collapse
+
+                    # Get validation predictions for per-class analysis
+                    self.model.eval()
+                    with torch.no_grad():
+                        val_X_tensor = torch.FloatTensor(X_val).to(self.device)
+                        val_outputs = self.model(val_X_tensor)
+                        if isinstance(val_outputs, dict):
+                            val_logits = val_outputs['classification']
+                        else:
+                            val_logits = val_outputs
+                        _, val_preds = torch.max(val_logits, 1)
+
+                    # Detect class collapse
+                    val_preds_np = val_preds.cpu().numpy()
+                    class_accs = detect_class_collapse(
+                        val_preds_np,
+                        y_val,
+                        epoch + 1,
+                        threshold=0.1,
+                        class_names=self.idx_to_label
+                    )
 
                 # Check early stopping
                 if early_stopping(avg_val_loss, self.model):
@@ -1201,3 +1250,72 @@ class CnnTransformerModel(BaseModel):
         print(f"[SSL] Classification head will be trained from scratch")
 
         return self
+
+    def freeze_encoder(self) -> None:
+        """Freeze encoder weights (CNN blocks + Transformer) to prevent updates during training.
+
+        Use this after loading pre-trained encoder to preserve learned representations
+        while training only the classification head.
+        """
+        if self.model is None:
+            raise ValueError("Model not built yet. Call fit() or _build_model() first")
+
+        # Freeze CNN blocks
+        for param in self.model.cnn_blocks.parameters():
+            param.requires_grad = False
+
+        # Freeze transformer layers
+        for param in self.model.transformer.parameters():
+            param.requires_grad = False
+
+        # Freeze positional encoding
+        for param in self.model.rel_pos_enc.parameters():
+            param.requires_grad = False
+
+        frozen_count = sum(1 for p in self.model.parameters() if not p.requires_grad)
+        trainable_count = sum(1 for p in self.model.parameters() if p.requires_grad)
+
+        print(f"[FREEZE] Encoder frozen: {frozen_count} frozen params, {trainable_count} trainable params")
+
+    def unfreeze_encoder_gradual(self, stage: int) -> None:
+        """Gradually unfreeze encoder layers for fine-tuning.
+
+        Args:
+            stage: Unfreezing stage:
+                1: Unfreeze last transformer layer only
+                2: Unfreeze all transformer layers
+                3: Unfreeze everything (CNN blocks + Transformer)
+        """
+        if self.model is None:
+            raise ValueError("Model not built yet. Call fit() or _build_model() first")
+
+        if stage == 1:
+            # Unfreeze last transformer layer
+            last_layer = self.model.transformer.layers[-1]
+            for param in last_layer.parameters():
+                param.requires_grad = True
+            print(f"[UNFREEZE] Stage 1: Last transformer layer unfrozen")
+
+        elif stage == 2:
+            # Unfreeze all transformer layers
+            for param in self.model.transformer.parameters():
+                param.requires_grad = True
+            print(f"[UNFREEZE] Stage 2: All transformer layers unfrozen")
+
+        elif stage == 3:
+            # Unfreeze everything
+            for param in self.model.cnn_blocks.parameters():
+                param.requires_grad = True
+            for param in self.model.transformer.parameters():
+                param.requires_grad = True
+            for param in self.model.rel_pos_enc.parameters():
+                param.requires_grad = True
+            print(f"[UNFREEZE] Stage 3: Full model unfrozen (fine-tuning all layers)")
+
+        else:
+            raise ValueError(f"Invalid stage {stage}. Must be 1, 2, or 3")
+
+        # Log current status
+        frozen_count = sum(1 for p in self.model.parameters() if not p.requires_grad)
+        trainable_count = sum(1 for p in self.model.parameters() if p.requires_grad)
+        print(f"[UNFREEZE] Current status: {frozen_count} frozen params, {trainable_count} trainable params")
