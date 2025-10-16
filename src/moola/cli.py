@@ -452,6 +452,9 @@ def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
     elif model == "simple_lstm":
         if load_pretrained_encoder:
             model_kwargs["load_pretrained_encoder"] = load_pretrained_encoder
+            # Encoder is bidirectional (128 per direction, 256 total)
+            # SimpleLSTM is unidirectional, so use 128 to match forward direction
+            model_kwargs["hidden_size"] = 128
 
     oof_predictions = generate_oof(
         X=X,
