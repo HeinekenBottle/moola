@@ -19,9 +19,10 @@ Multi-Task Learning (Phase 3):
   3. Pointer end head: Identify expansion end within inner window [30:75]
 - Balanced loss weighting: alpha=0.5 (class), beta=0.25 (each pointer)
 
-Training Enhancements (REVERTED from Phase 1 optimizations):
-- Mixup + CutMix augmentation (alpha=0.2, gentler mixing for small dataset)
-- Early stopping with patience=30 (increased from 20 for full convergence on cleaned dataset)
+Training Enhancements (Phase 2 augmentation improvements):
+- Mixup + CutMix augmentation (alpha=0.4, increased for better generalization)
+- Temporal augmentation: jitter (50%), scaling (30%), time_warp (30%)
+- Early stopping with patience=20 (optimized for Phase 2 with augmentation)
 - Learning rate: 5e-4 (reverted from 1e-3 - higher LR caused gradient explosion)
 - Dropout: 0.25 (reverted from 0.1 - essential regularization for small dataset)
 - Max epochs: 60 (increased from 10)
@@ -43,6 +44,7 @@ from ..utils.early_stopping import EarlyStopping
 from ..utils.focal_loss import FocalLoss
 from ..utils.losses import compute_multitask_loss
 from ..utils.seeds import get_device, set_seed
+from ..utils.temporal_augmentation import TemporalAugmentation
 from .base import BaseModel
 
 
@@ -207,13 +209,17 @@ class CnnTransformerModel(BaseModel):
         device: str = "cpu",
         use_amp: bool = True,
         num_workers: int = 16,
-        early_stopping_patience: int = 30,
+        early_stopping_patience: int = 20,
         val_split: float = 0.15,
-        mixup_alpha: float = 0.2,
+        mixup_alpha: float = 0.4,
         cutmix_prob: float = 0.5,
         predict_pointers: bool = False,
         loss_alpha: float = 0.5,
         loss_beta: float = 0.25,
+        use_temporal_aug: bool = True,
+        jitter_prob: float = 0.5,
+        scaling_prob: float = 0.3,
+        time_warp_prob: float = 0.3,
         **kwargs,
     ):
         """Initialize CNN→Transformer model with optional multi-task pointer prediction.
@@ -231,13 +237,17 @@ class CnnTransformerModel(BaseModel):
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
-            early_stopping_patience: Epochs to wait before stopping (default: 30)
+            early_stopping_patience: Epochs to wait before stopping (default: 20, Phase 2 optimized)
             val_split: Validation split ratio for early stopping (default: 0.15, ~20 samples)
-            mixup_alpha: Mixup interpolation strength (default: 0.2, gentler for small dataset)
+            mixup_alpha: Mixup interpolation strength (default: 0.4, Phase 2 augmentation)
             cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)
             predict_pointers: Enable multi-task pointer prediction (default: False)
             loss_alpha: Weight for classification loss in multi-task mode (default: 0.5)
             loss_beta: Weight for each pointer loss in multi-task mode (default: 0.25)
+            use_temporal_aug: Enable temporal augmentation (jitter, scaling, time_warp)
+            jitter_prob: Probability of applying jitter (default: 0.5)
+            scaling_prob: Probability of applying scaling (default: 0.3)
+            time_warp_prob: Probability of applying time warping (default: 0.3)
             **kwargs: Additional parameters
         """
         super().__init__(seed=seed)
@@ -260,8 +270,25 @@ class CnnTransformerModel(BaseModel):
         self.predict_pointers = predict_pointers
         self.loss_alpha = loss_alpha
         self.loss_beta = loss_beta
+        self.use_temporal_aug = use_temporal_aug
+        self.jitter_prob = jitter_prob
+        self.scaling_prob = scaling_prob
+        self.time_warp_prob = time_warp_prob
 
         set_seed(seed)
+
+        # Initialize temporal augmentation pipeline
+        if self.use_temporal_aug:
+            self.temporal_aug = TemporalAugmentation(
+                jitter_prob=jitter_prob,
+                jitter_sigma=0.05,  # 5% noise
+                scaling_prob=scaling_prob,
+                scaling_sigma=0.1,  # 10% magnitude variation
+                permutation_prob=0.0,  # Disabled (breaks temporal order)
+                time_warp_prob=time_warp_prob,
+                time_warp_sigma=0.2,
+                rotation_prob=0.0,  # Disabled (OHLC order matters)
+            )
 
         # Model will be built after seeing input dimension and num classes
         self.model = None
@@ -538,19 +565,14 @@ class CnnTransformerModel(BaseModel):
         self.label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
         self.idx_to_label = {idx: label for label, idx in self.label_to_idx.items()}
 
-        # Calculate class weights for Focal Loss
-        # Convert labels to indices for counting
+        # Log class distribution
         y_indices_for_weights = np.array([self.label_to_idx[label] for label in y])
         unique_classes, class_counts = np.unique(y_indices_for_weights, return_counts=True)
         n_samples = len(y)
         n_classes = len(unique_classes)
 
-        # Balanced class weights: n_samples / (n_classes * class_count)
-        class_weights_np = n_samples / (n_classes * class_counts)
-        class_weights = torch.FloatTensor(class_weights_np)
-
-        print(f"[CLASS BALANCE] Class weights: {dict(zip(unique_classes, class_weights_np))}")
         print(f"[CLASS BALANCE] Class distribution: {dict(zip(unique_classes, class_counts))}")
+        print(f"[LOSS] Using Focal Loss (gamma=2.0) WITHOUT class weights to avoid double correction")
 
         # Build model
         self.model = self._build_model(self.input_dim, self.n_classes)
@@ -634,8 +656,9 @@ class CnnTransformerModel(BaseModel):
         optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4
         )
-        # Use Focal Loss with class weights to handle imbalance
-        criterion = FocalLoss(gamma=2.0, alpha=class_weights, reduction='mean')
+        # Use Focal Loss WITHOUT class weights to avoid double correction
+        # Focal loss already handles imbalance via gamma parameter
+        criterion = FocalLoss(gamma=2.0, alpha=None, reduction='mean')
 
         # Setup mixed precision training
         scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
@@ -687,7 +710,11 @@ class CnnTransformerModel(BaseModel):
                     batch_X = batch_X.to(self.device, non_blocking=True)
                     batch_y = batch_y.to(self.device, non_blocking=True)
 
-                # Apply augmentation (mixup + cutmix)
+                # Apply temporal augmentation first (jitter, scaling, time_warp)
+                if self.use_temporal_aug:
+                    batch_X = self.temporal_aug.apply_augmentation(batch_X)
+
+                # Then apply mixup/cutmix
                 # NOTE: Augmentation only applies to classification labels, not pointers
                 batch_X_aug, y_a, y_b, lam = mixup_cutmix(
                     batch_X, batch_y,

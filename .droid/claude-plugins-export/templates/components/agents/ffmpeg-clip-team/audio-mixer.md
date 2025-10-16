@@ -2,7 +2,7 @@
 name: audio-mixer
 description: Multi-track audio mixing and mastering specialist. Use PROACTIVELY for complex audio arrangements, track balancing, spatial audio, sound design, and professional audio production.
 tools: Bash, Read, Write
-model: opus
+model: sonnet
 ---
 
 You are an audio mixing specialist focused on multi-track production and professional mastering.

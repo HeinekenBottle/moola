@@ -10,7 +10,51 @@
         "status": "pending",
         "dependencies": [],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Performance analysis and metric collection",
+            "description": "Analyze current RWKV-TS model performance metrics, collect detailed training/validation statistics, and identify performance bottlenecks",
+            "dependencies": [],
+            "details": "Run comprehensive performance analysis on the current RWKV-TS model implementation. Collect training loss curves, validation accuracy trends, confusion matrices, and per-class performance metrics. Analyze gradient flow, learning rate effectiveness, and convergence patterns. Document current 29% accuracy baseline and identify specific failure modes or data patterns causing poor performance.",
+            "status": "pending",
+            "testStrategy": "Validate metrics collection by comparing against known baseline results and ensuring all performance indicators are captured accurately"
+          },
+          {
+            "id": 2,
+            "title": "Model architecture review and hyperparameter tuning",
+            "description": "Review RWKV-TS architecture configuration and systematically tune hyperparameters to optimize model performance",
+            "dependencies": [
+              1
+            ],
+            "details": "Examine the 655K parameter RWKV-TS architecture for potential improvements. Review layer configurations, attention mechanisms, and token mixing strategies. Systematically tune critical hyperparameters including learning rate, batch size, sequence length, embedding dimensions, and regularization parameters. Compare against RWKV best practices and research papers for optimal configurations.",
+            "status": "pending",
+            "testStrategy": "Use grid search or Bayesian optimization to validate hyperparameter improvements, with cross-validation to ensure robust performance gains"
+          },
+          {
+            "id": 3,
+            "title": "Training loop debugging and data pipeline validation",
+            "description": "Debug training loop implementation and validate data preprocessing pipeline for correctness and efficiency",
+            "dependencies": [
+              1
+            ],
+            "details": "Thoroughly debug the training loop for issues like gradient accumulation, optimizer state management, and learning rate scheduling. Validate data preprocessing pipeline including tokenization, sequence padding, and batch construction. Check for data leakage, incorrect labels, or preprocessing artifacts that could impact model learning. Ensure proper train/validation splits and data augmentation if applicable.",
+            "status": "pending",
+            "testStrategy": "Implement unit tests for data pipeline components and validate training loop with simplified datasets to isolate potential issues"
+          },
+          {
+            "id": 4,
+            "title": "Implementation of performance improvements and validation",
+            "description": "Apply identified fixes and improvements to achieve 50-60% target accuracy with comprehensive validation",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Implement the most promising improvements identified from architecture review and training debugging. This may include hyperparameter adjustments, architecture modifications, training procedure fixes, or data pipeline improvements. Retrain the model with optimized configuration and validate that accuracy reaches the 50-60% target range. Document all changes and their impact on performance.",
+            "status": "pending",
+            "testStrategy": "Conduct multiple training runs to ensure consistent performance improvements, with statistical significance testing to validate the 50-60% accuracy target is reliably achieved"
+          }
+        ]
       },
       {
         "id": 2,

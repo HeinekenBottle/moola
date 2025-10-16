@@ -1,0 +1,36 @@
+# CNN-Transformer Configuration
+# Hybrid CNN→Transformer model for time series classification
+# Combines local pattern detection with global context modeling
+
+model:
+  name: cnn_transformer
+  cnn_channels: [64, 128, 128]
+  cnn_kernels: [3, 5, 9]        # Multi-scale kernels (final kernel increased for longer trends)
+  transformer_layers: 3
+  transformer_heads: 4
+  dropout: 0.25                  # Balanced regularization for small dataset
+
+training:
+  n_epochs: 60
+  batch_size: 1024               # Phase 2: Increased from 512 for GPU efficiency
+  accumulation_steps: 1          # Effective batch size = batch_size * accumulation_steps
+  learning_rate: 5e-4            # Stable learning rate for small dataset
+  early_stopping_patience: 20    # Phase 2: Reduced from 30 (faster convergence with augmentation)
+  val_split: 0.15                # ~20 samples for stable early stopping
+
+augmentation:
+  mixup_alpha: 0.4               # Increased from 0.2 for Phase 2
+  cutmix_prob: 0.5               # 50% chance of cutmix vs mixup
+  use_temporal_aug: true         # Enable temporal augmentation (Phase 2)
+  jitter_prob: 0.5               # Add Gaussian noise
+  scaling_prob: 0.3              # Magnitude warping
+  time_warp_prob: 0.3            # Time axis warping
+
+hardware:
+  device: cuda                   # Use 'cpu' if no GPU available
+  use_amp: true                  # Mixed precision training (FP16)
+  num_workers: 16                # DataLoader workers (set to 0 for CPU)
+  prefetch_factor: 4             # Phase 2: Increased from 2 for better GPU utilization
+  persistent_workers: true       # Keep workers alive between epochs
+
+seed: 1337

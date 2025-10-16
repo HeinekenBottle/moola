@@ -1,0 +1,93 @@
+{
+	"meta": {
+		"generatedAt": "2025-10-16T00:15:54.598Z",
+		"tasksAnalyzed": 10,
+		"totalTasks": 12,
+		"analysisCount": 10,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Fix RWKV-TS model performance",
+			"complexityScore": 8,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break down RWKV-TS model diagnosis and fixing into: (1) Performance analysis and metric collection, (2) Model architecture review and hyperparameter tuning, (3) Training loop debugging and data pipeline validation, (4) Implementation of performance improvements and validation",
+			"reasoning": "High complexity due to requiring deep learning expertise, model debugging, and comprehensive performance analysis. The existing RWKV-TS implementation is sophisticated with 655K parameters but achieving only 29% accuracy, suggesting architectural or training issues requiring systematic diagnosis."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Complete stack ensemble implementation",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Expand into: (1) Generate missing CNN-Trans OOF predictions, (2) Update stacking ensemble to handle additional model predictions, (3) Test and validate complete 2-class ensemble performance",
+			"reasoning": "Medium-high complexity as the stack model infrastructure exists but needs completion. Requires understanding ensemble architecture, OOF prediction generation, and model integration patterns already established in the codebase."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Implement feature normalization",
+			"complexityScore": 4,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Break into: (1) Add StandardScaler integration to feature engineering pipeline, (2) Update all model classes to handle normalized features and validate improved convergence",
+			"reasoning": "Medium complexity. StandardScaler is a well-established technique but requires careful integration across the existing feature engineering pipeline and all model implementations to ensure consistent normalization."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Add focal loss for class imbalance",
+			"complexityScore": 3,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Expand into: (1) Implement focal loss with γ=2.0 and class weights [1.0, 1.3] for remaining models, (2) Test and validate focal loss effectiveness across all model types",
+			"reasoning": "Lower complexity as FocalLoss class already exists and is implemented in RWKV-TS model. Main work is integrating it into other models and validating the specific parameters."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Implement multi-scale feature engineering",
+			"complexityScore": 2,
+			"recommendedSubtasks": 0,
+			"expansionPrompt": "",
+			"reasoning": "Low complexity as the engineer_multiscale_features() function already exists and is fully implemented with all 21 features across 3 scales. This appears to be already complete."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Test task for MCP verification",
+			"complexityScore": 1,
+			"recommendedSubtasks": 0,
+			"expansionPrompt": "",
+			"reasoning": "Very low complexity as this is a simple verification task to test MCP functionality, requiring minimal implementation effort."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Remove Bespoke integration from Moola",
+			"complexityScore": 5,
+			"recommendedSubtasks": 0,
+			"expansionPrompt": "",
+			"reasoning": "Medium complexity cleanup task. Already has 3 subtasks defined and appears to be partially complete. Involves systematic removal of integration components while preserving candlesticks system."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Deep codebase cleanup - remove legacy and unused files",
+			"complexityScore": 7,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break down into: (1) Audit and identify unused test files and legacy scripts, (2) Remove heavy markdown documentation and archive outdated files, (3) Clean up unused imports and broken implementations, (4) Validate essential ensemble model operations still function correctly",
+			"reasoning": "High complexity due to requiring comprehensive codebase analysis, understanding dependencies, and ensuring no essential functionality is broken during cleanup. Risk of removing important components."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "Enforce modern Python standards and hooks",
+			"complexityScore": 8,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Expand into: (1) Audit codebase for outdated Python patterns and anti-patterns, (2) Validate all hooks are properly called and functioning, (3) Review ensemble model implementations for correct data handling, (4) Update code to follow modern Python best practices, (5) Add automated linting and code quality checks",
+			"reasoning": "High complexity requiring deep Python expertise, understanding of the entire codebase, hook systems, and ensemble model implementations. Involves systematic code quality improvements and validation."
+		},
+		{
+			"taskId": 11,
+			"taskTitle": "Prepare for cleanlab corrections integration",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break into: (1) Design data pipeline architecture for cleanlab corrections integration, (2) Implement infrastructure for receiving SMOT and other correction techniques, (3) Integrate corrections pipeline with existing ensemble system",
+			"reasoning": "Medium-high complexity as cleanlab infrastructure partially exists but requires systematic integration with ensemble system. Involves data pipeline design and ensuring compatibility with existing correction workflows."
+		}
+	]
+}

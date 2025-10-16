@@ -1,0 +1,34 @@
+# SimpleLSTM Configuration
+# Lightweight LSTM model for time series classification
+# Target: ~70K parameters (vs 655K for RWKV-TS)
+
+model:
+  name: simple_lstm
+  hidden_size: 64        # LSTM hidden dimension
+  num_layers: 1          # Single LSTM layer
+  num_heads: 4           # Attention heads
+  dropout: 0.4           # Strong regularization for small dataset
+
+training:
+  n_epochs: 60
+  batch_size: 1024       # Phase 2: Increased from 512 for GPU efficiency
+  learning_rate: 5e-4
+  early_stopping_patience: 20  # Phase 2: Reduced from 30 (faster convergence with augmentation)
+  val_split: 0.15        # ~15 samples for validation
+
+augmentation:
+  mixup_alpha: 0.4       # Increased for Phase 2 (better generalization)
+  cutmix_prob: 0.5       # 50% chance of cutmix vs mixup
+  use_temporal_aug: true # Enable temporal augmentation (Phase 2)
+  jitter_prob: 0.5       # Add Gaussian noise
+  scaling_prob: 0.3      # Magnitude warping
+  time_warp_prob: 0.3    # Time axis warping
+
+hardware:
+  device: cuda           # Use 'cpu' if no GPU available
+  use_amp: true          # Mixed precision training
+  num_workers: 16        # DataLoader workers (set to 0 for CPU)
+  prefetch_factor: 4     # Phase 2: Increased from 2 for better GPU utilization
+  persistent_workers: true  # Keep workers alive between epochs
+
+seed: 1337

@@ -334,19 +334,14 @@ class RWKVTSModel(BaseModel):
         self.label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
         self.idx_to_label = {idx: label for label, idx in self.label_to_idx.items()}
 
-        # Calculate class weights for Focal Loss
-        # Convert labels to indices for counting
+        # Log class distribution
         y_indices_for_weights = np.array([self.label_to_idx[label] for label in y])
         unique_classes, class_counts = np.unique(y_indices_for_weights, return_counts=True)
         n_samples = len(y)
         n_classes = len(unique_classes)
 
-        # Balanced class weights: n_samples / (n_classes * class_count)
-        class_weights_np = n_samples / (n_classes * class_counts)
-        class_weights = torch.FloatTensor(class_weights_np)
-
-        print(f"[CLASS BALANCE] Class weights: {dict(zip(unique_classes, class_weights_np))}")
         print(f"[CLASS BALANCE] Class distribution: {dict(zip(unique_classes, class_counts))}")
+        print(f"[LOSS] Using Focal Loss (gamma=2.0) WITHOUT class weights to avoid double correction")
 
         # Build model
         self.model = self._build_model(self.input_dim, self.n_classes)
@@ -404,8 +399,9 @@ class RWKVTSModel(BaseModel):
         optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4
         )
-        # Use Focal Loss with class weights to handle imbalance
-        criterion = FocalLoss(gamma=2.0, alpha=class_weights, reduction='mean')
+        # Use Focal Loss WITHOUT class weights to avoid double correction
+        # Focal loss already handles imbalance via gamma parameter
+        criterion = FocalLoss(gamma=2.0, alpha=None, reduction='mean')
 
         # Setup mixed precision training
         scaler = torch.cuda.amp.GradScaler() if self.use_amp else None

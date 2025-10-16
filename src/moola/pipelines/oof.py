@@ -13,6 +13,14 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
+from imblearn.over_sampling import SMOTE
+
+try:
+    import mlflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    logger.warning("MLflow not available. Install with: pip install mlflow")
 
 from ..models import get_model
 from ..utils.splits import get_or_create_splits
@@ -29,6 +37,10 @@ def generate_oof(
     device: str = "cpu",
     expansion_start: np.ndarray = None,
     expansion_end: np.ndarray = None,
+    apply_smote: bool = False,
+    smote_target_count: int = 150,
+    mlflow_tracking: bool = False,
+    mlflow_experiment: str = "moola-oof",
     **model_kwargs,
 ) -> np.ndarray:
     """Generate out-of-fold predictions for a given model.
@@ -36,7 +48,7 @@ def generate_oof(
     Args:
         X: Feature matrix of shape [N, D]
         y: Target labels of shape [N]
-        model_name: Model name (logreg, rf, xgb, rwkv_ts, cnn_transformer)
+        model_name: Model name (logreg, rf, xgb, rwkv_ts, simple_lstm, cnn_transformer)
         seed: Random seed for reproducibility
         k: Number of folds
         splits_dir: Directory containing split manifests
@@ -44,6 +56,10 @@ def generate_oof(
         device: Device for training deep learning models ('cpu' or 'cuda')
         expansion_start: Optional expansion start indices of shape [N]
         expansion_end: Optional expansion end indices of shape [N]
+        apply_smote: Whether to apply SMOTE augmentation per-fold (default: False)
+        smote_target_count: Target samples per class for SMOTE (default: 150)
+        mlflow_tracking: Whether to log metrics to MLflow (default: False)
+        mlflow_experiment: MLflow experiment name (default: "moola-oof")
         **model_kwargs: Additional model hyperparameters
 
     Returns:
@@ -53,6 +69,11 @@ def generate_oof(
         - Creates split manifests in splits_dir if they don't exist
         - Saves OOF predictions to output_path
         - Creates .build.lock during write operations
+        - Logs metrics to MLflow if mlflow_tracking=True
+
+    Note:
+        If apply_smote=True, SMOTE is applied PER-FOLD to avoid data leakage.
+        Only training folds are augmented; validation folds remain original samples.
     """
     logger.info(f"Generating OOF predictions | model={model_name} seed={seed} k={k}")
 
@@ -85,7 +106,86 @@ def generate_oof(
             exp_start_train, exp_start_val = None, None
             exp_end_train, exp_end_val = None, None
 
-        # Train model on K-1 folds
+        # Apply SMOTE to training fold ONLY (prevents data leakage)
+        if apply_smote:
+            # Flatten X_train for SMOTE: [N, T, F] -> [N, T*F]
+            original_shape = X_train.shape
+            if X_train.ndim == 2:
+                X_train_flat = X_train
+                is_time_series = False
+            elif X_train.ndim == 3:
+                N_train, T, F = X_train.shape
+                X_train_flat = X_train.reshape(N_train, T * F)
+                is_time_series = True
+            else:
+                raise ValueError(f"Unexpected X_train shape: {X_train.shape}")
+
+            # Check class counts to determine k_neighbors
+            unique_classes, class_counts = np.unique(y_train, return_counts=True)
+            min_class_count = class_counts.min()
+
+            # Set k_neighbors to min(5, min_class_count - 1)
+            k_neighbors = min(5, min_class_count - 1)
+
+            if k_neighbors < 1:
+                logger.warning(
+                    f"Fold {fold_idx + 1}: Skipping SMOTE (min class has {min_class_count} samples, need >=2)"
+                )
+            else:
+                # Define sampling strategy
+                sampling_strategy = {cls: smote_target_count for cls in unique_classes}
+
+                # Create SMOTE instance
+                smote = SMOTE(
+                    sampling_strategy=sampling_strategy,
+                    k_neighbors=k_neighbors,
+                    random_state=seed + fold_idx  # Different seed per fold
+                )
+
+                try:
+                    # Apply SMOTE
+                    X_train_smote, y_train_smote = smote.fit_resample(X_train_flat, y_train)
+
+                    # Reshape back if time series
+                    if is_time_series:
+                        N_smote = X_train_smote.shape[0]
+                        X_train = X_train_smote.reshape(N_smote, T, F)
+                    else:
+                        X_train = X_train_smote
+
+                    y_train = y_train_smote
+
+                    # Handle expansion indices for synthetic samples
+                    if exp_start_train is not None and exp_end_train is not None:
+                        n_synthetic = len(y_train) - len(train_idx)
+                        median_start = int(np.median(exp_start_train))
+                        median_end = int(np.median(exp_end_train))
+
+                        exp_start_train = np.concatenate([
+                            exp_start_train,
+                            np.full(n_synthetic, median_start)
+                        ])
+                        exp_end_train = np.concatenate([
+                            exp_end_train,
+                            np.full(n_synthetic, median_end)
+                        ])
+
+                    logger.info(
+                        f"Fold {fold_idx + 1}: Applied SMOTE | "
+                        f"original={len(train_idx)} -> augmented={len(y_train)} | "
+                        f"k_neighbors={k_neighbors}"
+                    )
+
+                    # Log per-class distribution
+                    unique_aug, counts_aug = np.unique(y_train, return_counts=True)
+                    for cls, count in zip(unique_aug, counts_aug):
+                        logger.info(f"  Class '{cls}': {count} samples")
+
+                except Exception as e:
+                    logger.error(f"Fold {fold_idx + 1}: SMOTE failed: {e}")
+                    logger.info(f"Continuing with original training data")
+
+        # Train model on K-1 folds (possibly augmented)
         # Pass device parameter for deep learning models
         model = get_model(model_name, seed=seed, device=device, **model_kwargs)
         model.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
@@ -108,6 +208,24 @@ def generate_oof(
     else:
         logger.info("All samples have non-zero OOF predictions")
 
+    # Compute OOF metrics
+    oof_preds_labels = np.argmax(oof_predictions, axis=1)
+    unique_labels = np.unique(y)
+    label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
+    y_indices = np.array([label_to_idx[label] for label in y])
+
+    oof_accuracy = (oof_preds_labels == y_indices).mean()
+    logger.info(f"Overall OOF accuracy: {oof_accuracy:.4f}")
+
+    # Compute per-class metrics
+    per_class_metrics = {}
+    for label_idx, label_name in enumerate(unique_labels):
+        mask = y_indices == label_idx
+        if mask.sum() > 0:
+            class_acc = (oof_preds_labels[mask] == label_idx).mean()
+            per_class_metrics[f"accuracy_class_{label_name}"] = class_acc
+            logger.info(f"Class '{label_name}' accuracy: {class_acc:.4f}")
+
     # Create .build.lock during write
     output_path.parent.mkdir(parents=True, exist_ok=True)
     lock_file = output_path.parent / ".build.lock"
@@ -124,5 +242,49 @@ def generate_oof(
         if lock_file.exists():
             lock_file.unlink()
             logger.info(f"Removed .build.lock")
+
+    # MLflow tracking
+    if mlflow_tracking and MLFLOW_AVAILABLE:
+        try:
+            # Set experiment
+            mlflow.set_experiment(mlflow_experiment)
+
+            # Start run
+            run_name = f"{model_name}_oof_seed{seed}"
+            if apply_smote:
+                run_name += f"_smote{smote_target_count}"
+
+            with mlflow.start_run(run_name=run_name):
+                # Log parameters
+                mlflow.log_params({
+                    "model": model_name,
+                    "seed": seed,
+                    "n_folds": k,
+                    "n_samples": len(y),
+                    "n_classes": n_classes,
+                    "device": device,
+                    "apply_smote": apply_smote,
+                    "smote_target_count": smote_target_count if apply_smote else None,
+                })
+
+                # Log model-specific hyperparameters
+                for key, value in model_kwargs.items():
+                    if isinstance(value, (int, float, str, bool)):
+                        mlflow.log_param(f"model_{key}", value)
+
+                # Log metrics
+                mlflow.log_metric("oof_accuracy", oof_accuracy)
+                for metric_name, metric_value in per_class_metrics.items():
+                    mlflow.log_metric(metric_name, metric_value)
+
+                # Log OOF predictions file as artifact
+                mlflow.log_artifact(str(output_path))
+
+                logger.info(f"[MLFLOW] Logged experiment to '{mlflow_experiment}' | run='{run_name}'")
+
+        except Exception as e:
+            logger.error(f"[MLFLOW] Failed to log experiment: {e}")
+    elif mlflow_tracking and not MLFLOW_AVAILABLE:
+        logger.warning("[MLFLOW] Tracking requested but MLflow not installed")
 
     return oof_predictions

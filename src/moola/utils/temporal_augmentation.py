@@ -134,23 +134,21 @@ def time_warp(x: torch.Tensor, sigma: float = 0.2, knot: int = 4) -> torch.Tenso
         warped_knots = warped_knots * (seq_len - 1) / warped_knots[-1]
 
         # Interpolate warped time indices for all timesteps
-        warped_time = torch.from_numpy(
-            np.interp(
-                orig_steps.cpu().numpy(),
-                knot_positions.cpu().numpy(),
-                warped_knots.cpu().numpy()
-            )
-        ).to(device)
+        warped_time_np = np.interp(
+            orig_steps.cpu().numpy(),
+            knot_positions.cpu().numpy(),
+            warped_knots.cpu().numpy()
+        )
+        warped_time = torch.from_numpy(np.asarray(warped_time_np, dtype=np.float32)).to(device)
 
         # Now interpolate features from original to warped time
         for j in range(n_features):
-            x_warped[i, :, j] = torch.from_numpy(
-                np.interp(
-                    warped_time.cpu().numpy(),
-                    orig_steps.cpu().numpy(),
-                    x[i, :, j].cpu().numpy()
-                )
-            ).to(device)
+            feature_interp_np = np.interp(
+                warped_time.cpu().numpy(),
+                orig_steps.cpu().numpy(),
+                x[i, :, j].cpu().numpy()
+            )
+            x_warped[i, :, j] = torch.from_numpy(np.asarray(feature_interp_np, dtype=np.float32)).to(device)
 
     return x_warped
 
