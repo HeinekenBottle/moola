@@ -307,10 +307,11 @@ class TSTCCPretrainer:
         projection_output_dim: int = 64,
         temperature: float = 0.5,
         n_epochs: int = 100,
-        batch_size: int = 128,
+        batch_size: int = 512,
         learning_rate: float = 1e-4,
         device: str = "cpu",
         use_amp: bool = True,
+        num_workers: int = 16,
         val_split: float = 0.1,
         early_stopping_patience: int = 15,
         seed: int = 1337,
@@ -328,10 +329,11 @@ class TSTCCPretrainer:
             projection_output_dim: Projection head output dimension
             temperature: Temperature for InfoNCE loss
             n_epochs: Number of pre-training epochs
-            batch_size: Batch size for pre-training
+            batch_size: Batch size for pre-training (512 for RTX 4090)
             learning_rate: Learning rate
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16)
+            num_workers: Number of DataLoader workers (16 for high-end GPUs)
             val_split: Validation split ratio
             early_stopping_patience: Early stopping patience
             seed: Random seed
@@ -359,6 +361,7 @@ class TSTCCPretrainer:
         self.n_epochs = n_epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.num_workers = num_workers
         self.val_split = val_split
         self.early_stopping_patience = early_stopping_patience
 
@@ -417,8 +420,10 @@ class TSTCCPretrainer:
             train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=4 if self.device.type == "cuda" else 0,
+            num_workers=self.num_workers if self.device.type == "cuda" else 0,
             pin_memory=True if self.device.type == "cuda" else False,
+            persistent_workers=True if self.num_workers > 0 else False,
+            prefetch_factor=2 if self.num_workers > 0 else None,
         )
 
         if X_val is not None:

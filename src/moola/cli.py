@@ -459,6 +459,62 @@ def oof(cfg_dir, over, model, seed, device):
 @app.command()
 @click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
 @click.option("--over", multiple=True)
+@click.option("--device", default="cuda", type=click.Choice(["cpu", "cuda"]), help="Device for pretraining")
+@click.option("--epochs", default=100, type=int, help="Number of pretraining epochs")
+@click.option("--patience", default=15, type=int, help="Early stopping patience")
+def pretrain_tcc(cfg_dir, over, device, epochs, patience):
+    """Pretrain TS-TCC encoder with contrastive learning on unlabeled data."""
+    import numpy as np
+    import pandas as pd
+
+    from .models.ts_tcc import TSTCCPretrainer
+    from .utils.seeds import print_gpu_info
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+    log.info("TS-TCC Pretraining start | device=%s epochs=%d patience=%d", device, epochs, patience)
+
+    # GPU verification
+    if device == "cuda":
+        print_gpu_info()
+
+    # Load training data (use as unlabeled data for contrastive learning)
+    train_path = paths.data / "processed" / "train.parquet"
+    if not train_path.exists():
+        log.error(f"Training data not found at {train_path}")
+        raise FileNotFoundError(f"Missing {train_path}")
+
+    df = pd.read_parquet(train_path)
+    X = np.stack([np.stack(f) for f in df["features"]])
+    log.info(f"Loaded {len(df)} samples | shape={X.shape}")
+
+    # Initialize TS-TCC pretrainer
+    pretrainer = TSTCCPretrainer(
+        input_dim=4,  # OHLC
+        n_epochs=epochs,
+        early_stopping_patience=patience,
+        device=device,
+        seed=cfg.seed,
+    )
+
+    # Pretrain encoder
+    history = pretrainer.pretrain(X)
+
+    # Save pretrained encoder
+    encoder_dir = paths.artifacts / "models" / "ts_tcc"
+    encoder_dir.mkdir(parents=True, exist_ok=True)
+    encoder_path = encoder_dir / "pretrained_encoder.pt"
+    pretrainer.save_encoder(encoder_path)
+
+    log.info(f"Pretraining complete | best_epoch={history['best_epoch']+1}")
+    log.info(f"Saved encoder to {encoder_path}")
+    log.info("Pretrain-TCC done")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
 @click.option("--model", required=True, help="Model name (logreg, rf, xgb, stack)")
 @click.option("--input", "input_path", required=True, type=click.Path(exists=True), help="Input parquet file")
 @click.option("--output", "output_path", required=True, type=click.Path(), help="Output predictions CSV file")
@@ -481,7 +537,7 @@ def predict(cfg_dir, over, model, input_path, output_path):
 
     # Extract features
     if "features" in df.columns:
-        X = np.array(df["features"].tolist())
+        X = np.stack([np.stack(f) for f in df["features"]])
     else:
         # Assume all columns except certain metadata columns are features
         exclude_cols = {"window_id", "label"}
@@ -516,7 +572,13 @@ def predict(cfg_dir, over, model, input_path, output_path):
 
         # Concatenate base predictions for stack input
         X_stack = np.concatenate(base_predictions, axis=1)
-        log.info(f"Stack input shape: {X_stack.shape}")
+        log.info(f"Stack input shape (before meta-features): {X_stack.shape}")
+
+        # Add diversity meta-features (same as during training)
+        from .pipelines.stack_train import add_meta_features
+        meta_features = add_meta_features(base_predictions)
+        X_stack = np.concatenate([X_stack, meta_features], axis=1)
+        log.info(f"Stack input shape (after meta-features): {X_stack.shape}")
 
         # Load stack model
         model_dir = paths.artifacts / "models" / "stack"

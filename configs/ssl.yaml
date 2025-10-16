@@ -1,0 +1,23 @@
+# Self-Supervised Learning Configuration for TS-TCC
+#
+# Batch Size Strategy:
+#   - Pretrain: batch=256 for enough negative pairs in InfoNCE loss
+#   - Finetune: batch=8 for 105 samples → 13 updates/epoch (good gradient signal)
+#
+# Context: TS-TCC uses temporal/contextual augmentations with contrastive learning
+# Needs large batches during pretraining to sample diverse negative pairs
+
+ssl:
+  pretrain:
+    batch_size: 256      # Large for contrastive learning (InfoNCE needs many negatives)
+    epochs: 50           # Self-supervised on unlabeled data
+    temperature: 0.5     # Softmax temperature for contrastive loss
+    learning_rate: 0.001 # Standard for Adam
+
+  finetune:
+    batch_size: 8        # Small for 105 labeled samples (13 updates/epoch)
+    epochs: 20           # Supervised fine-tuning
+    learning_rate: 0.0001 # Lower LR for fine-tuning
+
+# Note: Supervised training batch sizes remain unchanged in default.yaml
+# Only use these configs when running TS-TCC pretraining/finetuning

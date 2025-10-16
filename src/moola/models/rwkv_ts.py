@@ -12,7 +12,7 @@ Architecture:
 
 Training Enhancements:
 - Mixup + CutMix augmentation (alpha=0.2, gentler mixing for small dataset)
-- Early stopping with patience=20 (increased from 10 to allow convergence)
+- Early stopping with patience=30 (increased from 20 for full convergence on cleaned dataset)
 - Learning rate: 5e-4 (increased from 3e-4 for faster convergence)
 - Max epochs: 60 (increased from 10)
 - AdamW optimizer with weight_decay=1e-4
@@ -142,12 +142,12 @@ class RWKVTSModel(BaseModel):
         dropout: float = 0.2,
         instance_norm: bool = True,
         n_epochs: int = 60,
-        batch_size: int = 32,
+        batch_size: int = 512,
         learning_rate: float = 5e-4,
         device: str = "cpu",
         use_amp: bool = True,
-        num_workers: int = 4,
-        early_stopping_patience: int = 20,
+        num_workers: int = 16,
+        early_stopping_patience: int = 30,
         val_split: float = 0.15,
         mixup_alpha: float = 0.2,
         cutmix_prob: float = 0.5,
@@ -168,7 +168,7 @@ class RWKVTSModel(BaseModel):
             device: Device to train on ('cpu' or 'cuda')
             use_amp: Use automatic mixed precision (FP16) when device='cuda'
             num_workers: Number of DataLoader worker processes
-            early_stopping_patience: Epochs to wait before stopping (default: 20)
+            early_stopping_patience: Epochs to wait before stopping (default: 30)
             val_split: Validation split ratio for early stopping (default: 0.15, ~20 samples)
             mixup_alpha: Mixup interpolation strength (default: 0.2, gentler for small dataset)
             cutmix_prob: Probability of applying cutmix vs mixup (default: 0.5)

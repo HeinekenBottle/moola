@@ -1,11 +1,12 @@
 # Moola Configuration
 #
 # Training Mode: 2-class (consolidation vs retracement)
-#   - Current: 2 classes (consolidation: 65, retracement: 50) = 115 samples
+#   - Current: 2 classes (consolidation: 60, retracement: 45) = 105 samples
 #   - Reversal class removed due to insufficient samples (19 → need 150+)
+#   - Cleaned dataset: Removed 16 corrupted samples, added 6 human-verified corrections
 #
 # Data Files:
-#   - data/processed/train.parquet → 115 samples, 2 classes (CURRENT)
+#   - data/processed/train.parquet → 105 samples, 2 classes (CURRENT, CLEANED)
 #   - data/processed/reversal_holdout.parquet → 19 reversal samples (ARCHIVED)
 #   - data/processed/train_3class_backup.parquet → 134 samples, 3 classes (BACKUP)
 #
