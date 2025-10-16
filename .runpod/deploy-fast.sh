@@ -61,7 +61,7 @@ deploy_to_runpod_fast() {
 
     # 4. Dependencies and metadata
     cp "$PROJECT_ROOT/pyproject.toml" "$DEPLOY_DIR/"
-    cp "$PROJECT_ROOT/requirements-runpod.txt" "$DEPLOY_DIR/"
+    cp "$PROJECT_ROOT/requirements-runpod-minimal.txt" "$DEPLOY_DIR/requirements-runpod-minimal.txt"
     cp "$PROJECT_ROOT/README.md" "$DEPLOY_DIR/"
 
     # 5. Deployment scripts
@@ -109,6 +109,12 @@ cd "$WORKSPACE"
 # Use optimized venv (template already has PyTorch!)
 if [[ ! -d "/tmp/moola-venv" ]]; then
     echo "📦 Creating lightweight venv (template has PyTorch)..."
+
+    # Verify template packages FIRST (prevent 45-minute disaster)
+    echo "🔍 Verifying template packages..."
+    python3 -c "import torch, numpy, pandas, scipy, sklearn; print('✅ Template OK')" || \
+        (echo "❌ Wrong template! Packages missing, will waste 45+ minutes compiling." && exit 1)
+
     # Use --system-site-packages to inherit torch/numpy/pandas from template
     python3 -m venv /tmp/moola-venv --system-site-packages
     source /tmp/moola-venv/bin/activate
@@ -117,16 +123,16 @@ if [[ ! -d "/tmp/moola-venv" ]]; then
     echo "📦 Upgrading build tools..."
     pip install --no-cache-dir --upgrade pip setuptools wheel packaging
 
-    # Install ONLY moola-specific packages (~50MB, 30-60 seconds)
-    echo "📦 Installing moola-specific packages..."
-    pip install --no-cache-dir -r requirements-runpod.txt
+    # Install ONLY packages NOT in template (use minimal requirements)
+    echo "📦 Installing moola-specific packages (NOT in template)..."
+    pip install --no-cache-dir -r requirements-runpod-minimal.txt
 
     # Install moola package (editable, no deps)
     echo "📦 Installing moola..."
     pip install --no-cache-dir -e . --no-deps
 
-    echo "✅ Lightweight venv created (~50MB vs 4GB)"
-    echo "💾 Storage saved: 4GB (no PyTorch duplication)"
+    echo "✅ Lightweight venv created (~50MB, 60-90 seconds)"
+    echo "💾 Savings: 45+ minutes, 4GB space (no recompilation)"
 else
     echo "♻️  Using existing lightweight venv..."
     source /tmp/moola-venv/bin/activate

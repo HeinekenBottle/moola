@@ -49,30 +49,40 @@ echo ""
 # 3. Create venv with system packages
 echo "📦 Step 3/6: Creating virtual environment..."
 if [[ ! -d "/tmp/moola-venv" ]]; then
+    # Verify template packages FIRST (prevent 45-minute compilation disaster)
+    echo "🔍 Verifying template packages..."
+    python3 -c "
+import torch, numpy, pandas, scipy, sklearn
+print(f'✅ PyTorch: {torch.__version__}')
+print(f'✅ NumPy: {numpy.__version__}')
+print(f'✅ Pandas: {pandas.__version__}')
+print(f'✅ SciPy: {scipy.__version__}')
+print(f'✅ Sklearn: {sklearn.__version__}')
+" || (echo "❌ Wrong template! Run verify-template.sh first" && exit 1)
+
     python3 -m venv /tmp/moola-venv --system-site-packages
     source /tmp/moola-venv/bin/activate
 
-    echo "   Installing required packages..."
-    # Install packages (torch already in template)
+    echo "📦 Installing moola-specific packages (NOT in template)..."
+    # Install ONLY packages NOT in template (saves 45+ minutes)
     pip install --no-cache-dir \
-        "numpy>=1.26,<2.0" \
-        "pandas>=2.2" \
-        "scikit-learn>=1.3" \
-        packaging \
-        hatchling \
-        loguru \
-        click \
-        rich \
-        typer \
         xgboost \
-        pandera \
-        pyarrow \
-        pydantic \
-        pyyaml \
-        hydra-core \
-        python-dotenv
+        "imbalanced-learn==0.14.0" \
+        "pytorch-lightning>=2.4" \
+        "pyarrow>=17" \
+        "pandera>=0.26" \
+        "click>=8.2" \
+        "typer>=0.17" \
+        "hydra-core>=1.3" \
+        "pydantic>=2.11" \
+        "pydantic-settings>=2.9" \
+        python-dotenv \
+        "loguru>=0.7" \
+        "rich>=14" \
+        "mlflow>=2.0" \
+        "joblib>=1.5"
 
-    echo "✅ Packages installed"
+    echo "✅ Packages installed (~60 seconds vs 45+ minutes)"
 else
     source /tmp/moola-venv/bin/activate
     echo "✅ Using existing venv"

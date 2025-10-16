@@ -14,6 +14,11 @@ export PYTHONPATH="/workspace/moola/src:$PYTHONPATH"
 export MOOLA_DATA_DIR="/workspace/data"
 export MOOLA_ARTIFACTS_DIR="/workspace/artifacts"
 
+# Verify template packages exist (catch setup issues early)
+echo "🔍 Verifying packages..."
+python3 -c "import torch, pandas, scipy, sklearn, xgboost" || \
+    (echo "❌ Missing packages! Run optimized-setup.sh first" && exit 1)
+
 # Verify setup
 echo "🔍 Quick verification..."
 python -c "
