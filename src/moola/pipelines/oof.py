@@ -187,8 +187,22 @@ def generate_oof(
 
         # Train model on K-1 folds (possibly augmented)
         # Pass device parameter for deep learning models
+        # Extract pre-trained encoder path if present (don't pass to __init__)
+        load_pretrained_encoder = model_kwargs.pop("load_pretrained_encoder", None)
         model = get_model(model_name, seed=seed, device=device, **model_kwargs)
-        model.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
+
+        # For SimpleLSTM, we need to build the model first, then load encoder
+        if model_name == "simple_lstm" and load_pretrained_encoder:
+            # Build model on training data first
+            model.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
+            # Then load pre-trained encoder and refit with frozen encoder
+            logger.info(f"Loading pre-trained encoder from: {load_pretrained_encoder}")
+            model.load_pretrained_encoder(load_pretrained_encoder, freeze_encoder=True)
+            # Refit with frozen encoder
+            unfreeze_epochs = 10  # From config: MASKED_LSTM_UNFREEZE_EPOCHS
+            model.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train, unfreeze_encoder_after=unfreeze_epochs)
+        else:
+            model.fit(X_train, y_train, expansion_start=exp_start_train, expansion_end=exp_end_train)
 
         # Predict probabilities on held-out fold
         val_proba = model.predict_proba(X_val, expansion_start=exp_start_val, expansion_end=exp_end_val)

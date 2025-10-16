@@ -405,10 +405,10 @@ def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
 
     # Check for pre-trained encoder
     if load_pretrained_encoder:
-        if model == "cnn_transformer":
+        if model in ["cnn_transformer", "simple_lstm"]:
             log.info(f"Will load pre-trained encoder from: {load_pretrained_encoder}")
         else:
-            log.warning(f"--load-pretrained-encoder specified but model={model} doesn't support it (only cnn_transformer)")
+            log.warning(f"--load-pretrained-encoder specified but model={model} doesn't support it (only cnn_transformer, simple_lstm)")
             load_pretrained_encoder = None
 
     # GPU verification for deep learning models
@@ -447,6 +447,9 @@ def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
     model_kwargs = {"device": device}
     if model == "cnn_transformer":
         model_kwargs["predict_pointers"] = True
+        if load_pretrained_encoder:
+            model_kwargs["load_pretrained_encoder"] = load_pretrained_encoder
+    elif model == "simple_lstm":
         if load_pretrained_encoder:
             model_kwargs["load_pretrained_encoder"] = load_pretrained_encoder
 
