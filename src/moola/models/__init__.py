@@ -33,6 +33,7 @@ def get_model(name: str, **kwargs) -> BaseModel:
     Args:
         name: Model name (logreg, rf, xgb, rwkv_ts, simple_lstm, cnn_transformer, stack)
         **kwargs: Model-specific hyperparameters (seed, max_iter, device, etc.)
+                 For cnn_transformer: load_pretrained_encoder (Path) loads encoder after init
 
     Returns:
         Instantiated model implementing BaseModel interface
@@ -44,13 +45,32 @@ def get_model(name: str, **kwargs) -> BaseModel:
         >>> model = get_model("logreg", seed=1337, max_iter=1000)
         >>> model.fit(X_train, y_train)
         >>> predictions = model.predict(X_test)
+
+        >>> # Load pre-trained encoder for cnn_transformer
+        >>> model = get_model("cnn_transformer", device="cuda",
+        ...                   load_pretrained_encoder="models/ts_tcc/pretrained_encoder.pt")
     """
     if name not in _MODEL_REGISTRY:
         available = ", ".join(_MODEL_REGISTRY.keys())
         raise ValueError(f"Unknown model '{name}'. Available models: {available}")
 
     model_class = _MODEL_REGISTRY[name]
-    return model_class(**kwargs)
+
+    # Extract load_pretrained_encoder parameter (only for cnn_transformer)
+    load_pretrained_encoder = kwargs.pop("load_pretrained_encoder", None)
+
+    # Instantiate model
+    model = model_class(**kwargs)
+
+    # Load pre-trained encoder if specified (only for cnn_transformer)
+    if load_pretrained_encoder and name == "cnn_transformer":
+        from pathlib import Path
+        encoder_path = Path(load_pretrained_encoder)
+        # Note: load_pretrained_encoder will be called during fit() after model is built
+        # Store the path for later use in fit()
+        model._pretrained_encoder_path = encoder_path
+
+    return model
 
 
 def list_models() -> list[str]:

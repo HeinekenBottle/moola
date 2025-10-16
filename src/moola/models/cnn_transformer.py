@@ -577,6 +577,11 @@ class CnnTransformerModel(BaseModel):
         # Build model
         self.model = self._build_model(self.input_dim, self.n_classes)
 
+        # Load pre-trained encoder if path was provided
+        if hasattr(self, '_pretrained_encoder_path'):
+            print(f"[SSL] Loading pre-trained encoder from {self._pretrained_encoder_path}")
+            self.load_pretrained_encoder(self._pretrained_encoder_path)
+
         # GPU diagnostic logging
         if self.device.type == "cuda":
             print(f"[GPU] Training on: {torch.cuda.get_device_name(0)}")

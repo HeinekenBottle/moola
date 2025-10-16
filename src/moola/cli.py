@@ -384,7 +384,8 @@ def evaluate(cfg_dir, over, model):
 @click.option("--model", required=True, help="Model name (logreg, rf, xgb, rwkv_ts, cnn_transformer)")
 @click.option("--seed", type=int, default=None, help="Random seed (defaults to config seed)")
 @click.option("--device", default="cpu", type=click.Choice(["cpu", "cuda"]), help="Device for training")
-def oof(cfg_dir, over, model, seed, device):
+@click.option("--load-pretrained-encoder", type=click.Path(exists=True), default=None, help="Path to pre-trained encoder weights (for cnn_transformer only)")
+def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
     """Generate out-of-fold predictions for ensemble stacking."""
     import numpy as np
     import pandas as pd
@@ -401,6 +402,14 @@ def oof(cfg_dir, over, model, seed, device):
     k = cfg.get("cv_folds", 5)
 
     log.info("OOF generation start | model=%s seed=%s k=%s device=%s", model, seed, k, device)
+
+    # Check for pre-trained encoder
+    if load_pretrained_encoder:
+        if model == "cnn_transformer":
+            log.info(f"Will load pre-trained encoder from: {load_pretrained_encoder}")
+        else:
+            log.warning(f"--load-pretrained-encoder specified but model={model} doesn't support it (only cnn_transformer)")
+            load_pretrained_encoder = None
 
     # GPU verification for deep learning models
     if device == "cuda" and model in ["rwkv_ts", "cnn_transformer"]:
@@ -438,6 +447,8 @@ def oof(cfg_dir, over, model, seed, device):
     model_kwargs = {"device": device}
     if model == "cnn_transformer":
         model_kwargs["predict_pointers"] = True
+        if load_pretrained_encoder:
+            model_kwargs["load_pretrained_encoder"] = load_pretrained_encoder
 
     oof_predictions = generate_oof(
         X=X,
@@ -650,8 +661,8 @@ def stack_train(cfg_dir, over, seed, stacker):
 
     log.info("Stack training start | seed=%s k=%s", seed, k)
 
-    # Load training data for labels
-    train_path = paths.data / "processed" / "train.parquet"
+    # Load training data for labels (use cleaned data to match OOF)
+    train_path = paths.data / "processed" / "train_clean.parquet"
     if not train_path.exists():
         log.error(f"Training data not found at {train_path}")
         raise FileNotFoundError(f"Missing {train_path}")

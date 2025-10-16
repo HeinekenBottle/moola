@@ -107,12 +107,26 @@ def run_phase2_augmentation(device: str, seed: int, mlflow_experiment: str) -> N
         # Determine device for this model
         model_device = device if model_name in DEEP_MODELS else "cpu"
 
-        cmd = [
-            "python", "-m", "moola.cli", "oof",
-            "--model", model_name,
-            "--device", model_device,
-            "--seed", str(seed),
-        ]
+        # Build CLI command
+        if model_name == "cnn_transformer":
+            # Use pre-trained encoder for CNN-Transformer
+            encoder_path = PROJECT_ROOT / "data" / "artifacts" / "pretrained" / "encoder_weights.pt"
+            cmd = [
+                sys.executable, "-m", "moola.cli", "oof",
+                "--model", model_name,
+                "--device", model_device,
+                "--seed", str(seed),
+                "--load-pretrained-encoder", str(encoder_path)
+            ]
+            logger.info(f"Training {model_name} with pre-trained encoder: {encoder_path}")
+        else:
+            # Regular training for other models
+            cmd = [
+                sys.executable, "-m", "moola.cli", "oof",
+                "--model", model_name,
+                "--device", model_device,
+                "--seed", str(seed),
+            ]
 
         run_command(cmd, f"OOF generation for {model_name}")
 
@@ -149,7 +163,7 @@ def run_phase3_ssl(device: str, epochs: int, patience: int) -> None:
         logger.warning("Skipping pre-training - using existing encoder")
     else:
         cmd = [
-            "python", "-m", "moola.cli", "pretrain-tcc",
+            sys.executable, "-m", "moola.cli", "pretrain-tcc",
             "--device", device,
             "--epochs", str(epochs),
             "--patience", str(patience),
@@ -182,7 +196,7 @@ def run_stack_ensemble(seed: int) -> None:
     logger.info("=" * 80)
 
     cmd = [
-        "python", "-m", "moola.cli", "stack-train",
+        sys.executable, "-m", "moola.cli", "stack-train",
         "--seed", str(seed),
         "--stacker", "rf",
     ]

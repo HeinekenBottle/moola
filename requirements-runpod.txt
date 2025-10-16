@@ -1,32 +1,91 @@
-# Moola-specific packages for RunPod deployment
-# PyTorch template already has: torch, scikit-learn, scipy, matplotlib
-# Use with: pip install --no-cache-dir -r requirements-runpod.txt
+# Moola RunPod GPU Training Requirements
+# Template: runpod/pytorch:2.4-py3.11-cuda12.4-ubuntu22.04
+# Pre-installed in template: torch, torchvision, numpy, cuda
+# Last Updated: 2025-10-16
+#
+# Installation:
+#   pip install --no-cache-dir -r requirements-runpod.txt
 
-# Critical: Pin numpy<2 for PyTorch 2.x compatibility
-numpy>=1.24,<2.0
+#############################################
+# CRITICAL: NumPy Version Pinning
+#############################################
+# PyTorch 2.4 supports numpy 2.0+, but pin to stable 1.x for compatibility
+# NEVER use numpy>=2.0 with PyTorch 2.2 (causes RuntimeError)
+numpy>=1.26.4,<2.0
 
-# Pandas (may not be in all templates)
-pandas>=2.0,<3.0
-
-# Core ML packages (not in template or need specific version)
+#############################################
+# Core ML Libraries (NOT in RunPod template)
+#############################################
+# These must be installed explicitly
+pandas>=2.3,<3.0
+scipy>=1.14,<2.0
+scikit-learn>=1.7,<2.0
 xgboost>=2.0,<3.0
+
+# SMOTE for class imbalance
 imbalanced-learn==0.14.0
 
-# Logging & CLI
-loguru>=0.7
-click>=8.1
-typer>=0.12
-rich>=13.7
+#############################################
+# PyTorch Ecosystem
+#############################################
+# Advanced training utilities (not in base template)
+pytorch-lightning>=2.4.0,<3.0
 
-# Config & validation
-pydantic>=2.8
-pyyaml>=6.0
-hydra-core>=1.3
+#############################################
+# Data Handling & Validation
+#############################################
+# Parquet file support
+pyarrow>=17.0,<18.0
+
+# Schema validation
+pandera>=0.26.1,<1.0
+
+#############################################
+# Configuration Management
+#############################################
+# CLI framework
+click>=8.2,<9.0
+typer>=0.17,<1.0
+
+# Config system (used by moola/cli.py)
+hydra-core>=1.3,<2.0
+
+# Data validation and settings
+pydantic>=2.11,<3.0
+pydantic-settings>=2.9,<3.0
+
+# Environment variables
 python-dotenv>=1.0
-pandera>=0.26.1
 
-# Data handling
-pyarrow>=14.0
+#############################################
+# Logging & Output
+#############################################
+# Structured logging (used throughout codebase)
+loguru>=0.7,<1.0
 
-# NOTE: DO NOT include torch, numpy, pandas, scikit-learn, scipy
-# These are pre-installed in RunPod PyTorch templates
+# Rich terminal output
+rich>=14.0,<15.0
+
+#############################################
+# MLOps & Experiment Tracking
+#############################################
+# Experiment tracking (train_full_pipeline.py)
+mlflow>=2.0,<3.0
+
+#############################################
+# Utilities
+#############################################
+# Job scheduling (used in some pipelines)
+joblib>=1.5,<2.0
+
+#############################################
+# NOTES
+#############################################
+# DO NOT ADD: torch, torchvision (already in template)
+# DO NOT ADD: Development tools (pytest, black, etc.)
+# DO NOT ADD: API/deployment packages (fastapi, uvicorn, etc.)
+#
+# For debugging dependency issues:
+#   python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+#   python -c "import numpy; print(f'NumPy: {numpy.__version__}')"
+#   python -c "import sklearn; print(f'sklearn: {sklearn.__version__}')"

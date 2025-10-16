@@ -112,11 +112,34 @@ def get_or_create_splits(
     Returns:
         List of (train_idx, val_idx) tuples for each fold
     """
+    n_samples = len(y)
+
     # Check if splits already exist
     fold_0 = splits_dir / "fold_0.json"
     if fold_0.exists():
         # Load existing splits
-        return load_splits(splits_dir, k=k)
+        splits = load_splits(splits_dir, k=k)
+
+        # Validate that splits match current dataset size
+        max_index = max(
+            max(train_idx.max(), val_idx.max())
+            for train_idx, val_idx in splits
+        )
+
+        if max_index >= n_samples:
+            from loguru import logger
+            logger.warning(
+                f"Existing splits contain out-of-bounds indices (max_index={max_index}, "
+                f"n_samples={n_samples}). Regenerating splits."
+            )
+            # Delete stale splits and regenerate
+            for fold_idx in range(k):
+                fold_file = splits_dir / f"fold_{fold_idx}.json"
+                if fold_file.exists():
+                    fold_file.unlink()
+            return make_splits(X, y, seed=seed, k=k, output_dir=splits_dir)
+
+        return splits
     else:
         # Create new splits
         return make_splits(X, y, seed=seed, k=k, output_dir=splits_dir)
