@@ -13,10 +13,10 @@ Usage:
     python3 scripts/pretrain_bilstm_v2.py
 """
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pandas as pd
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 from loguru import logger
@@ -88,26 +88,13 @@ def main():
 
     # 1. Load unlabeled data
     logger.info("Loading unlabeled data...")
-    data_path = Path('data/raw/unlabeled_windows.parquet')
+    data_path = Path('data/processed/unlabeled/unlabeled_11d_relative.npy')
     if not data_path.exists():
         raise FileNotFoundError(f"Data not found: {data_path}")
 
-    df = pd.read_parquet(data_path)
-
-    # Extract OHLC columns and convert to RelativeTransform
-    # Assume columns: open, high, low, close, volume, etc.
-    # For now, use first 11 columns as features
-    # TODO: Apply RelativeTransform if needed
-
-    if 'window' in df.columns:
-        # If data already has window column
-        X = torch.FloatTensor(df['window'].values)
-    else:
-        # Extract from OHLC columns
-        feature_cols = df.columns[:INPUT_DIM]
-        X = torch.FloatTensor(df[feature_cols].values)
-        # Reshape to [N, 105, 11] if needed
-        # This depends on your data format
+    # Load 11D RelativeTransform features
+    X_np = np.load(data_path)  # Shape: [N, 105, 11]
+    X = torch.FloatTensor(X_np)
 
     logger.info(f"Loaded {len(X)} unlabeled samples, shape: {X.shape}")
 
