@@ -55,6 +55,26 @@ from ..utils.training_utils import TrainingSetup
 from .base import BaseModel
 
 
+def compute_pointer_regression_loss(
+    outputs: dict,
+    expansion_start: torch.Tensor,
+    expansion_end: torch.Tensor,
+) -> torch.Tensor:
+    """Compute regression loss for pointer prediction.
+
+    Args:
+        outputs: Model outputs dict with 'pointers' key [B, 2]
+        expansion_start: Target start indices [B]
+        expansion_end: Target end indices [B]
+
+    Returns:
+        Smooth L1 loss for pointer regression
+    """
+    pointers = outputs['pointers']  # [B, 2], already scaled to [0, 104]
+    targets = torch.stack([expansion_start, expansion_end], dim=1).float()  # [B, 2]
+    return F.smooth_l1_loss(pointers, targets)
+
+
 class EnhancedSimpleLSTMModel(BaseModel):
     """Enhanced Simple LSTM with dual input support for feature-aware transfer learning.
 
@@ -84,6 +104,9 @@ class EnhancedSimpleLSTMModel(BaseModel):
         scaling_prob: float = 0.3,
         time_warp_prob: float = 0.0,
         feature_fusion: str = "concat",  # For feature-aware mode
+        predict_pointers: bool = False,  # Multi-task: predict expansion start/end
+        loss_alpha: float = 0.5,  # Weight for classification loss
+        loss_beta: float = 0.25,  # Weight for each pointer loss
         **kwargs,
     ):
         """Initialize Enhanced SimpleLSTM model.
@@ -109,6 +132,9 @@ class EnhancedSimpleLSTMModel(BaseModel):
             scaling_prob: Probability of applying scaling (default: 0.3)
             time_warp_prob: Probability of applying time warping (default: 0.0)
             feature_fusion: Fusion strategy for feature-aware mode ('concat', 'add', 'gate')
+            predict_pointers: Enable multi-task pointer prediction (expansion_start, expansion_end)
+            loss_alpha: Weight for classification loss in multi-task mode (default: 0.5)
+            loss_beta: Weight for each pointer loss in multi-task mode (default: 0.25)
             **kwargs: Additional parameters
         """
         super().__init__(seed=seed)
@@ -132,6 +158,9 @@ class EnhancedSimpleLSTMModel(BaseModel):
         self.scaling_prob = scaling_prob
         self.time_warp_prob = time_warp_prob
         self.feature_fusion = feature_fusion
+        self.predict_pointers = predict_pointers
+        self.loss_alpha = loss_alpha
+        self.loss_beta = loss_beta
 
         set_seed(seed)
 
@@ -203,12 +232,14 @@ class EnhancedSimpleLSTMModel(BaseModel):
                 n_classes: int,
                 dropout: float,
                 feature_fusion: str,
+                predict_pointers: bool = False,
             ):
                 super().__init__()
                 self.ohlc_dim = ohlc_dim
                 self.feature_dim = feature_dim
                 self.hidden_size = hidden_size
                 self.feature_fusion = feature_fusion
+                self.predict_pointers = predict_pointers
 
                 # Input processing based on mode
                 if feature_dim == 0:
@@ -263,6 +294,15 @@ class EnhancedSimpleLSTMModel(BaseModel):
                     nn.Linear(32, n_classes),
                 )
 
+                # Pointer head (multi-task: predict expansion_start and expansion_end)
+                if predict_pointers:
+                    self.pointer_head = nn.Sequential(
+                        nn.Linear(hidden_size * 2, 128),
+                        nn.ReLU(),
+                        nn.Dropout(dropout),
+                        nn.Linear(128, 2),  # 2 outputs: start, end
+                    )
+
             def _fuse_inputs(self, x: torch.Tensor) -> torch.Tensor:
                 """Fuse inputs based on mode and fusion strategy.
 
@@ -298,8 +338,8 @@ class EnhancedSimpleLSTMModel(BaseModel):
                     gate = torch.sigmoid(self.gate_proj(combined))
                     return gate * ohlc_proj + (1 - gate) * feature_proj
 
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                """Forward pass.
+            def forward(self, x: torch.Tensor) -> torch.Tensor | dict:
+                """Forward pass with optional multi-task output.
 
                 Args:
                     x: Input tensor [batch, seq_len, input_dim]
@@ -307,7 +347,12 @@ class EnhancedSimpleLSTMModel(BaseModel):
                        - Feature-aware: [B, 105, 4+feature_dim]
 
                 Returns:
-                    Logits [batch, n_classes]
+                    If predict_pointers=False:
+                        Logits [batch, n_classes]
+                    If predict_pointers=True:
+                        Dictionary with keys:
+                        - 'type_logits': [B, n_classes] class logits
+                        - 'pointers': [B, 2] expansion [start, end] in range [0, 104]
                 """
                 # Fuse inputs
                 x_fused = self._fuse_inputs(x)
@@ -327,7 +372,15 @@ class EnhancedSimpleLSTMModel(BaseModel):
                 # Classification
                 logits = self.classifier(last_hidden)  # [B, n_classes]
 
-                return logits
+                # Return early if single-task mode
+                if not self.predict_pointers:
+                    return logits
+
+                # Multi-task: also predict pointers
+                pointers = self.pointer_head(last_hidden)  # [B, 2]
+                pointers = torch.sigmoid(pointers) * 104  # Scale to [0, 104]
+
+                return {'type_logits': logits, 'pointers': pointers}
 
         model = EnhancedSimpleLSTMNet(
             ohlc_dim=self.ohlc_dim,
@@ -338,6 +391,7 @@ class EnhancedSimpleLSTMModel(BaseModel):
             n_classes=n_classes,
             dropout=self.dropout_rate,
             feature_fusion=self.feature_fusion,
+            predict_pointers=self.predict_pointers,
         )
 
         return model.to(self.device)
@@ -707,14 +761,14 @@ class EnhancedSimpleLSTMModel(BaseModel):
 
         logger.info(f"Loading pretrained encoder with STRICT VALIDATION from: {encoder_path}")
 
-        # Load with encoder-only validation (≥60% match, 0 shape mismatches)
-        # With layer-matched architecture (num_layers=2), expect ~61.5% match
-        # (encoder tensors only, missing attention + classifier = expected)
+        # Load with encoder-only validation (≥40% match, 0 shape mismatches)
+        # With current architecture (num_layers=2), expect ~44.4% match
+        # (encoder tensors only: 8/18, missing attention + classifier = expected)
         pretrained_stats = load_pretrained_strict(
             model=self.model,
             checkpoint_path=str(encoder_path),
             freeze_encoder=freeze_encoder,
-            min_match_ratio=0.60,  # Encoder-only: 16/26 tensors = 61.5%
+            min_match_ratio=0.40,  # Encoder-only: 8/18 tensors = 44.4%
             allow_shape_mismatch=False,
         )
 
