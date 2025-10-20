@@ -960,7 +960,8 @@ class EnhancedSimpleLSTMModel(BaseModel):
             model=self.model,
             checkpoint_path=str(encoder_path),
             freeze_encoder=freeze_encoder,
-            min_match_ratio=0.40,  # Encoder-only: 8/18 tensors = 44.4%
+            # Use default min_match_ratio (0.20) for encoder-only loading
+            # Multi-task models have extra heads, so lower threshold is expected
             allow_shape_mismatch=False,
         )
 
