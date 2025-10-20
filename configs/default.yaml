@@ -1,0 +1,7 @@
+# Minimal Hydra config for moola CLI
+# Most settings are overridden via command-line arguments
+
+# Default settings (all can be overridden)
+device: cuda
+epochs: 50
+batch_size: 256
