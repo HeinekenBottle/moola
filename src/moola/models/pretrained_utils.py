@@ -12,7 +12,7 @@ def load_pretrained_strict(
     model: nn.Module,
     checkpoint_path: str,
     freeze_encoder: bool = True,
-    min_match_ratio: float = 0.40,  # Lower for encoder-only (not full model)
+    min_match_ratio: float = 0.20,  # Lower for encoder-only loading (multi-task models have extra heads)
     allow_shape_mismatch: bool = False,
 ) -> Dict[str, Any]:
     """Load pretrained weights with strict validation.
