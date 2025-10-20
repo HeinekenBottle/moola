@@ -1,0 +1,13 @@
+#!/bin/bash
+# Task Master status update
+ID="$1"
+STATUS="$2"
+if [ -z "$ID" ] || [ -z "$STATUS" ]; then
+    echo "Usage: /tm-status <task-id> <status>"
+    echo "Statuses: pending, in-progress, done, review, deferred, cancelled"
+    exit 1
+fi
+taskmaster-ai.set_task_status \
+    --id "$ID" \
+    --status "$STATUS" \
+    --projectRoot "$PWD"

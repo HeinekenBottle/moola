@@ -1,0 +1,109 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+dist/
+build/
+# Data
+data/**/*
+!data/**/.gitkeep
+# IDE
+.vscode/
+.idea/
+# Misc
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.claude/
+# RunPod credentials (DO NOT COMMIT!)
+.runpod/*credentials*
+.runpod/aws-*
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# MCP configuration with API keys
+.mcp.json
+
+# Python cache (additional)
+*.pyc
+*.pyo
+.Python
+*.so
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.coverage
+coverage.xml
+htmlcov/
+
+# ML artifacts
+*.pkl
+*.joblib
+*.h5
+*.ckpt
+*.pth
+*.pt
+wandb/
+mlruns/
+
+# Moola-specific
+moola-sdk/
+data/artifacts/**/*.pkl
+data/artifacts/**/*.npy
+
+# macOS
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Temporary
+*.tmp
+*.temp
+.cache/
+
+# Session tracking
+.watchdog/
+
+# Task files
+# tasks.json
+# tasks/
+
+# Result files (experiment outputs)
+results/*.jsonl
+*.jsonl
+
+# Archive directory
+archived/ 
+artifacts/runpod_bundles/*.tar.gz
+artifacts/runpod_bundles/*.tar.gz
+artifacts/runpod_bundles/*.tar.gz
+
+# Artifacts directory (use SCP to transfer)
+artifacts/

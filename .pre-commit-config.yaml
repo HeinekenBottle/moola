@@ -1,0 +1,41 @@
+repos:
+  # Enforce python3 only (prevent plain python)
+  - repo: local
+    hooks:
+      - id: enforce-python3
+        name: enforce-python3 (use python3, not python)
+        entry: bash -c 'if grep -r "python " . --include="*.py" --include="*.sh" 2>/dev/null | grep -v "python3" | grep -v "pre-commit"; then echo "ERROR: Use python3, not python"; exit 1; fi'
+        language: system
+        stages: [commit]
+        always_run: true
+
+  # Enforce pip3 only (prevent plain pip)
+  - repo: local
+    hooks:
+      - id: enforce-pip3
+        name: enforce-pip3 (use pip3, not pip)
+        entry: bash -c 'if grep -r " pip " . --include="*.py" --include="*.sh" 2>/dev/null | grep -v "pip3" | grep -v "pre-commit"; then echo "ERROR: Use pip3, not pip"; exit 1; fi'
+        language: system
+        stages: [commit]
+        always_run: true
+
+  # Code formatting
+  - repo: https://github.com/psf/black
+    rev: '24.1.1'
+    hooks:
+      - id: black
+        language_version: python3.10
+        args: ['--line-length=100']
+
+  # Linting and import sorting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 'v0.1.15'
+    hooks:
+      - id: ruff
+        args: ['--fix', '--line-length=100']
+
+  - repo: https://github.com/PyCQA/isort
+    rev: '5.13.2'
+    hooks:
+      - id: isort
+        args: ['--profile', 'black']

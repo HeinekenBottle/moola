@@ -1,0 +1,6 @@
+#!/bin/bash
+# Task Master PRD parsing
+taskmaster-ai.parse_prd \
+    --input ".taskmaster/docs/prd.txt" \
+    --force true \
+    --projectRoot "$PWD"

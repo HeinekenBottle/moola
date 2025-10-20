@@ -1,0 +1,325 @@
+================================================================================
+                    CANDLESTICKS ANNOTATION ARCHITECTURE
+                        (Complete System Overview)
+================================================================================
+
+1. THREE PERSISTENCE LAYERS
+================================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ LAYER 1: NEW ANNOTATIONS (Bespoke Mode)                               │
+   ├─────────────────────────────────────────────────────────────────────────┤
+   │ Location: data/corrections/candlesticks_annotations/                  │
+   │                                                                         │
+   │ Files:                              Index:                             │
+   │ ├── batch_0.json                    ├── master_index.csv             │
+   │ ├── batch_1.json                    └── (tracks window_id +         │
+   │ ├── batch_22.json (D-REJECTED!)        quality_grade + num_exp)     │
+   │ └── ...                                                               │
+   │                                                                         │
+   │ Schema: v3.0.0 (OHLC points, expansion types, phenomenon ranges)    │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ LAYER 2: REVIEW CORRECTIONS (CleanLab Mode - SEPARATE)                │
+   ├─────────────────────────────────────────────────────────────────────────┤
+   │ Location: data/corrections/review_corrections/                       │
+   │                                                                         │
+   │ Purpose: Corrections to Window105Dataset flagged samples              │
+   │                                                                         │
+   │ Files:                              Index:                             │
+   │ ├── batch_N.json                    ├── review_master_index.csv      │
+   │ └── (isolated from Layer 1)         └── (independent tracking)       │
+   │                                                                         │
+   │ + File: cleanlab_reviewed.json (action: "corrected" | "skipped")     │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ LAYER 3: LEGACY BACKUP (v2.x - Read Only)                              │
+   ├─────────────────────────────────────────────────────────────────────────┤
+   │ Location: data/corrections/multi_expansion_annotations_v2_backup/    │
+   │ Files: 190+ batch files from v2.3.0                                 │
+   │ Status: Historical, not actively used                                │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+
+2. REJECTION MARKING SYSTEM
+================================================================================
+
+   D-GRADE WINDOWS (Rejections):
+   ┌──────────────────────────────────┐
+   │ window_quality: "D"              │  ← Key rejection marker
+   │ expansions: []                   │  ← Empty (no annotations)
+   │ num_expansions: 0                │  ← In master_index.csv
+   │ annotation_timestamp: <date>     │  ← Still tracked!
+   └──────────────────────────────────┘
+
+   Examples from data:
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ window_id,quality_grade,num_expansions,batch_file                   │
+   │ 22,D,0,batch_017.json                                              │
+   │ 24,D,3,batch_018.json  (← D-grade with previous expansions)        │
+   │ 36,D,1,batch_030.json  (← can have mixed state)                    │
+   │ 41,D,0,batch_055.json                                              │
+   └──────────────────────────────────────────────────────────────────────┘
+
+
+3. DATA FLOW ARCHITECTURE
+================================================================================
+
+   FRONTEND FLOW:
+   ┌─────────────┐
+   │  Browser    │
+   │useAnnotation│
+   │  Store.ts   │
+   └──────┬──────┘
+          │
+          ├─→ fetchNextWindow()        ─→ GET /api/windows/next
+          ├─→ fetchSavedAnnotation()   ─→ GET /api/annotations/<id>
+          ├─→ saveAndNext()            ─→ POST /api/annotations
+          │   (sets quality="B/C/A")
+          │
+          └─→ skipWindow()             ─→ POST /api/annotations
+              (sets quality="D")
+
+
+   BACKEND FLOW (Save Pipeline):
+   ┌──────────────────────┐
+   │  POST /annotations   │
+   └──────────┬───────────┘
+              │
+              ├─1. ExpansionValidator.validate_annotation()
+              │   (allows quality="D", expansions=[])
+              │
+              ├─2. check_collision(window_id)
+              │   └─→ Search master_index.csv
+              │
+              ├─3. _build_annotation_v3()
+              │   └─→ Set schema_version="3.0.0"
+              │
+              ├─4. Write to batch_<window_id>.json
+              │   └─→ {"window_quality": "D", "expansions": [], ...}
+              │
+              └─5. _update_master_index()
+                  └─→ window_id,<ts>,D,0,<date>,batch_<id>.json
+
+
+4. WINDOW ID REFERENCE SYSTEM
+================================================================================
+
+   Sequential Index (0-114) vs Original Window ID:
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ Frontend sends: window_id (string or int)                           │
+   │ Backend maps:                                                        │
+   │   - Via WindowLoaderService: sequential index ↔ dataset position    │
+   │   - Via master_index.csv: window_id ↔ batch_file                   │
+   │                                                                      │
+   │ CRITICAL FIX (app.py:378):                                          │
+   │   formatted_window['window_id'] = dataset_index                     │
+   │   ← Must match expected index for collision detection!              │
+   └──────────────────────────────────────────────────────────────────────┘
+
+
+5. COLLISION DETECTION
+================================================================================
+
+   ┌─ Check if window already annotated ─┐
+   │                                      │
+   │ 1. Read master_index.csv             │
+   │ 2. Search for window_id              │
+   │ 3. If found:                         │
+   │    ├─ Return collision metadata      │
+   │    ├─ Show annotation_date           │
+   │    └─ Require overwrite=true         │
+   │                                      │
+   │ 4. Save allowed only if:             │
+   │    ├─ No collision, OR               │
+   │    └─ overwrite=true                 │
+   └──────────────────────────────────────┘
+
+
+6. REJECTION FLOW (DETAILED)
+================================================================================
+
+   User Clicks "Skip" Button:
+   ┌──────────────────────┐
+   │ Frontend: skipWindow │
+   └──────────┬───────────┘
+              │
+              ├─ Create payload:
+              │  {
+              │    window_id: <id>,
+              │    window_quality: "D",           ← Rejection marker
+              │    expansions: [],                 ← Empty!
+              │    annotator_notes: "Skipped..."
+              │  }
+              │
+              ├─ POST /annotations
+              │
+              └─ Backend:
+                 1. Validation: PASSES (D-grade is valid state)
+                 2. Check collision: SAME endpoint as regular save
+                 3. Save to batch_<id>.json with quality="D"
+                 4. Update master_index: window_quality="D", num_expansions=0
+                 5. Mark as reviewed (if CleanLab mode): action="skipped"
+
+
+7. FILTERING REJECTIONS (FOR TRAINING DATA)
+================================================================================
+
+   ┌─ Python Pattern ─┐
+   │                  │
+   │ import csv       │
+   │ with open(       │
+   │   'master_...    │
+   │ ) as f:          │
+   │   reader = csv.  │
+   │     DictReader   │
+   │   usable = [     │
+   │     row for row  │
+   │     in reader    │
+   │     if row[      │
+   │       'window_'  │
+   │       'quality'  │
+   │     ] != 'D'     │
+   │   ]              │
+   │                  │
+   └──────────────────┘
+
+
+8. KEY FILES (REFERENCE)
+================================================================================
+
+   Backend:
+   ├── backend/app.py
+   │   └── Line 359-387: Window ID mapping (FRAGILE)
+   │   └── Line 139-180: Save annotation endpoint
+   │
+   ├── backend/services/
+   │   ├── annotation_persistence_service.py
+   │   │   └── Line 42-68: check_collision()
+   │   │   └── Line 70-120: save_annotation()
+   │   │
+   │   └── cleanlab_loader.py
+   │       └── Line 283: mark_window_reviewed()
+   │
+   └── backend/config.py
+       └── CANDLESTICKS_ANNOTATIONS_DIR (Layer 1)
+       └── REVIEW_CORRECTIONS_DIR (Layer 2)
+
+   Frontend:
+   └── frontend/src/state/useAnnotationStore.ts
+       ├── Line 817-825: Prevent D-grade save
+       ├── Line 1035-1115: skipWindow() implementation
+       └── Line 812-1033: saveAndNext() implementation
+
+
+9. CLEAN LAB REVIEW MODE (SEPARATE)
+================================================================================
+
+   ┌─ Review Mode Tracking ─┐
+   │                        │
+   │ File: cleanlab_       │
+   │       reviewed.json   │
+   │                        │
+   │ Structure:             │
+   │ {                      │
+   │   reviewed_windows:    │
+   │   [                    │
+   │     {                  │
+   │       window_id: 10,   │
+   │       action:          │
+   │       "skipped"        │ ← or "corrected"
+   │     }                  │
+   │   ]                    │
+   │ }                      │
+   │                        │
+   │ Used to:               │
+   │ - Prevent re-review    │
+   │ - Track corrections    │
+   │ - Separate from       │
+   │   new annotations     │
+   │                        │
+   └────────────────────────┘
+
+
+10. AUDIT TRAIL
+================================================================================
+
+    File: data/integrity/registry/audit_log.json
+
+    Logs ALL operations:
+    - register_sample
+    - validate_dataset
+    - Timestamps all changes
+    - Extensible for tracking rejection reasons
+
+
+11. FRAGILE AREAS (DO NOT MODIFY)
+================================================================================
+
+    CRITICAL - Window ID Mapping:
+    └─ app.py lines 359-387
+    └─ Risk: Sequential index mismatch → collision detection failures
+
+    FRAGILE - CSV Format:
+    └─ master_index.csv header order
+    └─ DictReader expects exact column names
+
+    FRAGILE - Layer Separation:
+    └─ candlesticks_annotations/ vs review_corrections/
+    └─ Different services, different indices
+
+    FRAGILE - Batch File Format:
+    └─ JSON schema v3.0.0 (OHLC with index, price, ohlc_type)
+    └─ Backward compat with v2.3.0 (simple indices)
+
+
+12. SAFE EXTENSION POINTS
+================================================================================
+
+    Batch JSON Fields:
+    ├─ Add new fields (make nullable)
+    ├─ Use annotator_notes for rejection reason
+    └─ Add rejection_reason field (optional)
+
+    master_index.csv:
+    └─ Add new columns at end (don't change header order)
+
+    Audit Trail:
+    └─ Log rejection reasons to audit_log.json
+
+    Filtering Logic:
+    └─ Create consumers that check window_quality != 'D'
+
+
+13. QUALITY GRADES
+================================================================================
+
+    A: High quality       ← Highest confidence patterns
+    B: Standard quality   ← Normal confidence
+    C: Low quality        ← Ambiguous patterns
+    D: REJECTED           ← Unsuitable for training
+
+
+14. SUMMARY
+================================================================================
+
+    Current State:
+    ✅ Rejections implemented as D-grade windows
+    ✅ Tracked in master_index.csv and batch JSON
+    ✅ Collision detection prevents duplicates
+    ✅ Separate CleanLab review tracking
+    ✅ Audit trail for all operations
+
+    No Changes Needed:
+    ✅ System is production-ready
+    ✅ D-grade rejection already works
+    ✅ Can filter rejections in consumers
+
+    Optional Enhancements:
+    ⚠️ Add rejection_reason field (backward compatible)
+    ⚠️ Log rejection reasons to audit trail
+    ⚠️ Create rejection analytics dashboard
+
+================================================================================

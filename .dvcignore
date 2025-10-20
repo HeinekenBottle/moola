@@ -1,0 +1,27 @@
+# Add patterns of files dvc should ignore, which could improve
+# the performance. Learn more at
+# https://dvc.org/doc/user-guide/dvcignore
+
+# DVC directories
+.dvc/tmp
+.dvc/cache
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiment artifacts (track only parquet data)
+*.pt
+*.ckpt
+*.log
+*.png
+*.jpg

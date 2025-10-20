@@ -1,0 +1,207 @@
+# DVC Pipeline for ML Data Infrastructure
+# Tracks data transformations, versioning, and quality gates
+
+stages:
+  # ============================================================================
+  # DATA INGESTION
+  # ============================================================================
+
+  ingest_raw:
+    cmd: python -m moola.data_infra.pipelines.ingest
+    deps:
+      - src/moola/data_infra/pipelines/ingest.py
+    params:
+      - data_config.source_path
+      - data_config.symbol
+    outs:
+      - data/raw/market_data_${data_config.symbol}.parquet:
+          cache: true
+          desc: "Raw OHLC market data"
+    metrics:
+      - data/raw/metrics.json:
+          cache: false
+    plots:
+      - data/raw/price_distribution.json:
+          cache: false
+
+  # ============================================================================
+  # DATA VALIDATION & QUALITY
+  # ============================================================================
+
+  validate_raw:
+    cmd: python -m moola.data_infra.pipelines.validate --stage raw
+    deps:
+      - data/raw/market_data_${data_config.symbol}.parquet
+      - src/moola/data_infra/validators/quality_checks.py
+    params:
+      - quality_config.missing_threshold
+      - quality_config.outlier_threshold
+    outs:
+      - data/raw/validation_report.json:
+          cache: false
+    metrics:
+      - data/raw/quality_metrics.json:
+          cache: false
+
+  # ============================================================================
+  # WINDOWING & FEATURE ENGINEERING
+  # ============================================================================
+
+  create_windows:
+    cmd: python -m moola.data_infra.pipelines.create_windows
+    deps:
+      - data/raw/market_data_${data_config.symbol}.parquet
+      - data/raw/validation_report.json
+      - src/data/window105.py
+    params:
+      - window_config.length
+      - window_config.stride
+      - window_config.min_samples
+    outs:
+      - data/raw/unlabeled_windows.parquet:
+          cache: true
+          desc: "105-timestep OHLC windows for SSL pre-training"
+    metrics:
+      - data/raw/window_stats.json:
+          cache: false
+
+  validate_windows:
+    cmd: python -m moola.data_infra.pipelines.validate --stage windows
+    deps:
+      - data/raw/unlabeled_windows.parquet
+      - src/moola/data_infra/validators/timeseries_checks.py
+    outs:
+      - data/raw/window_validation.json:
+          cache: false
+
+  # ============================================================================
+  # LABELED DATA PROCESSING
+  # ============================================================================
+
+  process_labeled:
+    cmd: python -m moola.data_infra.pipelines.process_labels
+    deps:
+      - data/raw/labeled_patterns.csv  # Manual annotations
+      - src/moola/data_infra/processors/label_encoder.py
+    params:
+      - label_config.valid_classes
+      - label_config.min_confidence
+    outs:
+      - data/processed/train.parquet:
+          cache: true
+          desc: "Labeled training data with pattern classifications"
+    metrics:
+      - data/processed/label_distribution.json:
+          cache: false
+    plots:
+      - data/processed/class_balance.json:
+          cache: false
+
+  validate_labeled:
+    cmd: python -m moola.data_infra.pipelines.validate --stage labeled
+    deps:
+      - data/processed/train.parquet
+      - src/moola/data_infra/validators/label_checks.py
+    params:
+      - quality_config.min_samples_per_class
+      - quality_config.max_class_imbalance
+    outs:
+      - data/processed/validation_report.json:
+          cache: false
+    metrics:
+      - data/processed/quality_score.json:
+          cache: false
+
+  # ============================================================================
+  # DATA VERSIONING
+  # ============================================================================
+
+  version_datasets:
+    cmd: python -m moola.data_infra.pipelines.version_control
+    deps:
+      - data/raw/unlabeled_windows.parquet
+      - data/processed/train.parquet
+    params:
+      - version_config.version_id
+    outs:
+      - data/versions/${version_config.version_id}/metadata.json:
+          cache: false
+          desc: "Dataset version metadata and lineage"
+    metrics:
+      - data/versions/${version_config.version_id}/checksums.json:
+          cache: false
+
+  # ============================================================================
+  # DATA DRIFT MONITORING
+  # ============================================================================
+
+  monitor_drift:
+    cmd: python -m moola.data_infra.monitoring.drift_detector
+    deps:
+      - data/processed/train.parquet
+      - data/versions/${version_config.baseline_version}/train.parquet
+      - src/moola/data_infra/monitoring/drift_detector.py
+    params:
+      - drift_config.method
+      - drift_config.threshold
+    metrics:
+      - data/monitoring/drift_metrics.json:
+          cache: false
+    plots:
+      - data/monitoring/drift_distribution.json:
+          cache: false
+
+# ============================================================================
+# PARAMETERS
+# ============================================================================
+
+params:
+  - data_config:
+      source_path: "data/external/"
+      symbol: "BTCUSDT"
+
+  - window_config:
+      length: 105
+      stride: 1
+      min_samples: 100
+
+  - label_config:
+      valid_classes: ["consolidation", "retracement", "expansion"]
+      min_confidence: 0.7
+
+  - quality_config:
+      missing_threshold: 0.01
+      outlier_threshold: 5.0
+      min_samples_per_class: 2
+      max_class_imbalance: 10.0
+
+  - version_config:
+      version_id: "v1.0.0"
+      baseline_version: "v1.0.0"
+
+  - drift_config:
+      method: "ks_test"
+      threshold: 0.05
+
+# ============================================================================
+# PLOTS
+# ============================================================================
+
+plots:
+  - data/monitoring/drift_distribution.json:
+      template: scatter
+      x: feature_idx
+      y: drift_score
+      title: "Feature Drift Over Time"
+
+  - data/processed/class_balance.json:
+      template: bar
+      x: class_name
+      y: count
+      title: "Training Data Class Distribution"
+
+  - data/raw/price_distribution.json:
+      template: linear
+      x: timestamp
+      y: close_price
+      title: "Raw Price Data Timeline"

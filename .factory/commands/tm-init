@@ -1,0 +1,12 @@
+#!/bin/bash
+# Task Master initialization command
+taskmaster-ai_initialize_project() {
+    taskmaster-ai.initialize_project \
+        --skipInstall true \
+        --addAliases true \
+        --initGit true \
+        --storeTasksInGit true \
+        --yes true \
+        --projectRoot "$PWD"
+}
+taskmaster-ai_initialize_project

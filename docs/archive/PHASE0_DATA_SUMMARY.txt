@@ -1,0 +1,109 @@
+================================================================================
+PHASE 0: DATA DISCOVERY COMPLETE
+================================================================================
+
+REPORT LOCATION:
+/Users/jack/projects/moola/PHASE0_DATA_SURVEY.md (580 lines)
+
+CANONICAL v1 DATASETS (READY TO USE):
+
+1. LABELED TRAINING (Binary Classification)
+   Path: /Users/jack/projects/moola/data/processed/train_clean.parquet
+   Samples: 98
+   Classes: consolidation (56), retracement (42)
+   Feature: 105-bar OHLC windows [105, 4]
+   
+2. UNLABELED CORPUS (Self-Supervised Pre-training)
+   Path: /Users/jack/projects/moola/data/raw/unlabeled_windows.parquet
+   Samples: 11,873
+   Feature: 105-bar OHLC windows [105, 4]
+   Cache: /Users/jack/projects/moola/data/pretraining/unlabeled_ohlc.npy (38 MB)
+
+3. SPLIT DEFINITIONS (5-Fold Cross-Validation)
+   Location: /Users/jack/projects/moola/data/artifacts/splits/v1/
+   Files: fold_0.json through fold_4.json
+   Strategy: Forward-chaining (temporal split, seed=1337)
+   Distribution: ~78 train / ~20 val per fold (98 total)
+
+4. PRETRAINED ENCODER (BiLSTM)
+   Path: /Users/jack/projects/moola/data/artifacts/pretrained/bilstm_encoder_correct.pt
+   Size: 2.03 MB
+   Params: ~135K
+   Status: Ready for transfer learning
+
+5. AUGMENTATION CACHE (SMOTE)
+   Path: /Users/jack/projects/moola/data/processed/train_smote_300.parquet
+   Samples: 300 (synthetic, perfectly balanced 150/150)
+   Use case: Balanced training experiments
+
+SEARCH RESULTS SUMMARY:
+
+✅ Labeled Windows Dataset
+   Status: FOUND (Multiple versions, train_clean.parquet is canonical)
+   Count: 98 samples in v1, alternatives from 89-134 samples
+   Quality: Cleanlab-reviewed, 12 issues identified but already filtered
+   
+✅ Unlabeled OHLC Corpus
+   Status: FOUND (11,873 samples ready for pre-training)
+   Cache: 38 MB precomputed OHLC cache + 2.3 MB feature cache
+   Ready: YES (no preprocessing needed, caches are current)
+
+✅ Synthetic/Augmentation Cache
+   Status: FOUND (SMOTE only, pseudo-generation code available but not deployed)
+   OOF predictions: 10 model variants (5 clean + 5 SMOTE-trained)
+   Quality metrics: None stored (would need to recreate from SMOTE params)
+   
+✅ Existing Split Definitions
+   Status: FOUND (Canonical v1 with 5 folds)
+   Type: STRATIFIED FORWARD-CHAINING (temporal, not random)
+   No random splits detected (excellent for time-series)
+   
+✅ Pretrained Artifacts
+   Status: FOUND (Multiple encoders, bilstm_encoder_correct.pt is latest)
+   TS-TCC variants: Available but marked experimental
+   Archive: RunPod multitask encoder (alternative)
+
+KEY FINDINGS FOR REFACTOR:
+
+1. Data is well-organized with clear v1 canonical versions
+2. No data contamination risk: splits are temporal (forward-chaining)
+3. Labeled dataset is small (98 samples) but thoroughly QA'd via Cleanlab
+4. Unlabeled corpus (11,873) is substantial for pre-training
+5. BiLSTM pre-training infrastructure is mature (encoder checkpoint exists)
+6. SMOTE augmentation creates 3x synthetic samples (300 total)
+7. Multiple model variants trained (CNN, LSTM, XGB, RF, LogReg)
+8. Quality control: Manual annotations + Cleanlab reviews available
+
+CRITICAL FOR REFACTOR:
+
+Do NOT use:
+  - train_3class_backup.parquet (134 samples, reversal class not used)
+  - train_pivot_134.parquet (unclear structure)
+  - train_clean_phase2.parquet (only 89 samples, less data)
+  
+DO use:
+  - train_clean.parquet (98 samples, binary, clean)
+  - unlabeled_windows.parquet (11,873 samples)
+  - splits/v1/ (canonical forward-chaining folds)
+  - bilstm_encoder_correct.pt (latest pre-training)
+
+VERIFICATION CHECKLIST:
+
+✅ Train data shape: (98, 5) [window_id, label, expansion_start, expansion_end, features]
+✅ Train features shape: (98, 105, 4) [OHLC bars]
+✅ Unlabeled shape: (11873, 2) [window_id, features]
+✅ Unlabeled features shape: (11873, 105, 4)
+✅ Split counts: 78+20, 78+20, 78+20, 79+19, 79+19 = 98 total ✓
+✅ BiLSTM encoder loadable: torch.load() succeeds
+✅ OHLC cache present: 38 MB precomputed
+✅ No contamination: Forward-chaining temporal split
+
+FILES INVOLVED IN SEARCH:
+- 50+ parquet/npy/json data files catalogued
+- 10 augmentation/pseudo-sample generation scripts identified
+- 5 split definition files (v1 canonical)
+- 7 pre-trained model checkpoints found
+- 100+ quality control/annotation files inventoried
+
+RECOMMENDATION:
+✅ ALL CRITICAL ASSETS FOUND - PROCEED WITH REFACTOR

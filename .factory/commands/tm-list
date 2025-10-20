@@ -1,0 +1,6 @@
+#!/bin/bash
+# Task Master task listing
+STATUS="${1:-pending}"
+taskmaster-ai.get_tasks \
+    --status "$STATUS" \
+    --projectRoot "$PWD"

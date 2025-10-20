@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Gate 1: Smoke Test - EnhancedSimpleLSTM Baseline.
+
+Quick validation run (3 epochs) to establish baseline metrics.
+
+Gates:
+- Must load pretrained encoder if exists (≥80% match)
+- Must record baseline metrics for comparison
+- No augmentation, frozen encoder
+
+Exit codes:
+- 0: Smoke test passed
+- 1: Smoke test failed
+"""
+
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Add moola to path
+sys.path.insert(0, "/workspace/moola/src")
+
+import numpy as np
+import pandas as pd
+import torch
+from moola.models.enhanced_simple_lstm import EnhancedSimpleLSTMModel
+from sklearn.metrics import accuracy_score, f1_score
+
+
+def log_result(message: str, status: str = "INFO"):
+    """Log with timestamp and status."""
+    timestamp = datetime.now().isoformat()
+    print(f"[{timestamp}] [{status}] {message}")
+
+
+def log_to_jsonl(results: dict, filepath: Path):
+    """Append results to JSONL file."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    with open(filepath, "a") as f:
+        f.write(json.dumps(results) + "\n")
+
+
+def main():
+    """Run smoke test for EnhancedSimpleLSTM."""
+    log_result("=" * 70)
+    log_result("GATE 1: SMOKE TEST - EnhancedSimpleLSTM Baseline")
+    log_result("=" * 70)
+
+    # Paths
+    data_path = Path("/workspace/moola/data/processed/train_clean.parquet")
+    split_path = Path("/workspace/moola/data/artifacts/splits/v1/fold_0.json")
+    encoder_path = Path("/workspace/moola/artifacts/pretrained/encoder_v1.pt")
+    results_path = Path("/workspace/moola/gated_workflow_results.jsonl")
+
+    # Load data
+    log_result("Loading data...")
+    df = pd.read_parquet(data_path)
+    X = np.stack([np.stack(f) for f in df["features"]])
+    y = df["label"].values
+
+    log_result(f"Data shape: {X.shape}, Labels: {y.shape}")
+
+    # Load split
+    with open(split_path, "r") as f:
+        split_data = json.load(f)
+
+    train_idx = np.array(split_data.get("train_indices", split_data.get("train_idx", [])))
+    val_idx = np.array(split_data["val_indices"])
+
+    X_train, X_val = X[train_idx], X[val_idx]
+    y_train, y_val = y[train_idx], y[val_idx]
+
+    log_result(f"Train: {len(X_train)}, Val: {len(X_val)}")
+
+    # Check for pretrained encoder
+    use_pretrained = encoder_path.exists()
+    if use_pretrained:
+        log_result(f"✓ Pretrained encoder found: {encoder_path}")
+    else:
+        log_result("⚠ No pretrained encoder, training from scratch", "WARN")
+
+    # Initialize model
+    log_result("Initializing EnhancedSimpleLSTM (smoke test config)...")
+    model = EnhancedSimpleLSTMModel(
+        seed=17,
+        hidden_size=128,
+        num_layers=1,
+        num_heads=2,
+        dropout=0.1,
+        n_epochs=3,  # SMOKE TEST: 3 epochs only
+        batch_size=512,
+        learning_rate=5e-4,
+        device="cuda",
+        use_amp=True,
+        early_stopping_patience=20,
+        val_split=0.0,  # Use manual split
+        use_temporal_aug=False,  # NO augmentation for smoke test
+    )
+
+    # Train with optional pretrained encoder
+    log_result("Training smoke test model...")
+    start_time = datetime.now()
+
+    if use_pretrained:
+        # GATE: Must load pretrained with ≥80% match
+        try:
+            model.fit(
+                X_train,
+                y_train,
+                pretrained_encoder_path=encoder_path,
+                freeze_encoder=True,  # Frozen for smoke test
+            )
+
+            # Validate pretrained load
+            if hasattr(model, "pretrained_stats"):
+                stats = model.pretrained_stats
+                match_ratio = stats.get("match_ratio", 0.0)
+
+                if match_ratio < 0.80:
+                    log_result(
+                        f"✗ GATE FAILED: Pretrained match ratio {match_ratio:.1%} < 80%",
+                        "ERROR"
+                    )
+                    sys.exit(1)
+
+                log_result(f"✓ Pretrained loaded: {match_ratio:.1%} match")
+            else:
+                log_result("✗ GATE FAILED: Pretrained stats not available", "ERROR")
+                sys.exit(1)
+
+        except Exception as e:
+            log_result(f"✗ GATE FAILED: Pretrained loading error: {e}", "ERROR")
+            sys.exit(1)
+    else:
+        # Train from scratch
+        model.fit(X_train, y_train)
+
+    train_time = (datetime.now() - start_time).total_seconds()
+
+    # Evaluate
+    log_result("Evaluating smoke test model...")
+    y_train_pred = model.predict(X_train)
+    y_val_pred = model.predict(X_val)
+
+    train_acc = accuracy_score(y_train, y_train_pred)
+    val_acc = accuracy_score(y_val, y_val_pred)
+    val_f1 = f1_score(y_val, y_val_pred, average="weighted")
+
+    log_result(f"Train Acc: {train_acc:.3f}")
+    log_result(f"Val Acc: {val_acc:.3f}")
+    log_result(f"Val F1: {val_f1:.3f}")
+
+    # Record baseline metrics
+    results = {
+        "gate": "1_smoke_enhanced",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "model": "enhanced_simple_lstm",
+        "config": {
+            "epochs": 3,
+            "pretrained": use_pretrained,
+            "frozen_encoder": True,
+            "augmentation": False,
+        },
+        "metrics": {
+            "train_acc": float(train_acc),
+            "val_acc": float(val_acc),
+            "val_f1": float(val_f1),
+        },
+        "train_time_sec": train_time,
+        "status": "passed",
+    }
+
+    log_to_jsonl(results, results_path)
+
+    log_result("=" * 70)
+    log_result("GATE 1: PASSED - Baseline metrics recorded", "SUCCESS")
+    log_result("=" * 70)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

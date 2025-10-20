@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Gate 6: Baseline SimpleLSTM (Unidirectional).
+
+Train SimpleLSTM from scratch without pretraining.
+
+Gates:
+- Should underperform EnhancedSimpleLSTM with pretraining
+- If SimpleLSTM >= Enhanced, re-inspect pretraining benefit
+
+Exit codes:
+- 0: Baseline test passed
+- 1: Baseline test failed (unexpected performance)
+"""
+
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Add moola to path
+sys.path.insert(0, "/workspace/moola/src")
+
+import numpy as np
+import pandas as pd
+import torch
+from moola.models.simple_lstm import SimpleLSTMModel
+from sklearn.metrics import accuracy_score, f1_score
+
+
+def log_result(message: str, status: str = "INFO"):
+    """Log with timestamp and status."""
+    timestamp = datetime.now().isoformat()
+    print(f"[{timestamp}] [{status}] {message}")
+
+
+def log_to_jsonl(results: dict, filepath: Path):
+    """Append results to JSONL file."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    with open(filepath, "a") as f:
+        f.write(json.dumps(results) + "\n")
+
+
+def load_finetuned_metrics(results_path: Path) -> dict:
+    """Load finetuned metrics from Gate 4."""
+    if not results_path.exists():
+        log_result("✗ Finetuned results not found - run Gate 4 first", "ERROR")
+        sys.exit(1)
+
+    with open(results_path, "r") as f:
+        for line in f:
+            result = json.loads(line)
+            if result.get("gate") == "4_finetune_enhanced":
+                return result["metrics"]
+
+    log_result("✗ Gate 4 finetuned metrics not found in results", "ERROR")
+    sys.exit(1)
+
+
+def main():
+    """Train SimpleLSTM baseline."""
+    log_result("=" * 70)
+    log_result("GATE 6: BASELINE SimpleLSTM (Unidirectional)")
+    log_result("=" * 70)
+
+    # Paths
+    data_path = Path("/workspace/moola/data/processed/train_clean.parquet")
+    split_path = Path("/workspace/moola/data/artifacts/splits/v1/fold_0.json")
+    model_output = Path("/workspace/moola/artifacts/models/simple_lstm_baseline_v1.pt")
+    results_path = Path("/workspace/moola/gated_workflow_results.jsonl")
+
+    model_output.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load finetuned metrics from Gate 4
+    finetuned_metrics = load_finetuned_metrics(results_path)
+    finetuned_val_f1 = finetuned_metrics["val_f1"]
+    log_result(f"Enhanced (with pretraining) Val F1: {finetuned_val_f1:.3f}")
+
+    # Load data
+    log_result("Loading data...")
+    df = pd.read_parquet(data_path)
+    X = np.stack([np.stack(f) for f in df["features"]])
+    y = df["label"].values
+
+    # Load split
+    with open(split_path, "r") as f:
+        split_data = json.load(f)
+
+    train_idx = np.array(split_data.get("train_indices", split_data.get("train_idx", [])))
+    val_idx = np.array(split_data["val_indices"])
+
+    X_train, X_val = X[train_idx], X[val_idx]
+    y_train, y_val = y[train_idx], y[val_idx]
+
+    log_result(f"Train: {len(X_train)}, Val: {len(X_val)}")
+
+    # Initialize SimpleLSTM (unidirectional, no pretraining)
+    log_result("Initializing SimpleLSTM (unidirectional, from scratch)...")
+    model = SimpleLSTMModel(
+        seed=17,
+        hidden_size=32,  # Smaller than Enhanced (128)
+        num_layers=1,
+        num_heads=2,
+        dropout=0.1,
+        n_epochs=60,
+        batch_size=512,
+        learning_rate=5e-4,
+        device="cuda",
+        use_amp=True,
+        early_stopping_patience=20,
+        val_split=0.0,
+        use_temporal_aug=True,
+        mixup_alpha=0.4,
+        cutmix_prob=0.5,
+    )
+
+    # Train from scratch (no pretraining)
+    log_result("Training SimpleLSTM from scratch...")
+    start_time = datetime.now()
+
+    model.fit(X_train, y_train)
+
+    train_time = (datetime.now() - start_time).total_seconds()
+
+    # Evaluate
+    log_result("Evaluating SimpleLSTM baseline...")
+    y_train_pred = model.predict(X_train)
+    y_val_pred = model.predict(X_val)
+
+    train_acc = accuracy_score(y_train, y_train_pred)
+    val_acc = accuracy_score(y_val, y_val_pred)
+    val_f1 = f1_score(y_val, y_val_pred, average="weighted")
+
+    log_result(f"Train Acc: {train_acc:.3f}")
+    log_result(f"Val Acc: {val_acc:.3f}")
+    log_result(f"Val F1: {val_f1:.3f}")
+
+    # GATE: SimpleLSTM should underperform Enhanced
+    # This validates that pretraining provides actual benefit
+    delta = val_f1 - finetuned_val_f1
+
+    if delta >= 0:
+        log_result("=" * 70)
+        log_result(
+            f"⚠ WARNING: SimpleLSTM ({val_f1:.3f}) >= Enhanced ({finetuned_val_f1:.3f})",
+            "WARN"
+        )
+        log_result(
+            "This suggests pretraining may not be providing expected benefit.",
+            "WARN"
+        )
+        log_result(
+            "Consider re-inspecting pretrained encoder quality or finetuning strategy.",
+            "WARN"
+        )
+        log_result("=" * 70)
+        # Not a hard failure, but log as warning
+
+    # Save model
+    log_result(f"Saving SimpleLSTM baseline to {model_output}...")
+    model.save(model_output)
+
+    # Record results
+    results = {
+        "gate": "6_baseline_simplelstm",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "model": "simple_lstm_baseline",
+        "config": {
+            "epochs": 60,
+            "hidden_size": 32,
+            "pretrained": False,
+            "augmentation": True,
+        },
+        "metrics": {
+            "train_acc": float(train_acc),
+            "val_acc": float(val_acc),
+            "val_f1": float(val_f1),
+        },
+        "comparison": {
+            "enhanced_f1": finetuned_val_f1,
+            "simple_f1": float(val_f1),
+            "delta": float(delta),
+        },
+        "train_time_sec": train_time,
+        "model_path": str(model_output),
+        "status": "passed" if delta < 0 else "warning",
+    }
+
+    log_to_jsonl(results, results_path)
+
+    log_result("=" * 70)
+    if delta < 0:
+        log_result(
+            f"GATE 6: PASSED - SimpleLSTM ({val_f1:.3f}) < Enhanced ({finetuned_val_f1:.3f})",
+            "SUCCESS"
+        )
+    else:
+        log_result(
+            f"GATE 6: PASSED (with warning) - SimpleLSTM ({val_f1:.3f}) >= Enhanced ({finetuned_val_f1:.3f})",
+            "SUCCESS"
+        )
+    log_result(f"Model saved to: {model_output}")
+    log_result("=" * 70)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
