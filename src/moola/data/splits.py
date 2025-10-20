@@ -268,14 +268,15 @@ def get_default_split() -> dict[str, Any]:
     Returns:
         Split data for first fold
     """
-    # Try multiple locations
+    # Try multiple locations (relative to project root)
+    project_root = Path(__file__).parent.parent.parent.parent
     possible_paths = [
-        "data/artifacts/splits/v1/fold_0.json",
-        "/Users/jack/projects/moola/data/artifacts/splits/v1/fold_0.json",
+        project_root / "data/artifacts/splits/v1/fold_0.json",
+        Path("data/artifacts/splits/v1/fold_0.json"),  # Fallback: relative to cwd
     ]
 
     for path in possible_paths:
-        if Path(path).exists():
+        if path.exists():
             return load_split(path)
 
     raise FileNotFoundError(

@@ -248,10 +248,11 @@ def get_storage_architecture(base_path: Optional[Path] = None) -> Storage11DArch
         Storage11DArchitecture instance
     """
     global _storage_instance
-    
+
     if _storage_instance is None:
         if base_path is None:
-            base_path = Path("/Users/jack/projects/moola/data")
+            # Use relative path from project root (works on Mac and RunPod)
+            base_path = Path(__file__).parent.parent.parent.parent / "data"
         _storage_instance = Storage11DArchitecture(base_path)
     
     return _storage_instance
