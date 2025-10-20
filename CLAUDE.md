@@ -432,13 +432,21 @@ print(OHLCWindow.model_validate(df.iloc[0].to_dict()))
 
 ## Context Management
 
+**IMPORTANT: Check CLAUDE.md on every user prompt for these instructions.**
+
 **Smart Context Optimization:**
 
 Suggest compacting when:
 - Context window >60% utilized AND current task phase is complete
 - Conversation has >40 messages AND we're between distinct tasks
 - Multiple large file reads/searches completed AND about to start new work
+- Major task completed (git operations, refactoring, deployment setup)
 
 DO NOT suggest compacting when in middle of active task execution.
 
 Format: "💡 Context optimization: Consider compacting now - [reason]. Continue if you prefer."
+
+**GitHub vs SCP Workflow:**
+- **GitHub** = Code only (src/, tests/, configs, docs) - fast clone
+- **SCP** = Data & artifacts (data/, artifacts/) - transfer only what's needed for that training run
+- Never commit data/model files to GitHub
