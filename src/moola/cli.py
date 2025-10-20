@@ -139,7 +139,7 @@ def ingest(cfg_dir, over, input_path):
 @click.option("--augmentation-seed", default=1337, type=int, help="Random seed for reproducible augmentation")
 @click.option("--quality-threshold", default=0.7, type=float, help="Minimum quality score for sample acceptance (0.0-1.0)")
 @click.option("--pretrained-encoder", type=click.Path(exists=True), default=None, help="Path to pretrained encoder (for enhanced_simple_lstm)")
-@click.option("--freeze-encoder", is_flag=True, default=True, help="Freeze encoder during initial training (for pretrained models)")
+@click.option("--freeze-encoder/--no-freeze-encoder", default=True, help="Freeze encoder during initial training (for pretrained models)")
 @click.option("--log-pretrained-stats", is_flag=True, default=False, help="Log detailed pretrained load statistics")
 @click.option("--input-dim", default=None, type=int, help="Input feature dimension (4 for OHLC, 11 for RelativeTransform). Auto-detected if not specified.")
 @click.option("--seed", default=None, type=int, help="Random seed (overrides config)")
@@ -369,7 +369,7 @@ def train(cfg_dir, over, model, data, split, device, use_engineered_features, ma
     }
 
     if pretrained_encoder and model in ["enhanced_simple_lstm", "relative_transform_lstm"]:
-        fit_kwargs["pretrained_encoder"] = pretrained_encoder
+        fit_kwargs["pretrained_encoder_path"] = Path(pretrained_encoder)
         fit_kwargs["freeze_encoder"] = freeze_encoder
 
     model_instance.fit(**fit_kwargs)
