@@ -122,10 +122,10 @@ def main():
 
             # Pointer regression head (predicts start/end indices)
             self.pointer_head = nn.Sequential(
-                nn.Linear(hidden_dim * 2, 64),
+                nn.Linear(hidden_dim * 2, 128),
                 nn.ReLU(),
                 nn.Dropout(dropout),
-                nn.Linear(64, 2)  # start_idx, end_idx
+                nn.Linear(128, 2)  # start_idx, end_idx
             )
 
         def forward(self, x):
