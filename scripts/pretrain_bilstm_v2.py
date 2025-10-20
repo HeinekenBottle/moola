@@ -31,7 +31,7 @@ def mae_pretrain_loss(model, decoder, X, mask_ratio=0.15):
     Masked Autoencoder loss for pre-training.
 
     Args:
-        model: EnhancedSimpleLSTM (full architecture with pointer head)
+        model: DualTaskBiLSTM (BiLSTM with dual task heads)
         decoder: MLP decoder to reconstruct masked features
         X: Input tensor [B, L, D]
         mask_ratio: Fraction of timesteps to mask
@@ -48,7 +48,6 @@ def mae_pretrain_loss(model, decoder, X, mask_ratio=0.15):
     X_masked[mask] = 0  # Zero out masked timesteps
 
     # Encode (use only encoder, ignore task heads)
-    # EnhancedSimpleLSTM.lstm is the BiLSTM encoder
     lstm_out, _ = model.lstm(X_masked)  # [B, L, 256] (128*2 for bidirectional)
 
     # Decode
@@ -99,17 +98,51 @@ def main():
     logger.info(f"Loaded {len(X)} unlabeled samples, shape: {X.shape}")
 
     # 2. Build FULL architecture (with pointer head)
-    logger.info("Building EnhancedSimpleLSTM with pointer head...")
-    from moola.models.enhanced_simple_lstm import EnhancedSimpleLSTM
+    logger.info("Building BiLSTM with dual task heads (type + pointers)...")
 
-    model = EnhancedSimpleLSTM(
+    class DualTaskBiLSTM(nn.Module):
+        """BiLSTM with type classification and pointer regression heads."""
+        def __init__(self, input_dim, hidden_dim, num_classes=2, dropout=0.2):
+            super().__init__()
+            self.lstm = nn.LSTM(
+                input_dim,
+                hidden_dim,
+                batch_first=True,
+                bidirectional=True
+            )
+            self.dropout = nn.Dropout(dropout)
+
+            # Type classification head
+            self.type_head = nn.Sequential(
+                nn.Linear(hidden_dim * 2, 64),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(64, num_classes)
+            )
+
+            # Pointer regression head (predicts start/end indices)
+            self.pointer_head = nn.Sequential(
+                nn.Linear(hidden_dim * 2, 64),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(64, 2)  # start_idx, end_idx
+            )
+
+        def forward(self, x):
+            lstm_out, _ = self.lstm(x)  # [B, L, hidden*2]
+            pooled = lstm_out.mean(dim=1)  # [B, hidden*2]
+            pooled = self.dropout(pooled)
+
+            type_logits = self.type_head(pooled)
+            pointers = self.pointer_head(pooled)
+            return lstm_out, type_logits, pointers
+
+    model = DualTaskBiLSTM(
         input_dim=INPUT_DIM,
         hidden_dim=HIDDEN_DIM,
-        num_classes=2,  # consolidation vs retracement
-        dropout=0.2,
-        predict_pointers=True,  # KEY: Include pointer head for architecture match
-    )
-    model = model.to(DEVICE)
+        num_classes=2,
+        dropout=0.2
+    ).to(DEVICE)
 
     # 3. Add decoder for reconstruction
     logger.info("Adding MLP decoder...")
