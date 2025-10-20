@@ -5,3 +5,8 @@
 device: cuda
 epochs: 50
 batch_size: 256
+seed: 42
+hidden_dim: 128
+mask_ratio: 0.15
+mask_strategy: patch
+input_dim: 4
