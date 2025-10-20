@@ -144,9 +144,10 @@ def ingest(cfg_dir, over, input_path):
 @click.option("--input-dim", default=None, type=int, help="Input feature dimension (4 for OHLC, 11 for RelativeTransform). Auto-detected if not specified.")
 @click.option("--seed", default=None, type=int, help="Random seed (overrides config)")
 @click.option("--save-run", is_flag=True, default=False, help="Save run artifacts to artifacts/runs/")
+@click.option("--predict-pointers", is_flag=True, default=False, help="Enable multi-task pointer prediction (for enhanced_simple_lstm)")
 def train(cfg_dir, over, model, data, split, device, use_engineered_features, max_engineered_features, use_hopsketch,
           augment_data, augmentation_ratio, max_synthetic_samples, augmentation_seed, quality_threshold,
-          pretrained_encoder, freeze_encoder, log_pretrained_stats, input_dim, seed, save_run):
+          pretrained_encoder, freeze_encoder, log_pretrained_stats, input_dim, seed, save_run, predict_pointers):
     """Train classifier with temporal split validation.
 
     CRITICAL: Requires temporal split file to prevent look-ahead bias in time series.
@@ -326,9 +327,11 @@ def train(cfg_dir, over, model, data, split, device, use_engineered_features, ma
 
     # Get model from registry and train
     # Pass device parameter for deep learning models
-    # Enable multi-task pointer prediction for CNN-Transformer
+    # Enable multi-task pointer prediction for CNN-Transformer and EnhancedSimpleLSTM
     model_kwargs = {"seed": cfg.seed, "device": device}
     if model == "cnn_transformer":
+        model_kwargs["predict_pointers"] = True
+    if model == "enhanced_simple_lstm" and predict_pointers:
         model_kwargs["predict_pointers"] = True
 
     # Add input_dim if specified (for 11D RelativeTransform support)

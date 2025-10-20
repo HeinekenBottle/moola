@@ -406,13 +406,13 @@ class EnhancedSimpleLSTMModel(BaseModel):
         pretrained_encoder_path: Path = None,
         freeze_encoder: bool = True,
     ) -> "EnhancedSimpleLSTMModel":
-        """Train Enhanced SimpleLSTM model.
+        """Train Enhanced SimpleLSTM model with optional multi-task pointer prediction.
 
         Args:
             X: Feature matrix of shape [N, D] or [N, T, D]
             y: Target labels of shape [N]
-            expansion_start: Optional expansion start indices (unused)
-            expansion_end: Optional expansion end indices (unused)
+            expansion_start: Expansion start indices [N] (required if predict_pointers=True)
+            expansion_end: Expansion end indices [N] (required if predict_pointers=True)
             unfreeze_encoder_after: Epoch to unfreeze encoder (0 = never unfreeze,
                                    >0 = unfreeze after N epochs, -1 = start unfrozen).
             pretrained_encoder_path: Optional path to pre-trained encoder checkpoint.
@@ -424,6 +424,22 @@ class EnhancedSimpleLSTMModel(BaseModel):
             Self for method chaining
         """
         set_seed(self.seed)
+
+        # Validate multi-task configuration
+        has_pointers = (expansion_start is not None) and (expansion_end is not None)
+
+        if self.predict_pointers and not has_pointers:
+            raise ValueError(
+                "predict_pointers=True but pointer labels not provided. "
+                "Please provide both expansion_start and expansion_end arrays."
+            )
+
+        if has_pointers and not self.predict_pointers:
+            logger.warning(
+                "Pointer labels provided but predict_pointers=False. "
+                "Ignoring pointer labels. Set predict_pointers=True to enable multi-task learning."
+            )
+            has_pointers = False
 
         # Prepare and validate data
         X, y_indices, self.label_to_idx, self.idx_to_label, self.n_classes = (
@@ -457,23 +473,46 @@ class EnhancedSimpleLSTMModel(BaseModel):
 
         # Split into train/val for early stopping
         if self.val_split > 0:
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y_indices, test_size=self.val_split, random_state=self.seed, stratify=y_indices
-            )
+            if has_pointers:
+                X_train, X_val, y_train, y_val, ptr_start_train, ptr_start_val, ptr_end_train, ptr_end_val = train_test_split(
+                    X, y_indices, expansion_start, expansion_end,
+                    test_size=self.val_split, random_state=self.seed, stratify=y_indices
+                )
+            else:
+                X_train, X_val, y_train, y_val = train_test_split(
+                    X, y_indices, test_size=self.val_split, random_state=self.seed, stratify=y_indices
+                )
+                ptr_start_train = ptr_start_val = None
+                ptr_end_train = ptr_end_val = None
         else:
             X_train, y_train = X, y_indices
             X_val, y_val = None, None
+            ptr_start_train, ptr_end_train = expansion_start, expansion_end if has_pointers else (None, None)
+            ptr_start_val = ptr_end_val = None
 
         # Create training dataloader
         X_train_tensor = torch.FloatTensor(X_train)
         y_train_tensor = torch.LongTensor(y_train)
-        train_dataloader = TrainingSetup.create_dataloader(
-            X_train_tensor,
-            y_train_tensor,
+
+        if has_pointers:
+            ptr_start_train_tensor = torch.FloatTensor(ptr_start_train)
+            ptr_end_train_tensor = torch.FloatTensor(ptr_end_train)
+            train_dataset = torch.utils.data.TensorDataset(
+                X_train_tensor, y_train_tensor,
+                ptr_start_train_tensor, ptr_end_train_tensor
+            )
+        else:
+            train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
+
+        num_workers = self.num_workers if self.device.type == "cuda" else 0
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=self.num_workers,
-            device=self.device,
+            num_workers=num_workers,
+            pin_memory=True if self.device.type == "cuda" else False,
+            persistent_workers=True if num_workers > 0 else False,
+            prefetch_factor=2 if num_workers > 0 else None,
         )
 
         # Create validation dataloader if needed
@@ -481,13 +520,23 @@ class EnhancedSimpleLSTMModel(BaseModel):
         if X_val is not None:
             X_val_tensor = torch.FloatTensor(X_val)
             y_val_tensor = torch.LongTensor(y_val)
-            val_dataloader = TrainingSetup.create_dataloader(
-                X_val_tensor,
-                y_val_tensor,
+
+            if has_pointers:
+                ptr_start_val_tensor = torch.FloatTensor(ptr_start_val)
+                ptr_end_val_tensor = torch.FloatTensor(ptr_end_val)
+                val_dataset = torch.utils.data.TensorDataset(
+                    X_val_tensor, y_val_tensor,
+                    ptr_start_val_tensor, ptr_end_val_tensor
+                )
+            else:
+                val_dataset = torch.utils.data.TensorDataset(X_val_tensor, y_val_tensor)
+
+            val_dataloader = torch.utils.data.DataLoader(
+                val_dataset,
                 batch_size=self.batch_size,
                 shuffle=False,
                 num_workers=0,
-                device=self.device,
+                pin_memory=True if self.device.type == "cuda" else False,
             )
 
         # Setup optimizer and loss
@@ -534,15 +583,24 @@ class EnhancedSimpleLSTMModel(BaseModel):
             correct = 0
             total = 0
 
-            for batch_X, batch_y in train_dataloader:
-                batch_X = batch_X.to(self.device, non_blocking=True)
-                batch_y = batch_y.to(self.device, non_blocking=True)
+            for batch_data in train_dataloader:
+                # Unpack batch (handles both single-task and multi-task)
+                if has_pointers:
+                    batch_X, batch_y, batch_ptr_start, batch_ptr_end = batch_data
+                    batch_X = batch_X.to(self.device, non_blocking=True)
+                    batch_y = batch_y.to(self.device, non_blocking=True)
+                    batch_ptr_start = batch_ptr_start.to(self.device, non_blocking=True)
+                    batch_ptr_end = batch_ptr_end.to(self.device, non_blocking=True)
+                else:
+                    batch_X, batch_y = batch_data
+                    batch_X = batch_X.to(self.device, non_blocking=True)
+                    batch_y = batch_y.to(self.device, non_blocking=True)
 
                 # Apply temporal augmentation
                 if self.use_temporal_aug:
                     batch_X = self.temporal_aug.apply_augmentation(batch_X)
 
-                # Apply mixup/cutmix
+                # Apply mixup/cutmix (only for features, not pointers)
                 batch_X_aug, y_a, y_b, lam = mixup_cutmix(
                     batch_X,
                     batch_y,
@@ -555,15 +613,42 @@ class EnhancedSimpleLSTMModel(BaseModel):
                 # Forward pass with mixed precision
                 if self.use_amp:
                     with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
-                        logits = self.model(batch_X_aug)
-                        loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
+                        outputs = self.model(batch_X_aug)
+
+                        if has_pointers:
+                            # Multi-task loss: classification + pointer regression
+                            type_logits = outputs['type_logits']
+                            class_loss = mixup_criterion(criterion, type_logits, y_a, y_b, lam)
+                            pointer_loss = compute_pointer_regression_loss(
+                                outputs, batch_ptr_start, batch_ptr_end
+                            )
+                            loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                            logits = type_logits  # For accuracy tracking
+                        else:
+                            # Single-task classification loss
+                            logits = outputs
+                            loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
 
                     scaler.scale(loss).backward()
                     scaler.step(optimizer)
                     scaler.update()
                 else:
-                    logits = self.model(batch_X_aug)
-                    loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
+                    outputs = self.model(batch_X_aug)
+
+                    if has_pointers:
+                        # Multi-task loss: classification + pointer regression
+                        type_logits = outputs['type_logits']
+                        class_loss = mixup_criterion(criterion, type_logits, y_a, y_b, lam)
+                        pointer_loss = compute_pointer_regression_loss(
+                            outputs, batch_ptr_start, batch_ptr_end
+                        )
+                        loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                        logits = type_logits  # For accuracy tracking
+                    else:
+                        # Single-task classification loss
+                        logits = outputs
+                        loss = mixup_criterion(criterion, logits, y_a, y_b, lam)
+
                     loss.backward()
                     optimizer.step()
 
@@ -584,17 +669,50 @@ class EnhancedSimpleLSTMModel(BaseModel):
                 val_total = 0
 
                 with torch.no_grad():
-                    for batch_X, batch_y in val_dataloader:
-                        batch_X = batch_X.to(self.device, non_blocking=True)
-                        batch_y = batch_y.to(self.device, non_blocking=True)
+                    for batch_data in val_dataloader:
+                        # Unpack batch (handles both single-task and multi-task)
+                        if has_pointers:
+                            batch_X, batch_y, batch_ptr_start, batch_ptr_end = batch_data
+                            batch_X = batch_X.to(self.device, non_blocking=True)
+                            batch_y = batch_y.to(self.device, non_blocking=True)
+                            batch_ptr_start = batch_ptr_start.to(self.device, non_blocking=True)
+                            batch_ptr_end = batch_ptr_end.to(self.device, non_blocking=True)
+                        else:
+                            batch_X, batch_y = batch_data
+                            batch_X = batch_X.to(self.device, non_blocking=True)
+                            batch_y = batch_y.to(self.device, non_blocking=True)
 
                         if self.use_amp:
                             with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
-                                logits = self.model(batch_X)
-                                loss = criterion(logits, batch_y)
+                                outputs = self.model(batch_X)
+
+                                if has_pointers:
+                                    # Multi-task loss
+                                    type_logits = outputs['type_logits']
+                                    class_loss = criterion(type_logits, batch_y)
+                                    pointer_loss = compute_pointer_regression_loss(
+                                        outputs, batch_ptr_start, batch_ptr_end
+                                    )
+                                    loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                                    logits = type_logits
+                                else:
+                                    logits = outputs
+                                    loss = criterion(logits, batch_y)
                         else:
-                            logits = self.model(batch_X)
-                            loss = criterion(logits, batch_y)
+                            outputs = self.model(batch_X)
+
+                            if has_pointers:
+                                # Multi-task loss
+                                type_logits = outputs['type_logits']
+                                class_loss = criterion(type_logits, batch_y)
+                                pointer_loss = compute_pointer_regression_loss(
+                                    outputs, batch_ptr_start, batch_ptr_end
+                                )
+                                loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                                logits = type_logits
+                            else:
+                                logits = outputs
+                                loss = criterion(logits, batch_y)
 
                         val_loss += loss.item()
                         _, predicted = torch.max(logits, 1)
@@ -644,7 +762,11 @@ class EnhancedSimpleLSTMModel(BaseModel):
     def predict(
         self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
     ) -> np.ndarray:
-        """Predict class labels."""
+        """Predict class labels.
+
+        Note:
+            For pointer predictions, use predict_with_pointers() instead.
+        """
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
 
@@ -655,7 +777,14 @@ class EnhancedSimpleLSTMModel(BaseModel):
 
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(X_tensor)
+            outputs = self.model(X_tensor)
+
+            # Handle both single-task and multi-task outputs
+            if isinstance(outputs, dict):
+                logits = outputs['type_logits']
+            else:
+                logits = outputs
+
             _, predicted = torch.max(logits, 1)
 
         # Convert indices back to original labels
@@ -666,7 +795,11 @@ class EnhancedSimpleLSTMModel(BaseModel):
     def predict_proba(
         self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
     ) -> np.ndarray:
-        """Predict class probabilities."""
+        """Predict class probabilities.
+
+        Note:
+            For pointer predictions, use predict_with_pointers() instead.
+        """
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
 
@@ -677,10 +810,69 @@ class EnhancedSimpleLSTMModel(BaseModel):
 
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(X_tensor)
+            outputs = self.model(X_tensor)
+
+            # Handle both single-task and multi-task outputs
+            if isinstance(outputs, dict):
+                logits = outputs['type_logits']
+            else:
+                logits = outputs
+
             probs = F.softmax(logits, dim=1)
 
         return probs.cpu().numpy()
+
+    def predict_with_pointers(self, X: np.ndarray) -> dict:
+        """Predict class labels AND pointer start/end.
+
+        Args:
+            X: Feature matrix of shape [N, D] or [N, T, D]
+
+        Returns:
+            Dictionary containing:
+            {
+                'labels': [N] predicted class labels (strings),
+                'probabilities': [N, n_classes] class probabilities,
+                'pointers': [N, 2] expansion [start, end] indices
+            }
+
+        Raises:
+            ValueError: If model not trained with predict_pointers=True
+        """
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+
+        if not self.predict_pointers:
+            raise ValueError(
+                "Model not trained with pointer prediction. "
+                "Set predict_pointers=True when initializing the model."
+            )
+
+        # Reshape input
+        X = DataValidator.reshape_input(X, expected_features=4)
+
+        X_tensor = torch.FloatTensor(X).to(self.device)
+
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+
+            # Extract outputs
+            type_logits = outputs['type_logits']
+            pointers = outputs['pointers']  # [N, 2]
+
+            # Classification predictions
+            class_probs = F.softmax(type_logits, dim=1)
+            _, class_preds = torch.max(type_logits, 1)
+
+        # Convert to numpy and original labels
+        predicted_labels = np.array([self.idx_to_label[idx.item()] for idx in class_preds])
+
+        return {
+            'labels': predicted_labels,
+            'probabilities': class_probs.cpu().numpy(),
+            'pointers': pointers.cpu().numpy()
+        }
 
     def save(self, path: Path) -> None:
         """Save model to disk using PyTorch format."""

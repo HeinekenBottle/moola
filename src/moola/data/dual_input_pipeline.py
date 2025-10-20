@@ -32,7 +32,7 @@ from ..features.price_action_features import (
     extract_hopsketch_features
 )
 from ..features.relative_transform import RelativeFeatureTransform
-from ..utils.pseudo_sample_generation import (
+from ..utils.validation.pseudo_sample_generation import (
     PseudoSampleGenerationPipeline,
     TemporalAugmentationGenerator,
     PatternBasedSynthesisGenerator
