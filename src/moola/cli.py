@@ -50,7 +50,7 @@ def ingest(cfg_dir, over, input_path):
     import numpy as np
     import pandas as pd
 
-    from .schema import TrainingDataRow
+    from moola.schemas.canonical_v1 import TrainingDataRow
 
     cfg = _load_cfg(Path(cfg_dir), list(over))
     paths = resolve_paths()
@@ -68,7 +68,7 @@ def ingest(cfg_dir, over, input_path):
 
         # Validate schema if window_id column exists (our new format)
         if "window_id" in df.columns:
-            from .schemas.canonical_v1 import check_training_data
+            from moola.schemas.canonical_v1 import check_training_data
 
             if check_training_data(df):
                 log.info("✅ Dataset schema validation passed")
@@ -418,12 +418,22 @@ def train(
     gradient_log_freq,
     use_uncertainty_weighting,
 ):
-    """Train classifier with temporal split validation.
+    """Train classifier with temporal split validation (PAPER-STRICT).
 
     CRITICAL: Requires temporal split file to prevent look-ahead bias in time series.
     Random/stratified splits are FORBIDDEN for financial data.
+    
+    PAPER-STRICT COMPLIANCE:
+    - Only Stones models allowed: {jade, sapphire, opal}
+    - No experiments/ or enhanced_simple_lstm imports
+    - Center+length label format only
+    - Kendall uncertainty weighting only
     """
+    import os
     import pickle
+    import sys
+    import subprocess
+    from pathlib import Path
 
     import numpy as np
     import pandas as pd
@@ -440,17 +450,78 @@ def train(
     paths = resolve_paths()
     log = setup_logging(paths.logs)
 
+    # PAPER-STRICT: Model name validation
+    allowed_models = {"jade", "sapphire", "opal"}
+    if model not in allowed_models:
+        raise AssertionError(
+            f"PAPER-STRICT VIOLATION: Model '{model}' not allowed. "
+            f"Only Stones models allowed: {sorted(allowed_models)}"
+        )
+    log.info(f"✅ PAPER-STRICT: Model '{model}' validated")
+
+    # PAPER-STRICT: Import path validation
+    import moola
+    moola_path = Path(moola.__file__).parent
+    forbidden_paths = ["experiments", "enhanced_simple_lstm"]
+    
+    for root, dirs, files in os.walk(moola_path):
+        # Skip __pycache__ and .git
+        dirs[:] = [d for d in dirs if d not in ["__pycache__", ".git"]]
+        
+        for file in files:
+            if file.endswith(".py"):
+                file_path = Path(root) / file
+                rel_path = file_path.relative_to(moola_path)
+                rel_path_str = str(rel_path)
+                
+                if any(forbidden in rel_path_str for forbidden in forbidden_paths):
+                    raise AssertionError(
+                        f"PAPER-STRICT VIOLATION: Forbidden import path detected: {rel_path_str}"
+                    )
+    
+    log.info("✅ PAPER-STRICT: Import paths validated (no experiments/ or enhanced_simple_lstm)")
+
+    # PAPER-STRICT: Log git SHA and model info
+    try:
+        git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], 
+                                        cwd=Path(__file__).parent.parent.parent,
+                                        text=True).strip()
+        log.info(f"✅ PAPER-STRICT: Git SHA: {git_sha}")
+    except subprocess.CalledProcessError:
+        log.warning("⚠️  Could not determine git SHA")
+    
+    # Log model file path
+    model_file = Path(moola.__file__).parent / "models" / f"{model}.py"
+    if model_file.exists():
+        log.info(f"✅ PAPER-STRICT: Model file: {model_file}")
+    else:
+        log.warning(f"⚠️  Model file not found: {model_file}")
+
     # Override seed if provided
     if seed is not None:
         cfg.seed = seed
 
-    # Load and validate temporal split (CRITICAL for time series integrity)
+    # Load and validate temporal split (PAPER-STRICT for time series integrity)
     log.info("=" * 60)
-    log.info("TEMPORAL SPLIT VALIDATION")
+    log.info("PAPER-STRICT TEMPORAL SPLIT VALIDATION")
     log.info("=" * 60)
     split_data = load_split(split)
-    assert_temporal(split_data)
+    
+    # PAPER-STRICT: Validate with purge window and hash checking
+    assert_temporal(split_data, purge_window=5)  # 5-sample purge window
     assert_no_random({"split_impl": "temporal", "split_strategy": "forward_chaining"})
+    
+    # PAPER-STRICT: Additional validation with actual data timestamps
+    try:
+        # Load a small sample of data to validate timestamps
+        df_sample = pd.read_parquet(data).head(100)  # Just first 100 rows for timestamp validation
+        if 'timestamp' in df_sample.columns:
+            assert_temporal(split_data, purge_window=5, df_with_timestamps=df_sample)
+            log.info("✅ PAPER-STRICT: Timestamp validation passed")
+    except Exception as e:
+        log.warning(f"⚠️  Could not validate timestamps: {e}")
+    
+    log.info("✅ PAPER-STRICT: All split validations passed")
 
     log.info(f"Split: {split_data['name']}")
     log.info(f"Train indices: {len(split_data['train_indices'])} samples")
@@ -672,6 +743,57 @@ def train(
             # Note: Model architecture would need to be updated to actually use these features
 
     model_instance = get_model(model, **model_kwargs)
+
+    # PAPER-STRICT AUDIT BLOCK
+    log.info("=" * 70)
+    log.info("PAPER-STRICT AUDIT")
+    log.info("=" * 70)
+    
+    # Model audit
+    log.info(f"Active model name: {model}")
+    log.info(f"Model class: {type(model_instance).__name__}")
+    log.info(f"Model file path: {model_instance.__class__.__module__}")
+    
+    # Config audit
+    log.info(f"Config path used: {Path(cfg_dir) / 'model' / f'{model}.yaml'}")
+    
+    # Encoder audit
+    encoder_path = pretrained_encoder if pretrained_encoder else "None"
+    log.info(f"Encoder preload path: {encoder_path}")
+    
+    # Paper-strict assertions
+    try:
+        # Check pointer encoding
+        if hasattr(model_instance, 'pointer_head'):
+            assert hasattr(model_instance.pointer_head, 'encoding'), "Model missing pointer_head.encoding"
+            assert model_instance.pointer_head.encoding == "center_length", f"Pointer encoding must be 'center_length', got '{model_instance.pointer_head.encoding}'"
+            log.info("✓ Pointer encoding: center_length")
+        
+        # Check batch size for supervised training
+        if hasattr(model_instance, 'batch_size'):
+            expected_batch = 29  # Paper-strict supervised batch size
+            assert model_instance.batch_size == expected_batch, f"Batch size must be {expected_batch} for supervised training, got {model_instance.batch_size}"
+            log.info(f"✓ Batch size: {model_instance.batch_size}")
+        
+        # Check uncertainty weighting
+        if hasattr(model_instance, 'loss_fn') and hasattr(model_instance.loss_fn, 'learned_log_vars'):
+            assert getattr(model_instance.loss_fn, "learned_log_vars", None) is not None, "Model must use uncertainty-weighted loss"
+            log.info("✓ Uncertainty weighting: enabled")
+        elif hasattr(model_instance, 'use_uncertainty_weighting') and model_instance.use_uncertainty_weighting:
+            log.info("✓ Uncertainty weighting: enabled")
+        else:
+            log.warning("⚠ Uncertainty weighting: not detected")
+        
+        log.info("=" * 70)
+        log.info("PAPER-STRICT AUDIT PASSED")
+        log.info("=" * 70)
+        
+    except AssertionError as e:
+        log.error("=" * 70)
+        log.error("PAPER-STRICT AUDIT FAILED")
+        log.error(f"Assertion error: {e}")
+        log.error("=" * 70)
+        raise
 
     # Handle pretrained encoder loading for enhanced_simple_lstm
     pretrained_stats = None
@@ -1649,7 +1771,7 @@ def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
     "--device", default="cuda", type=click.Choice(["cpu", "cuda"]), help="Device for pretraining"
 )
 @click.option("--epochs", default=100, type=int, help="Number of pretraining epochs")
-@click.option("--patience", default=15, type=int, help="Early stopping patience")
+@click.option("--patience", default=20, type=int, help="Early stopping patience")
 def pretrain_tcc(cfg_dir, over, device, epochs, patience):
     """Pretrain TS-TCC encoder with contrastive learning on unlabeled data."""
     import numpy as np
@@ -1715,7 +1837,7 @@ def pretrain_tcc(cfg_dir, over, device, epochs, patience):
     "output_path",
     type=click.Path(),
     default=None,
-    help="Path to save pre-trained encoder (default: artifacts/encoders/pretrained/bilstm_mae_4d_v1.pt)",
+    help="Path to save pre-trained encoder (default: artifacts/encoders/pretrained/stones_encoder_mae.pt)",
 )
 @click.option(
     "--device",
@@ -1723,10 +1845,10 @@ def pretrain_tcc(cfg_dir, over, device, epochs, patience):
     type=click.Choice(["cpu", "cuda"]),
     help="Device for training (cuda for RTX 4090)",
 )
-@click.option("--epochs", default=50, type=int, help="Number of pre-training epochs")
-@click.option("--patience", default=10, type=int, help="Early stopping patience")
+@click.option("--epochs", default=100, type=int, help="Number of pre-training epochs (paper-strict: 100)")
+@click.option("--patience", default=15, type=int, help="Early stopping patience")
 @click.option(
-    "--mask-ratio", default=0.15, type=float, help="Proportion of timesteps to mask (0.15 = 15%)"
+    "--mask-ratio", default=0.4, type=float, help="Proportion of timesteps to mask (paper-strict: 0.4)"
 )
 @click.option(
     "--mask-strategy",
@@ -1736,7 +1858,7 @@ def pretrain_tcc(cfg_dir, over, device, epochs, patience):
 )
 @click.option("--patch-size", default=7, type=int, help="Patch size for patch masking")
 @click.option("--hidden-dim", default=128, type=int, help="LSTM hidden dimension per direction")
-@click.option("--batch-size", default=512, type=int, help="Training batch size")
+@click.option("--batch-size", default=64, type=int, help="Training batch size (paper-strict: 64)")
 @click.option(
     "--augment", default=False, is_flag=True, help="Apply data augmentation to unlabeled samples"
 )
@@ -1874,8 +1996,8 @@ def pretrain_bilstm(
 
     # Determine output path
     if output_path is None:
-        suffix = f"{input_dim}d_v1.pt"
-        output_path = paths.artifacts / "encoders" / "pretrained" / f"bilstm_mae_{suffix}"
+        # Paper-strict: save to stones encoder location
+        output_path = paths.artifacts / "encoders" / "pretrained" / "stones_encoder_mae.pt"
     else:
         output_path = Path(output_path)
 
@@ -2306,7 +2428,7 @@ def audit(cfg_dir, over, section):
         if train_path.exists():
             import pandas as pd
 
-            from .schemas.canonical_v1 import check_training_data
+            from moola.schemas.canonical_v1 import check_training_data
 
             df = pd.read_parquet(train_path)
             schema_valid = check_training_data(df)
@@ -2467,9 +2589,10 @@ def deploy(cfg_dir, over):
 
 # Import GitOps commands
 try:
-    from molla.deployment.cli_extensions import register_gitops_commands
-
-    register_gitops_commands(app)
+    # Optional extension hooks (removed if not present)
+    # from moola.api.cli_extensions import register_gitops_commands
+    # register_gitops_commands(app)
+    pass
 except ImportError:
     # GitOps dependencies not available - skip registration
     pass

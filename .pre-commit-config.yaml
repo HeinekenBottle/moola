@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: enforce-python3
         name: enforce-python3 (use python3, not python)
-        entry: bash -c 'if grep -r "python " . --include="*.py" --include="*.sh" 2>/dev/null | grep -v "python3" | grep -v "pre-commit"; then echo "ERROR: Use python3, not python"; exit 1; fi'
+        entry: enforce-python3.sh
         language: system
         stages: [commit]
         always_run: true
@@ -14,7 +14,7 @@ repos:
     hooks:
       - id: enforce-pip3
         name: enforce-pip3 (use pip3, not pip)
-        entry: bash -c 'if grep -r " pip " . --include="*.py" --include="*.sh" 2>/dev/null | grep -v "pip3" | grep -v "pre-commit"; then echo "ERROR: Use pip3, not pip"; exit 1; fi'
+        entry: enforce-pip3.sh
         language: system
         stages: [commit]
         always_run: true

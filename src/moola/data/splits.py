@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 
 
-def load_split(split_path: str) -> dict[str, Any]:
+def load_split(split_path: str | Path) -> dict[str, Any]:
     """Load split definition from JSON file.
 
     Args:
@@ -68,11 +68,18 @@ def load_split(split_path: str) -> dict[str, Any]:
     return split_data
 
 
-def assert_temporal(split_data: dict[str, Any]) -> None:
-    """Validate that split uses forward-chaining (temporal ordering).
+def assert_temporal(split_data: dict[str, Any], 
+                    purge_window: int = 0,
+                    df_with_timestamps: Any = None) -> None:
+    """Validate that split uses forward-chaining (temporal ordering) with purge window.
+
+    PAPER-STRICT: Enforces forward-chaining with optional purge window to prevent
+    any temporal leakage between train and validation sets.
 
     Args:
         split_data: Split dictionary from load_split()
+        purge_window: Minimum gap between train and val (default: 0)
+        df_with_timestamps: DataFrame with timestamp column for time-based validation
 
     Raises:
         AssertionError: If indices are not monotonic or have leakage
@@ -81,11 +88,11 @@ def assert_temporal(split_data: dict[str, Any]) -> None:
     val_idx = np.array(split_data["val_indices"])
     test_idx = np.array(split_data.get("test_indices", []))
 
-    # Check monotonic ordering within each split
+    # PAPER-STRICT: Check monotonic ordering within each split
     if len(train_idx) > 0:
         if not np.all(np.diff(train_idx) >= 0):
             raise AssertionError(
-                f"Train indices not monotonic (time-ordered)!\n"
+                f"PAPER-STRICT VIOLATION: Train indices not monotonic (time-ordered)!\n"
                 f"First 10 indices: {train_idx[:10]}\n"
                 f"This indicates random/shuffled splitting which creates look-ahead bias."
             )
@@ -93,7 +100,7 @@ def assert_temporal(split_data: dict[str, Any]) -> None:
     if len(val_idx) > 0:
         if not np.all(np.diff(val_idx) >= 0):
             raise AssertionError(
-                f"Val indices not monotonic (time-ordered)!\n"
+                f"PAPER-STRICT VIOLATION: Val indices not monotonic (time-ordered)!\n"
                 f"First 10 indices: {val_idx[:10]}\n"
                 f"This indicates random/shuffled splitting which creates look-ahead bias."
             )
@@ -101,12 +108,12 @@ def assert_temporal(split_data: dict[str, Any]) -> None:
     if len(test_idx) > 0:
         if not np.all(np.diff(test_idx) >= 0):
             raise AssertionError(
-                f"Test indices not monotonic (time-ordered)!\n"
+                f"PAPER-STRICT VIOLATION: Test indices not monotonic (time-ordered)!\n"
                 f"First 10 indices: {test_idx[:10]}\n"
                 f"This indicates random/shuffled splitting which creates look-ahead bias."
             )
 
-    # Check for leakage (no overlap)
+    # PAPER-STRICT: Check for leakage (no overlap)
     train_set = set(train_idx)
     val_set = set(val_idx)
     test_set = set(test_idx)
@@ -114,7 +121,7 @@ def assert_temporal(split_data: dict[str, Any]) -> None:
     if not train_set.isdisjoint(val_set):
         overlap = train_set & val_set
         raise AssertionError(
-            f"Train/Val leakage detected!\n"
+            f"PAPER-STRICT VIOLATION: Train/Val leakage detected!\n"
             f"Overlapping indices: {sorted(list(overlap))[:10]}...\n"
             f"Total overlap: {len(overlap)} samples"
         )
@@ -122,7 +129,7 @@ def assert_temporal(split_data: dict[str, Any]) -> None:
     if not train_set.isdisjoint(test_set):
         overlap = train_set & test_set
         raise AssertionError(
-            f"Train/Test leakage detected!\n"
+            f"PAPER-STRICT VIOLATION: Train/Test leakage detected!\n"
             f"Overlapping indices: {sorted(list(overlap))[:10]}...\n"
             f"Total overlap: {len(overlap)} samples"
         )
@@ -130,16 +137,63 @@ def assert_temporal(split_data: dict[str, Any]) -> None:
     if not val_set.isdisjoint(test_set):
         overlap = val_set & test_set
         raise AssertionError(
-            f"Val/Test leakage detected!\n"
+            f"PAPER-STRICT VIOLATION: Val/Test leakage detected!\n"
             f"Overlapping indices: {sorted(list(overlap))[:10]}...\n"
             f"Total overlap: {len(overlap)} samples"
         )
 
-    print(f"✓ Split validation passed: {split_data['name']}")
+    # PAPER-STRICT: Purge window validation
+    if purge_window > 0:
+        if len(train_idx) > 0 and len(val_idx) > 0:
+            max_train_idx = np.max(train_idx)
+            min_val_idx = np.min(val_idx)
+            
+            if min_val_idx <= max_train_idx + purge_window:
+                gap = min_val_idx - max_train_idx
+                raise AssertionError(
+                    f"PAPER-STRICT VIOLATION: Insufficient purge window between train and val!\n"
+                    f"Required gap: {purge_window} samples\n"
+                    f"Actual gap: {gap} samples\n"
+                    f"Max train idx: {max_train_idx}\n"
+                    f"Min val idx: {min_val_idx}"
+                )
+
+    # PAPER-STRICT: Hash validation for window IDs
+    train_hashes = set(hash(idx) for idx in train_idx)
+    val_hashes = set(hash(idx) for idx in val_idx)
+    test_hashes = set(hash(idx) for idx in test_idx)
+
+    if not train_hashes.isdisjoint(val_hashes):
+        raise AssertionError(
+            f"PAPER-STRICT VIOLATION: Hash collision detected between train/val!"
+        )
+
+    if not train_hashes.isdisjoint(test_hashes):
+        raise AssertionError(
+            f"PAPER-STRICT VIOLATION: Hash collision detected between train/test!"
+        )
+
+    # PAPER-STRICT: Time-based validation if timestamps provided
+    if df_with_timestamps is not None and 'timestamp' in df_with_timestamps.columns:
+        if len(train_idx) > 0 and len(val_idx) > 0:
+            max_train_time = df_with_timestamps.iloc[train_idx]['timestamp'].max()
+            min_val_time = df_with_timestamps.iloc[val_idx]['timestamp'].min()
+            
+            if min_val_time <= max_train_time:
+                raise AssertionError(
+                    f"PAPER-STRICT VIOLATION: Temporal leakage detected!\n"
+                    f"Max train time: {max_train_time}\n"
+                    f"Min val time: {min_val_time}\n"
+                    f"Validation must start AFTER training ends."
+                )
+
+    print(f"✅ PAPER-STRICT: Split validation passed: {split_data.get('name', 'unknown')}")
     print(f"  Train: {len(train_idx)} samples")
     print(f"  Val: {len(val_idx)} samples")
     if len(test_idx) > 0:
         print(f"  Test: {len(test_idx)} samples")
+    if purge_window > 0:
+        print(f"  Purge window: {purge_window} samples enforced")
 
 
 def assert_no_random(config: dict[str, Any]) -> None:
@@ -187,7 +241,7 @@ def create_forward_chaining_split(
     val_ratio: float = 0.2,
     test_ratio: float = 0.0,
     name: str = "forward_chain",
-    output_path: str = None,
+    output_path: str | None = None,
 ) -> dict[str, Any]:
     """Create a forward-chaining split for time series.
 
@@ -277,7 +331,7 @@ def get_default_split() -> dict[str, Any]:
 
     for path in possible_paths:
         if path.exists():
-            return load_split(path)
+            return load_split(str(path))
 
     raise FileNotFoundError(
         "Default split not found. Tried:\n"

@@ -32,21 +32,23 @@ import torch
 
 
 def start_end_to_center_length(start: torch.Tensor, end: torch.Tensor, seq_len: int = 104) -> tuple:
-    """Convert start-end pointer representation to center-length.
+    """Convert start-end pointer representation to center-length (PAPER-STRICT).
 
-    Maps from absolute indices to normalized center-length representation:
-        center = (start + end) / 2 / seq_len  # Center position in [0, 1]
-        length = (end - start) / seq_len      # Span length in [0, 1]
+    PAPER-STRICT FORMULAS:
+        center = 0.5 * (start + end) / (W-1)  # Center position in [0, 1]
+        length = (end - start + 1) / W        # Span length in [0, 1]
+    
+    Where W = 105 (window size), so seq_len = W-1 = 104 for 0-based indices.
 
     Args:
-        start: Start indices [B] or [B, 1]
+        start: Start indices [B] or [B, 1] 
         end: End indices [B] or [B, 1]
-        seq_len: Sequence length for normalization (default: 104 for 105-bar windows)
+        seq_len: Sequence length for normalization (PAPER-STRICT: must be 104)
 
     Returns:
-        (center, length): Both normalized to [0, 1]
-            - center: Center position normalized by seq_len
-            - length: Span length normalized by seq_len
+        (center, length): Both clipped to [0, 1]
+            - center: Center position normalized by (W-1)
+            - length: Span length normalized by W
 
     Example:
         >>> start = torch.tensor([10.0, 20.0])
@@ -56,8 +58,19 @@ def start_end_to_center_length(start: torch.Tensor, end: torch.Tensor, seq_len: 
         >>> assert 0 <= center.min() and center.max() <= 1
         >>> assert 0 <= length.min() and length.max() <= 1
     """
-    center = (start + end) / 2.0 / seq_len
-    length = (end - start) / seq_len
+    # PAPER-STRICT: Validate seq_len
+    if seq_len != 104:
+        raise ValueError(f"PAPER-STRICT: seq_len must be 104 (W-1 for W=105), got {seq_len}")
+    
+    # PAPER-STRICT: Use exact paper formulas
+    W = seq_len + 1  # W = 105
+    center = 0.5 * (start + end) / seq_len  # (W-1) in denominator
+    length = (end - start + 1) / W          # W in denominator
+    
+    # PAPER-STRICT: Clip to [0, 1]
+    center = torch.clamp(center, 0.0, 1.0)
+    length = torch.clamp(length, 0.0, 1.0)
+    
     return center, length
 
 
@@ -101,15 +114,21 @@ def center_length_to_start_end(
 def numpy_start_end_to_center_length(
     start: np.ndarray, end: np.ndarray, seq_len: int = 104
 ) -> tuple:
-    """NumPy version of start_end_to_center_length for data preprocessing.
+    """NumPy version of start_end_to_center_length for data preprocessing (PAPER-STRICT).
+
+    PAPER-STRICT FORMULAS:
+        center = 0.5 * (start + end) / (W-1)  # Center position in [0, 1]
+        length = (end - start + 1) / W        # Span length in [0, 1]
+    
+    Where W = 105 (window size), so seq_len = W-1 = 104 for 0-based indices.
 
     Args:
         start: Start indices [N]
         end: End indices [N]
-        seq_len: Sequence length for normalization (default: 104)
+        seq_len: Sequence length for normalization (PAPER-STRICT: must be 104)
 
     Returns:
-        (center, length): Both normalized to [0, 1]
+        (center, length): Both clipped to [0, 1]
 
     Example:
         >>> start = np.array([10.0, 20.0])
@@ -117,8 +136,19 @@ def numpy_start_end_to_center_length(
         >>> center, length = numpy_start_end_to_center_length(start, end, seq_len=104)
         >>> assert center.shape == (2,)
     """
-    center = (start + end) / 2.0 / seq_len
-    length = (end - start) / seq_len
+    # PAPER-STRICT: Validate seq_len
+    if seq_len != 104:
+        raise ValueError(f"PAPER-STRICT: seq_len must be 104 (W-1 for W=105), got {seq_len}")
+    
+    # PAPER-STRICT: Use exact paper formulas
+    W = seq_len + 1  # W = 105
+    center = 0.5 * (start + end) / seq_len  # (W-1) in denominator
+    length = (end - start + 1) / W          # W in denominator
+    
+    # PAPER-STRICT: Clip to [0, 1]
+    center = np.clip(center, 0.0, 1.0)
+    length = np.clip(length, 0.0, 1.0)
+    
     return center, length
 
 

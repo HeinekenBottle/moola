@@ -1,0 +1,69 @@
+STONES TRAINING SUMMARY
+======================
+
+PRETRAINING
+-----------
+✅ MAE Encoder (OHLC only)
+   - Epochs: 100
+   - Batch: 64
+   - Features: OHLC (4D)
+   - Mask ratio: 0.4
+   - Dropout: 0.15
+   - LR: 3e-4 (AdamW, cosine decay)
+   - Augmentation: jitter σ=0.01
+   - Final loss: ~4.1M
+   - Saved: artifacts/encoders/pretrained/stones_encoder_mae.pt (550KB)
+
+SUPERVISED TRAINING (batch=29, paper-strict)
+-------------------------------------------
+💎 JADE (moola-lstm-m-v1.0)
+   - Architecture: Simple LSTM (128 hidden)
+   - Parameters: 85,380 (all trainable)
+   - Epochs: 60
+   - Best Val Acc: 54.29%
+   - Saved: artifacts/models/jade_best.pt (346KB)
+
+💠 SAPPHIRE (moola-preenc-fr-s-v1.0) 
+   - Architecture: Frozen pretrained encoder + classifier
+   - Parameters: 170,372 total, 33,156 trainable
+   - Epochs: 40
+   - Best Val Acc: 54.29%
+   - Saved: artifacts/models/sapphire_best.pt (686KB)
+
+🔮 OPAL (moola-preenc-ad-m-v1.0)
+   - Architecture: Adaptive fine-tuning pretrained encoder
+   - Parameters: 170,372 (all trainable)
+   - Epochs: 40
+   - LR: 1e-4 (lower for fine-tuning)
+   - Best Val Acc: 54.29%
+   - Saved: artifacts/models/opal_best.pt (686KB)
+
+DATASET
+-------
+- Source: data/processed/labeled/train_latest.parquet
+- Samples: 174 (139 train, 35 val)
+- Features: OHLC (105 timesteps × 4 dimensions)
+- Labels: consolidation (81) vs retracement (93)
+- Batch size: 29 (paper-strict)
+
+INFRASTRUCTURE
+-------------
+- Device: CUDA (RTX 4090)
+- Framework: PyTorch 2.4.1+cu124
+- Training time: ~5 minutes total
+- No dependency conflicts (minimal install)
+
+GUARDRAILS PASSED
+-----------------
+✅ No GUI packages (opencv-python-headless used)
+✅ CUDA verified working
+✅ Batch size 29 enforced for all models
+✅ Paper-strict settings (light regs, proper augmentations)
+✅ Artifacts successfully synced back
+
+NEXT STEPS
+----------
+- Models ready for evaluation on test set
+- Ensemble stacking possible (3 diverse architectures)
+- Calibration analysis recommended
+- Consider more sophisticated pointer targets

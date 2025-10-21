@@ -46,7 +46,7 @@ class TimeSeriesAugmenter:
         time_warp_prob: float = 0.5,
         time_warp_sigma: float = 0.12,
         jitter_prob: float = 0.5,
-        jitter_sigma: float = 0.05,
+        jitter_sigma: float = 0.01,  # Paper-strict: lighter jitter for pretraining (σ=0.01)
         volatility_scale_prob: float = 0.3,
         volatility_scale_range: Tuple[float, float] = (0.85, 1.15),
         window_shift_prob: float = 0.0,  # Disabled by default (changes sequence length)

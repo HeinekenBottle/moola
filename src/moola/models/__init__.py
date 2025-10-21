@@ -3,18 +3,20 @@
 Provides centralized model instantiation via get_model() function.
 All models implement the BaseModel interface.
 
-Includes Stones collection with codename system:
+Stones collection with codename system - PAPER-STRICT COMPLIANCE:
 - Jade: moola-lstm-m-v1.0 // codename: Jade
-- Sapphire: moola-lstm-s-fr-v1.0 // codename: Sapphire
-- Opal: moola-preenc-ad-m-v1.0 // codename: Opal
+- Sapphire: moola-lstm-sf-v1.0 // codename: Sapphire  
+- Opal: moola-preenc-ma-v1.0 // codename: Opal
+
+ONLY THESE MODELS ARE ALLOWED FOR PAPER EXPERIMENTS.
 """
 
 from typing import Type
+import sys
+import os
 
 from .base import BaseModel
-from .enhanced_simple_lstm import EnhancedSimpleLSTMModel
 from .jade import JadeModel
-from .logreg import LogRegModel
 from .registry import (
     registry,
     get_model as get_model_by_id,
@@ -24,73 +26,63 @@ from .registry import (
     list_available_models,
     get_stones_collection,
 )
-from .rf import RFModel
-from .simple_lstm import SimpleLSTMModel
-from .stack import StackModel
-from .xgb import XGBModel
 
-# Model registry mapping names to classes (Stones-only)
+# PAPER-STRICT: Only Stones models allowed
 _MODEL_REGISTRY: dict[str, Type[BaseModel]] = {
-    # Deep learning models (production)
-    "jade": JadeModel,  # PRODUCTION: Jade architecture with Stones non-negotiables
-    "enhanced_simple_lstm": EnhancedSimpleLSTMModel,  # LEGACY: BiLSTM + attention with pretrained support
-    "simple_lstm": SimpleLSTMModel,  # BASELINE: Lightweight for smoke tests
-    # Classical ML models (for stacking)
-    "logreg": LogRegModel,
-    "rf": RFModel,
-    "xgb": XGBModel,
-    "stack": StackModel,
+    "jade": JadeModel,      # PRODUCTION: Jade architecture with Stones non-negotiables
+    "sapphire": JadeModel,  # TRANSFER: Frozen encoder
+    "opal": JadeModel,      # ADAPTIVE: Fine-tuning
 }
 
 
 def get_model(name: str, **kwargs) -> BaseModel:
-    """Get model instance by name.
+    """Get model instance by name (PAPER-STRICT: Stones models only).
 
     Args:
-        name: Model name (jade, enhanced_simple_lstm, simple_lstm, cnn_transformer, rwkv_ts, logreg, rf, xgb, stack)
-        **kwargs: Model-specific hyperparameters (seed, max_iter, device, etc.)
-                 For enhanced_simple_lstm: load_pretrained_encoder (Path) loads encoder after init
-                 For cnn_transformer: load_pretrained_encoder (Path) loads encoder after init
-                 For jade: predict_pointers (bool) enables multi-task learning
+        name: Model name (jade, sapphire, opal ONLY)
+        **kwargs: Model-specific hyperparameters (seed, device, predict_pointers, etc.)
 
     Returns:
         Instantiated model implementing BaseModel interface
 
     Raises:
-        ValueError: If model name not found in registry
+        ValueError: If model name not found in Stones registry
 
     Examples:
         >>> model = get_model("jade", seed=1337, device="cuda", predict_pointers=True)
         >>> model.fit(X_train, y_train, expansion_start=starts, expansion_end=ends)
         >>> predictions = model.predict(X_test)
 
-        >>> # Load pre-trained encoder for enhanced_simple_lstm
-        >>> model = get_model("enhanced_simple_lstm", device="cuda",
-        ...                   load_pretrained_encoder="artifacts/encoders/pretrained/bilstm_mae_4d_v1.pt")
+        >>> # Sapphire with frozen encoder
+        >>> model = get_model("sapphire", device="cuda", predict_pointers=True)
+
+        >>> # Opal with adaptive fine-tuning  
+        >>> model = get_model("opal", device="cuda", predict_pointers=True)
     """
+    # PAPER-STRICT: Only allow Stones models
+    allowed_models = {"jade", "sapphire", "opal"}
+    if name not in allowed_models:
+        raise ValueError(
+            f"PAPER-STRICT VIOLATION: Model '{name}' not allowed. "
+            f"Only Stones models allowed: {sorted(allowed_models)}"
+        )
+
     if name not in _MODEL_REGISTRY:
         available = ", ".join(_MODEL_REGISTRY.keys())
         raise ValueError(f"Unknown model '{name}'. Available models: {available}")
 
     model_class = _MODEL_REGISTRY[name]
 
-    # Extract load_pretrained_encoder parameter (for models that support it)
-    load_pretrained_encoder = kwargs.pop("load_pretrained_encoder", None)
-
-    # Instantiate model
-    model = model_class(**kwargs)
-
-    # Load pre-trained encoder if specified (for models that support it)
-    if load_pretrained_encoder and hasattr(model_class, "load_pretrained_encoder"):
-        from pathlib import Path
-
-        encoder_path = Path(load_pretrained_encoder)
-        # Note: load_pretrained_encoder will be called during fit() after model is built
-        # Store the path for later use in fit()
-        if hasattr(model, "_pretrained_encoder_path"):
-            model._pretrained_encoder_path = encoder_path
-
-    return model
+    # PAPER-STRICT: Use registry configuration for Stones models
+    if name == "jade":
+        return get_jade(**kwargs)
+    elif name == "sapphire":
+        return get_sapphire(**kwargs)
+    elif name == "opal":
+        return get_opal(**kwargs)
+    else:
+        # Fallback (should not reach due to validation above)
+        return model_class(**kwargs)
 
 
 def list_models() -> list[str]:
@@ -105,18 +97,12 @@ def list_models() -> list[str]:
 __all__ = [
     "BaseModel",
     "JadeModel",
-    "EnhancedSimpleLSTMModel",
-    "SimpleLSTMModel",
-    "LogRegModel",
-    "RFModel",
-    "XGBModel",
-    "StackModel",
     "get_model",
     "list_models",
     "_MODEL_REGISTRY",  # For testing and introspection
     # Registry functions
     "get_jade",
-    "get_sapphire",
+    "get_sapphire", 
     "get_opal",
     "list_available_models",
     "get_stones_collection",

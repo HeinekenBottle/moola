@@ -66,12 +66,12 @@ class MaskedLSTMPretrainer:
         input_dim: int = 4,
         hidden_dim: int = 128,
         num_layers: int = 2,
-        dropout: float = 0.2,
-        mask_ratio: float = 0.15,
+        dropout: float = 0.15,  # Paper-strict: lighter dropout for pretraining
+        mask_ratio: float = 0.4,  # Paper-strict: higher mask ratio
         mask_strategy: Literal["random", "block", "patch"] = "patch",
         patch_size: int = 7,
         learning_rate: float = 1e-3,
-        batch_size: int = 512,
+        batch_size: int = 64,  # Paper-strict: smaller batch size
         device: str = "cuda",
         seed: int = 1337,
     ):

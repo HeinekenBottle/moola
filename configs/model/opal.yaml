@@ -15,7 +15,9 @@ model:
   architecture:
     hidden_size: 128
     num_layers: 2
-    dense_dropout: 0.5
+    input_dropout: 0.25  # Stones: 0.2-0.3
+    recurrent_dropout: 0.65  # Stones: 0.6-0.7 (inter-layer)
+    dense_dropout: 0.5  # Stones: 0.4-0.5
 
 # Inherits augmentation, uncertainty, gates from Jade
 
