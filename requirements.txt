@@ -62,6 +62,18 @@ loguru>=0.7,<1.0
 # Rich terminal output
 rich>=14.0,<15.0
 
+# Visualization
+matplotlib>=3.9,<4.0
+
+#############################################
+# GitOps & Deployment
+#############################################
+# System monitoring
+psutil>=6.1,<7.0
+
+# Process management
+threading-utils>=1.0.0
+
 #############################################
 # Utilities
 #############################################

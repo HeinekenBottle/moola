@@ -1,0 +1,95 @@
+{
+  "phase": 3,
+  "description": "Uncertainty quantification and calibration for BiLSTM dual-task model",
+  "goal": "Improve probability calibration and detect high-uncertainty predictions",
+
+  "mc_dropout": {
+    "enabled": true,
+    "n_passes": 50,
+    "dropout_rate": 0.15,
+    "uncertainty_threshold_percentile": 90,
+    "description": "Monte Carlo Dropout for uncertainty estimation",
+    "notes": [
+      "Run 50 forward passes with dropout enabled at inference time",
+      "Compute prediction variance across passes",
+      "Flag top 10% uncertain predictions for human review"
+    ]
+  },
+
+  "temperature_scaling": {
+    "enabled": true,
+    "max_iter": 50,
+    "lr": 0.01,
+    "description": "Post-hoc calibration via temperature parameter",
+    "notes": [
+      "Learn single temperature parameter T on validation set",
+      "Apply softmax(logits / T) to improve calibration",
+      "Does not affect model accuracy, only probability estimates"
+    ]
+  },
+
+  "calibration_metrics": {
+    "compute_ece": true,
+    "n_bins": 15,
+    "smoothing": "gaussian",
+    "bandwidth": 0.1,
+    "plot_reliability_diagram": true,
+    "description": "Smooth Expected Calibration Error and reliability diagrams",
+    "target_metrics": {
+      "ece": "< 0.08",
+      "mce": "< 0.15",
+      "brier_score": "< 0.20"
+    },
+    "notes": [
+      "Gaussian kernel smoothing for robust ECE estimation",
+      "15 bins provides good resolution for small datasets",
+      "Reliability diagram visualizes calibration quality"
+    ]
+  },
+
+  "expected_improvements": {
+    "calibration": {
+      "baseline_ece": 0.20,
+      "target_ece": "< 0.08",
+      "method": "Temperature scaling + MC Dropout"
+    },
+    "uncertainty_detection": {
+      "goal": "Flag top 10% uncertain predictions for human review",
+      "metric": "Prediction variance across MC Dropout passes",
+      "threshold": "90th percentile of variance distribution"
+    },
+    "business_impact": [
+      "Better probability estimates for decision-making",
+      "Identify predictions that need human verification",
+      "Reduce false confidence in edge cases"
+    ]
+  },
+
+  "implementation_notes": {
+    "phase1_prerequisite": "Dual-task model with pointer regression working",
+    "phase2_prerequisite": "Data augmentation (latent mixup, jitter, warp) integrated",
+    "cli_flags": [
+      "--compute-calibration: Compute ECE, MCE, Brier score",
+      "--calibration-bins 15: Number of bins for ECE",
+      "--plot-reliability: Generate reliability diagram",
+      "--mc-dropout: Enable MC Dropout uncertainty estimation",
+      "--mc-passes 50: Number of forward passes",
+      "--mc-dropout-rate 0.15: Dropout rate during inference",
+      "--temperature-scaling: Apply post-hoc temperature calibration"
+    ]
+  },
+
+  "validation_checklist": [
+    "ECE < 0.08 on validation set",
+    "Reliability diagram shows calibration near diagonal",
+    "MC Dropout variance correlates with actual errors",
+    "Temperature scaling improves ECE without hurting accuracy",
+    "Top 10% uncertain predictions identified correctly"
+  ],
+
+  "references": {
+    "ece_paper": "On Calibration of Modern Neural Networks (Guo et al., 2017)",
+    "mc_dropout": "Dropout as a Bayesian Approximation (Gal & Ghahramani, 2016)",
+    "temperature_scaling": "Guo et al. (2017) - simplest and most effective method"
+  }
+}

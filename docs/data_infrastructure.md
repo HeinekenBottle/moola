@@ -630,7 +630,7 @@ Tools: Prometheus + Grafana or custom dashboard
 - [ ] Implement Great Expectations integration for advanced validation
 - [ ] Add Feast feature store for online/offline feature serving
 - [ ] Set up automated data profiling with pandas-profiling
-- [ ] Create Airflow DAGs for orchestration
+- [ ] Create manual batch processing scripts
 
 ### Medium-term (3-6 months)
 - [ ] Implement data catalog with Amundsen or DataHub

@@ -19,6 +19,66 @@ repos:
         stages: [commit]
         always_run: true
 
+  # GitOps deployment validation
+  - repo: local
+    hooks:
+      - id: gitops-deployment-check
+        name: 🚀 GitOps deployment validation
+        entry: python3 .gitops/scripts/validate_deployment.py
+        language: system
+        stages: [commit]
+        pass_filenames: false
+
+  # Import chain validation
+  - repo: local
+    hooks:
+      - id: import-chain-validation
+        name: 🔗 Import chain validation
+        entry: python3 -m pytest tests/test_imports.py -v
+        language: system
+        stages: [commit]
+        pass_filenames: false
+
+  # Configuration schema validation
+  - repo: local
+    hooks:
+      - id: config-schema-validation
+        name: 📋 Configuration schema validation
+        entry: python3 .gitops/scripts/validate_configs.py
+        language: system
+        stages: [commit]
+        pass_filenames: false
+
+  # Data schema validation
+  - repo: local
+    hooks:
+      - id: data-schema-validation
+        name: 📊 Data schema validation
+        entry: python3 .gitops/scripts/validate_data_schemas.py
+        language: system
+        stages: [commit]
+        pass_filenames: false
+
+  # Security validation
+  - repo: local
+    hooks:
+      - id: security-validation
+        name: 🔒 Security validation
+        entry: python3 .gitops/scripts/validate_security.py
+        language: system
+        stages: [commit]
+        pass_filenames: false
+
+  # Performance regression check
+  - repo: local
+    hooks:
+      - id: performance-check
+        name: ⚡ Performance regression check
+        entry: python3 .gitops/scripts/check_performance.py
+        language: system
+        stages: [commit]
+        pass_filenames: false
+
   # Code formatting
   - repo: https://github.com/psf/black
     rev: '24.1.1'
