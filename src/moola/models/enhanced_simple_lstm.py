@@ -203,7 +203,7 @@ class EnhancedSimpleLSTMModel(BaseModel):
         predict_pointers: bool = False,  # Multi-task: predict expansion start/end
         loss_alpha: float = 1.0,  # PHASE 1: Increased from 0.5 to 1.0 (classification weight)
         loss_beta: float = 0.7,  # PHASE 1: Increased from 0.25 to 0.7 (pointer weight)
-        use_uncertainty_weighting: bool = False,  # PHASE 1: Enable learnable task weighting
+        use_uncertainty_weighting: bool = True,   # PHASE 1: Enable learnable task weighting (REQUIRED for production)
         use_latent_mixup: bool = True,  # PHASE 2: Apply mixup in latent space (after encoder)
         latent_mixup_alpha: float = 0.4,  # PHASE 2: Mixup strength (Beta distribution parameter)
         latent_mixup_prob: float = 0.5,  # PHASE 2: Probability of applying latent mixup

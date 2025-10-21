@@ -365,6 +365,11 @@ def ingest(cfg_dir, over, input_path):
     default=10,
     help="Gradient monitoring log frequency in epochs (PHASE 4, default: 10)",
 )
+@click.option(
+    "--use-uncertainty-weighting/--no-use-uncertainty-weighting",
+    default=True,
+    help="Use uncertainty-weighted multi-task loss (REQUIRED for production, default: True)",
+)
 def train(
     cfg_dir,
     over,
@@ -411,6 +416,7 @@ def train(
     save_checkpoints,
     monitor_gradients,
     gradient_log_freq,
+    use_uncertainty_weighting,
 ):
     """Train classifier with temporal split validation.
 
@@ -627,6 +633,8 @@ def train(
         model_kwargs["use_latent_mixup"] = use_latent_mixup
         model_kwargs["latent_mixup_alpha"] = latent_mixup_alpha
         model_kwargs["latent_mixup_prob"] = latent_mixup_prob
+        # PHASE 1: Add uncertainty weighting parameter (CRITICAL for production)
+        model_kwargs["use_uncertainty_weighting"] = use_uncertainty_weighting
 
     # PHASE 4: Add learning rate scheduler parameters for enhanced_simple_lstm
     if model == "enhanced_simple_lstm":
@@ -635,6 +643,8 @@ def train(
         model_kwargs["scheduler_patience"] = scheduler_patience
         model_kwargs["scheduler_min_lr"] = scheduler_min_lr
         model_kwargs["save_checkpoints"] = save_checkpoints
+        # PHASE 1: Always pass uncertainty weighting parameter (CRITICAL for production)
+        model_kwargs["use_uncertainty_weighting"] = use_uncertainty_weighting
 
     # PHASE 2: Add temporal augmentation parameters (jitter + warp)
     if model in ["simple_lstm", "enhanced_simple_lstm"] and (augment_jitter or augment_warp):
@@ -1588,6 +1598,11 @@ def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
     model_kwargs = {"device": device}
     if model == "cnn_transformer":
         model_kwargs["predict_pointers"] = True
+        if load_pretrained_encoder:
+            model_kwargs["load_pretrained_encoder"] = load_pretrained_encoder
+    elif model == "enhanced_simple_lstm":
+        # PHASE 1: Add uncertainty weighting parameter (CRITICAL for production)
+        model_kwargs["use_uncertainty_weighting"] = True
         if load_pretrained_encoder:
             model_kwargs["load_pretrained_encoder"] = load_pretrained_encoder
     elif model == "simple_lstm":
