@@ -89,7 +89,7 @@ class FeatureAwareMaskedLSTMPretrainer:
         learning_rate: float = 1e-3,
         batch_size: int = 256,  # Reduced due to dual inputs
         device: str = "cuda",
-        seed: int = 1337
+        seed: int = 1337,
     ):
         set_seed(seed)
         self.device = get_device(device)
@@ -110,11 +110,7 @@ class FeatureAwareMaskedLSTMPretrainer:
 
         # Default loss weights
         if loss_weights is None:
-            loss_weights = {
-                'ohlc_weight': 0.4,
-                'feature_weight': 0.4,
-                'regularization_weight': 0.2
-            }
+            loss_weights = {"ohlc_weight": 0.4, "feature_weight": 0.4, "regularization_weight": 0.2}
         self.loss_weights = loss_weights
 
         # Build model
@@ -124,14 +120,12 @@ class FeatureAwareMaskedLSTMPretrainer:
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             dropout=dropout,
-            feature_fusion=feature_fusion
+            feature_fusion=feature_fusion,
         ).to(self.device)
 
         # Optimizer with weight decay
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=learning_rate,
-            weight_decay=1e-4
+            self.model.parameters(), lr=learning_rate, weight_decay=1e-4
         )
 
         # LR scheduler
@@ -148,7 +142,7 @@ class FeatureAwareMaskedLSTMPretrainer:
         val_split: float = 0.1,
         patience: int = 10,
         save_path: Optional[Path] = None,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> dict[str, list]:
         """Pre-train on unlabeled dual data using masked reconstruction.
 
@@ -182,15 +176,19 @@ class FeatureAwareMaskedLSTMPretrainer:
 
         # Validate input shapes
         assert X_ohlc.shape[0] == X_features.shape[0], "OHLC and features must have same batch size"
-        assert X_ohlc.shape[1] == X_features.shape[1], "OHLC and features must have same sequence length"
-        assert X_ohlc.shape[2] == self.ohlc_dim, f"OHLC dim mismatch: expected {self.ohlc_dim}, got {X_ohlc.shape[2]}"
-        assert X_features.shape[2] == self.feature_dim, f"Feature dim mismatch: expected {self.feature_dim}, got {X_features.shape[2]}"
+        assert (
+            X_ohlc.shape[1] == X_features.shape[1]
+        ), "OHLC and features must have same sequence length"
+        assert (
+            X_ohlc.shape[2] == self.ohlc_dim
+        ), f"OHLC dim mismatch: expected {self.ohlc_dim}, got {X_ohlc.shape[2]}"
+        assert (
+            X_features.shape[2] == self.feature_dim
+        ), f"Feature dim mismatch: expected {self.feature_dim}, got {X_features.shape[2]}"
 
         # Initialize LR scheduler
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer,
-            T_max=n_epochs,
-            eta_min=1e-5
+            self.optimizer, T_max=n_epochs, eta_min=1e-5
         )
 
         # Split train/val
@@ -217,39 +215,33 @@ class FeatureAwareMaskedLSTMPretrainer:
         # Optimized DataLoader settings
         try:
             from ..config.performance_config import get_optimized_dataloader_kwargs
+
             dataloader_kwargs = get_optimized_dataloader_kwargs(is_training=True)
         except ImportError:
             dataloader_kwargs = {
-                'num_workers': 8 if self.device.type == "cuda" else 0,
-                'pin_memory': True if self.device.type == "cuda" else False,
-                'prefetch_factor': 2 if self.device.type == "cuda" else None,
-                'persistent_workers': True if self.device.type == "cuda" else False,
+                "num_workers": 8 if self.device.type == "cuda" else 0,
+                "pin_memory": True if self.device.type == "cuda" else False,
+                "prefetch_factor": 2 if self.device.type == "cuda" else None,
+                "persistent_workers": True if self.device.type == "cuda" else False,
             }
             dataloader_kwargs = {k: v for k, v in dataloader_kwargs.items() if v is not None}
 
         train_loader = torch.utils.data.DataLoader(
-            train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            **dataloader_kwargs
+            train_dataset, batch_size=self.batch_size, shuffle=True, **dataloader_kwargs
         )
 
         # Early stopping
-        early_stopping = EarlyStopping(
-            patience=patience,
-            mode="min",
-            verbose=verbose
-        )
+        early_stopping = EarlyStopping(patience=patience, mode="min", verbose=verbose)
 
         # Training history
         history = {
-            'train_loss': [],
-            'val_loss': [],
-            'train_ohlc_recon': [],
-            'val_ohlc_recon': [],
-            'train_feature_recon': [],
-            'val_feature_recon': [],
-            'learning_rate': []
+            "train_loss": [],
+            "val_loss": [],
+            "train_ohlc_recon": [],
+            "val_ohlc_recon": [],
+            "train_feature_recon": [],
+            "val_feature_recon": [],
+            "learning_rate": [],
         }
 
         # Setup AMP scaler
@@ -258,11 +250,12 @@ class FeatureAwareMaskedLSTMPretrainer:
         if use_amp:
             try:
                 from ..config.performance_config import get_amp_scaler
+
                 scaler = get_amp_scaler()
                 if scaler and verbose:
                     print("[PERFORMANCE] Using automatic mixed precision (AMP) for 1.5-2× speedup")
             except ImportError:
-                scaler = torch.amp.GradScaler('cuda')
+                scaler = torch.amp.GradScaler("cuda")
                 if verbose:
                     print("[PERFORMANCE] Using AMP with default settings")
 
@@ -277,11 +270,7 @@ class FeatureAwareMaskedLSTMPretrainer:
             train_feature_recon_losses = []
 
             # Progress bar
-            pbar = tqdm(
-                train_loader,
-                desc=f"Epoch {epoch+1}/{n_epochs}",
-                disable=not verbose
-            )
+            pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{n_epochs}", disable=not verbose)
 
             for batch_ohlc, batch_features in pbar:
                 batch_ohlc = batch_ohlc.to(self.device, non_blocking=True)
@@ -295,20 +284,23 @@ class FeatureAwareMaskedLSTMPretrainer:
                     self.model.feature_mask_token,
                     mask_strategy=self.mask_strategy,
                     mask_ratio=self.mask_ratio,
-                    patch_size=self.patch_size
+                    patch_size=self.patch_size,
                 )
 
                 self.optimizer.zero_grad()
 
                 # Forward pass with optional AMP
                 if scaler:
-                    with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
                         ohlc_recon, feature_recon = self.model(ohlc_masked, features_masked)
                         loss, loss_dict = self.model.compute_loss(
-                            ohlc_recon, feature_recon,
-                            batch_ohlc, batch_features,
-                            ohlc_mask, feature_mask,
-                            self.loss_weights
+                            ohlc_recon,
+                            feature_recon,
+                            batch_ohlc,
+                            batch_features,
+                            ohlc_mask,
+                            feature_mask,
+                            self.loss_weights,
                         )
 
                     # Backward pass with gradient scaling
@@ -319,10 +311,13 @@ class FeatureAwareMaskedLSTMPretrainer:
                 else:
                     ohlc_recon, feature_recon = self.model(ohlc_masked, features_masked)
                     loss, loss_dict = self.model.compute_loss(
-                        ohlc_recon, feature_recon,
-                        batch_ohlc, batch_features,
-                        ohlc_mask, feature_mask,
-                        self.loss_weights
+                        ohlc_recon,
+                        feature_recon,
+                        batch_ohlc,
+                        batch_features,
+                        ohlc_mask,
+                        feature_mask,
+                        self.loss_weights,
                     )
 
                     # Backward pass
@@ -331,17 +326,19 @@ class FeatureAwareMaskedLSTMPretrainer:
                     self.optimizer.step()
 
                 # Track metrics
-                train_losses.append(loss_dict['total'])
-                train_ohlc_recon_losses.append(loss_dict['ohlc_reconstruction'])
-                train_feature_recon_losses.append(loss_dict['feature_reconstruction'])
+                train_losses.append(loss_dict["total"])
+                train_ohlc_recon_losses.append(loss_dict["ohlc_reconstruction"])
+                train_feature_recon_losses.append(loss_dict["feature_reconstruction"])
 
                 # Update progress bar
-                pbar.set_postfix({
-                    'loss': f"{loss_dict['total']:.4f}",
-                    'ohlc': f"{loss_dict['ohlc_reconstruction']:.4f}",
-                    'feat': f"{loss_dict['feature_reconstruction']:.4f}",
-                    'lr': f"{self.scheduler.get_last_lr()[0]:.6f}"
-                })
+                pbar.set_postfix(
+                    {
+                        "loss": f"{loss_dict['total']:.4f}",
+                        "ohlc": f"{loss_dict['ohlc_reconstruction']:.4f}",
+                        "feat": f"{loss_dict['feature_reconstruction']:.4f}",
+                        "lr": f"{self.scheduler.get_last_lr()[0]:.6f}",
+                    }
+                )
 
             # Update learning rate
             self.scheduler.step()
@@ -357,42 +354,54 @@ class FeatureAwareMaskedLSTMPretrainer:
             with torch.no_grad():
                 # Process validation data in batches
                 for i in range(0, len(X_ohlc_val), self.batch_size):
-                    batch_ohlc = X_ohlc_val[i:i+self.batch_size].to(self.device, non_blocking=True)
-                    batch_features = X_features_val[i:i+self.batch_size].to(self.device, non_blocking=True)
+                    batch_ohlc = X_ohlc_val[i : i + self.batch_size].to(
+                        self.device, non_blocking=True
+                    )
+                    batch_features = X_features_val[i : i + self.batch_size].to(
+                        self.device, non_blocking=True
+                    )
 
                     # Apply masking
-                    ohlc_masked, features_masked, ohlc_mask, feature_mask = apply_feature_aware_masking(
-                        batch_ohlc,
-                        batch_features,
-                        self.model.ohlc_mask_token,
-                        self.model.feature_mask_token,
-                        mask_strategy=self.mask_strategy,
-                        mask_ratio=self.mask_ratio,
-                        patch_size=self.patch_size
+                    ohlc_masked, features_masked, ohlc_mask, feature_mask = (
+                        apply_feature_aware_masking(
+                            batch_ohlc,
+                            batch_features,
+                            self.model.ohlc_mask_token,
+                            self.model.feature_mask_token,
+                            mask_strategy=self.mask_strategy,
+                            mask_ratio=self.mask_ratio,
+                            patch_size=self.patch_size,
+                        )
                     )
 
                     # Forward pass with optional AMP
                     if scaler:
-                        with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                        with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
                             ohlc_recon, feature_recon = self.model(ohlc_masked, features_masked)
                             loss, loss_dict = self.model.compute_loss(
-                                ohlc_recon, feature_recon,
-                                batch_ohlc, batch_features,
-                                ohlc_mask, feature_mask,
-                                self.loss_weights
+                                ohlc_recon,
+                                feature_recon,
+                                batch_ohlc,
+                                batch_features,
+                                ohlc_mask,
+                                feature_mask,
+                                self.loss_weights,
                             )
                     else:
                         ohlc_recon, feature_recon = self.model(ohlc_masked, features_masked)
                         loss, loss_dict = self.model.compute_loss(
-                            ohlc_recon, feature_recon,
-                            batch_ohlc, batch_features,
-                            ohlc_mask, feature_mask,
-                            self.loss_weights
+                            ohlc_recon,
+                            feature_recon,
+                            batch_ohlc,
+                            batch_features,
+                            ohlc_mask,
+                            feature_mask,
+                            self.loss_weights,
                         )
 
-                    val_losses.append(loss_dict['total'])
-                    val_ohlc_recon_losses.append(loss_dict['ohlc_reconstruction'])
-                    val_feature_recon_losses.append(loss_dict['feature_reconstruction'])
+                    val_losses.append(loss_dict["total"])
+                    val_ohlc_recon_losses.append(loss_dict["ohlc_reconstruction"])
+                    val_feature_recon_losses.append(loss_dict["feature_reconstruction"])
 
             # ============================================================
             # LOGGING AND CHECKPOINTING
@@ -406,20 +415,24 @@ class FeatureAwareMaskedLSTMPretrainer:
             current_lr = self.scheduler.get_last_lr()[0]
 
             # Record history
-            history['train_loss'].append(avg_train_loss)
-            history['val_loss'].append(avg_val_loss)
-            history['train_ohlc_recon'].append(avg_train_ohlc_recon)
-            history['val_ohlc_recon'].append(avg_val_ohlc_recon)
-            history['train_feature_recon'].append(avg_train_feature_recon)
-            history['val_feature_recon'].append(avg_val_feature_recon)
-            history['learning_rate'].append(current_lr)
+            history["train_loss"].append(avg_train_loss)
+            history["val_loss"].append(avg_val_loss)
+            history["train_ohlc_recon"].append(avg_train_ohlc_recon)
+            history["val_ohlc_recon"].append(avg_val_ohlc_recon)
+            history["train_feature_recon"].append(avg_train_feature_recon)
+            history["val_feature_recon"].append(avg_val_feature_recon)
+            history["learning_rate"].append(current_lr)
 
             # Print epoch summary
             if verbose:
                 print(f"\nEpoch [{epoch+1}/{n_epochs}]")
                 print(f"  Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
-                print(f"  Train OHLC: {avg_train_ohlc_recon:.4f} | Val OHLC: {avg_val_ohlc_recon:.4f}")
-                print(f"  Train Features: {avg_train_feature_recon:.4f} | Val Features: {avg_val_feature_recon:.4f}")
+                print(
+                    f"  Train OHLC: {avg_train_ohlc_recon:.4f} | Val OHLC: {avg_val_ohlc_recon:.4f}"
+                )
+                print(
+                    f"  Train Features: {avg_train_feature_recon:.4f} | Val Features: {avg_val_feature_recon:.4f}"
+                )
                 print(f"  LR: {current_lr:.6f}")
 
             # Early stopping check
@@ -463,25 +476,25 @@ class FeatureAwareMaskedLSTMPretrainer:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         checkpoint = {
-            'encoder_state_dict': self.model.encoder_lstm.state_dict(),
-            'hyperparams': {
-                'ohlc_dim': self.ohlc_dim,
-                'feature_dim': self.feature_dim,
-                'hidden_dim': self.hidden_dim,
-                'num_layers': self.num_layers,
-                'dropout': self.dropout,
-                'feature_fusion': self.feature_fusion,
+            "encoder_state_dict": self.model.encoder_lstm.state_dict(),
+            "hyperparams": {
+                "ohlc_dim": self.ohlc_dim,
+                "feature_dim": self.feature_dim,
+                "hidden_dim": self.hidden_dim,
+                "num_layers": self.num_layers,
+                "dropout": self.dropout,
+                "feature_fusion": self.feature_fusion,
             },
-            'ohlc_mask_token': self.model.ohlc_mask_token.data,
-            'feature_mask_token': self.model.feature_mask_token.data,
-            'training_config': {
-                'mask_strategy': self.mask_strategy,
-                'mask_ratio': self.mask_ratio,
-                'patch_size': self.patch_size,
-                'loss_weights': self.loss_weights,
-                'learning_rate': self.learning_rate,
-                'batch_size': self.batch_size,
-            }
+            "ohlc_mask_token": self.model.ohlc_mask_token.data,
+            "feature_mask_token": self.model.feature_mask_token.data,
+            "training_config": {
+                "mask_strategy": self.mask_strategy,
+                "mask_ratio": self.mask_ratio,
+                "patch_size": self.patch_size,
+                "loss_weights": self.loss_weights,
+                "learning_rate": self.learning_rate,
+                "batch_size": self.batch_size,
+            },
         }
 
         torch.save(checkpoint, path)
@@ -495,11 +508,11 @@ class FeatureAwareMaskedLSTMPretrainer:
         checkpoint = torch.load(path, map_location=self.device)
 
         # Restore encoder weights
-        self.model.encoder_lstm.load_state_dict(checkpoint['encoder_state_dict'])
+        self.model.encoder_lstm.load_state_dict(checkpoint["encoder_state_dict"])
 
         # Restore mask tokens
-        self.model.ohlc_mask_token.data = checkpoint['ohlc_mask_token']
-        self.model.feature_mask_token.data = checkpoint['feature_mask_token']
+        self.model.ohlc_mask_token.data = checkpoint["ohlc_mask_token"]
+        self.model.feature_mask_token.data = checkpoint["feature_mask_token"]
 
         print(f"[FEATURE-AWARE PRETRAINING] Loaded encoder from {path}")
 
@@ -510,7 +523,7 @@ def visualize_feature_aware_reconstruction(
     feature_sample: torch.Tensor,
     mask_strategy: str = "random",
     mask_ratio: float = 0.15,
-    device: str = "cuda"
+    device: str = "cuda",
 ) -> dict[str, np.ndarray]:
     """Visualize feature-aware masked reconstruction quality.
 
@@ -537,19 +550,19 @@ def visualize_feature_aware_reconstruction(
             model.ohlc_mask_token,
             model.feature_mask_token,
             mask_strategy=mask_strategy,
-            mask_ratio=mask_ratio
+            mask_ratio=mask_ratio,
         )
 
         # Reconstruct
         ohlc_recon, feature_recon = model(ohlc_masked, features_masked)
 
     return {
-        'ohlc_original': ohlc_sample.cpu().numpy(),
-        'ohlc_masked': ohlc_masked.cpu().numpy(),
-        'ohlc_reconstructed': ohlc_recon.cpu().numpy(),
-        'features_original': feature_sample.cpu().numpy(),
-        'features_masked': features_masked.cpu().numpy(),
-        'features_reconstructed': feature_recon.cpu().numpy(),
-        'ohlc_mask': ohlc_mask.cpu().numpy(),
-        'feature_mask': feature_mask.cpu().numpy()
+        "ohlc_original": ohlc_sample.cpu().numpy(),
+        "ohlc_masked": ohlc_masked.cpu().numpy(),
+        "ohlc_reconstructed": ohlc_recon.cpu().numpy(),
+        "features_original": feature_sample.cpu().numpy(),
+        "features_masked": features_masked.cpu().numpy(),
+        "features_reconstructed": feature_recon.cpu().numpy(),
+        "ohlc_mask": ohlc_mask.cpu().numpy(),
+        "feature_mask": feature_mask.cpu().numpy(),
     }

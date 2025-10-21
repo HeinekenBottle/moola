@@ -16,10 +16,10 @@ from scipy import stats
 
 from ..schemas import DataQualityReport
 
-
 # ============================================================================
 # QUALITY CHECK THRESHOLDS
 # ============================================================================
+
 
 @dataclass
 class QualityThresholds:
@@ -50,6 +50,7 @@ class QualityThresholds:
 # CORE VALIDATORS
 # ============================================================================
 
+
 class TimeSeriesQualityValidator:
     """Validate time-series data quality with financial domain knowledge."""
 
@@ -57,9 +58,7 @@ class TimeSeriesQualityValidator:
         self.thresholds = thresholds or QualityThresholds()
 
     def validate_dataset(
-        self,
-        df: pd.DataFrame,
-        dataset_name: str = "unknown"
+        self, df: pd.DataFrame, dataset_name: str = "unknown"
     ) -> DataQualityReport:
         """Run full quality validation suite on dataset.
 
@@ -88,24 +87,17 @@ class TimeSeriesQualityValidator:
             )
 
         # 2. Statistical properties
-        if 'features' in df.columns:
+        if "features" in df.columns:
             prices = self._extract_prices(df)
             price_stats = self._compute_price_stats(prices)
         else:
-            price_stats = {
-                'mean': 0.0,
-                'std': 0.0,
-                'min': 0.0,
-                'max': 0.0
-            }
+            price_stats = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
 
         # 3. Outlier detection
         outlier_count, outlier_pct = self._detect_outliers(df, price_stats)
 
         if outlier_pct > 5.0:
-            warnings.append(
-                f"High outlier rate: {outlier_pct:.2f}% of samples"
-            )
+            warnings.append(f"High outlier rate: {outlier_pct:.2f}% of samples")
 
         # 4. Temporal consistency
         has_gaps, duplicate_count = self._check_temporal_consistency(df)
@@ -117,12 +109,12 @@ class TimeSeriesQualityValidator:
             errors.append(f"Found {duplicate_count} duplicate timestamps")
 
         # 5. OHLC validation (if applicable)
-        if self.thresholds.check_ohlc_logic and 'features' in df.columns:
+        if self.thresholds.check_ohlc_logic and "features" in df.columns:
             ohlc_errors = self._validate_ohlc_logic(df)
             errors.extend(ohlc_errors)
 
         # 6. Price jump validation
-        if 'features' in df.columns:
+        if "features" in df.columns:
             jump_errors = self._validate_price_jumps(df)
             errors.extend(jump_errors)
 
@@ -135,10 +127,10 @@ class TimeSeriesQualityValidator:
             features_shape=tuple(df.shape),
             missing_values_count=missing_count,
             missing_percentage=missing_pct,
-            price_mean=price_stats['mean'],
-            price_std=price_stats['std'],
-            price_min=price_stats['min'],
-            price_max=price_stats['max'],
+            price_mean=price_stats["mean"],
+            price_std=price_stats["std"],
+            price_min=price_stats["min"],
+            price_max=price_stats["max"],
             outlier_count=outlier_count,
             outlier_percentage=outlier_pct,
             has_gaps=has_gaps,
@@ -153,10 +145,10 @@ class TimeSeriesQualityValidator:
         """Extract price data from features column."""
         try:
             # Handle different feature formats
-            if df['features'].dtype == object:
+            if df["features"].dtype == object:
                 # Array of arrays format
                 prices = []
-                for features in df['features']:
+                for features in df["features"]:
                     if isinstance(features, (list, np.ndarray)):
                         arr = np.array(features)
                         if arr.ndim == 2 and arr.shape[1] == 4:
@@ -166,7 +158,7 @@ class TimeSeriesQualityValidator:
                             prices.append(arr)
                 return np.concatenate(prices) if prices else np.array([])
             else:
-                return df['features'].values
+                return df["features"].values
         except Exception as e:
             logger.warning(f"Could not extract prices: {e}")
             return np.array([])
@@ -174,22 +166,20 @@ class TimeSeriesQualityValidator:
     def _compute_price_stats(self, prices: np.ndarray) -> Dict[str, float]:
         """Compute statistical properties of prices."""
         if len(prices) == 0:
-            return {'mean': 0.0, 'std': 0.0, 'min': 0.0, 'max': 0.0}
+            return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
 
         return {
-            'mean': float(np.mean(prices)),
-            'std': float(np.std(prices)),
-            'min': float(np.min(prices)),
-            'max': float(np.max(prices))
+            "mean": float(np.mean(prices)),
+            "std": float(np.std(prices)),
+            "min": float(np.min(prices)),
+            "max": float(np.max(prices)),
         }
 
     def _detect_outliers(
-        self,
-        df: pd.DataFrame,
-        price_stats: Dict[str, float]
+        self, df: pd.DataFrame, price_stats: Dict[str, float]
     ) -> Tuple[int, float]:
         """Detect outliers using z-score and IQR methods."""
-        if 'features' not in df.columns:
+        if "features" not in df.columns:
             return 0, 0.0
 
         prices = self._extract_prices(df)
@@ -197,7 +187,7 @@ class TimeSeriesQualityValidator:
             return 0, 0.0
 
         # Z-score method
-        z_scores = np.abs(stats.zscore(prices, nan_policy='omit'))
+        z_scores = np.abs(stats.zscore(prices, nan_policy="omit"))
         outliers_zscore = np.sum(z_scores > self.thresholds.outlier_zscore)
 
         # IQR method
@@ -220,7 +210,7 @@ class TimeSeriesQualityValidator:
 
         # Check if timestamp column exists
         timestamp_col = None
-        for col in ['timestamp', 'start_timestamp', 'datetime']:
+        for col in ["timestamp", "start_timestamp", "datetime"]:
             if col in df.columns:
                 timestamp_col = col
                 break
@@ -228,7 +218,7 @@ class TimeSeriesQualityValidator:
         if timestamp_col is None:
             return False, 0
 
-        timestamps = pd.to_datetime(df[timestamp_col], errors='coerce')
+        timestamps = pd.to_datetime(df[timestamp_col], errors="coerce")
         timestamps = timestamps.dropna().sort_values()
 
         # Check duplicates
@@ -247,7 +237,7 @@ class TimeSeriesQualityValidator:
         """Validate OHLC logical constraints: high >= low, etc."""
         errors = []
 
-        for idx, features in enumerate(df['features']):
+        for idx, features in enumerate(df["features"]):
             if not isinstance(features, (list, np.ndarray)):
                 continue
 
@@ -260,9 +250,7 @@ class TimeSeriesQualityValidator:
                 open_p, high, low, close = bar
 
                 if high < low:
-                    errors.append(
-                        f"Sample {idx}, timestep {t}: high ({high}) < low ({low})"
-                    )
+                    errors.append(f"Sample {idx}, timestep {t}: high ({high}) < low ({low})")
 
                 if high < max(open_p, close):
                     errors.append(
@@ -283,7 +271,7 @@ class TimeSeriesQualityValidator:
         errors = []
         max_jump_pct = self.thresholds.max_price_jump_percent / 100
 
-        for idx, features in enumerate(df['features']):
+        for idx, features in enumerate(df["features"]):
             if not isinstance(features, (list, np.ndarray)):
                 continue
 
@@ -294,7 +282,7 @@ class TimeSeriesQualityValidator:
             # Check close-to-close jumps
             closes = arr[:, 3]
             for t in range(1, len(closes)):
-                prev_close = closes[t-1]
+                prev_close = closes[t - 1]
                 curr_close = closes[t]
 
                 if prev_close > 0:
@@ -313,6 +301,7 @@ class TimeSeriesQualityValidator:
 # FINANCIAL-SPECIFIC VALIDATORS
 # ============================================================================
 
+
 class FinancialDataValidator:
     """Financial market data specific validation."""
 
@@ -321,10 +310,10 @@ class FinancialDataValidator:
         """Validate price ranges are realistic."""
         errors = []
 
-        if 'features' not in df.columns:
+        if "features" not in df.columns:
             return errors
 
-        for idx, features in enumerate(df['features']):
+        for idx, features in enumerate(df["features"]):
             if not isinstance(features, (list, np.ndarray)):
                 continue
 
@@ -351,10 +340,10 @@ class FinancialDataValidator:
         """Validate volume data if present."""
         errors = []
 
-        if 'volume' not in df.columns:
+        if "volume" not in df.columns:
             return errors
 
-        volumes = df['volume'].values
+        volumes = df["volume"].values
 
         # Check for negative volumes
         if np.any(volumes < 0):

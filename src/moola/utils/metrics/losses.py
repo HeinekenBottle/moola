@@ -12,11 +12,7 @@ import torch.nn.functional as F
 
 
 def compute_multitask_loss(
-    outputs: dict,
-    targets: dict,
-    alpha: float = 0.5,
-    beta: float = 0.25,
-    device: str = "cpu"
+    outputs: dict, targets: dict, alpha: float = 0.5, beta: float = 0.25, device: str = "cpu"
 ) -> Tuple[torch.Tensor, dict]:
     """Compute balanced multi-task loss for classification + pointer prediction.
 
@@ -87,14 +83,14 @@ def compute_multitask_loss(
         - For single-task training, set alpha=1.0 and beta=0.0
     """
     # Extract outputs
-    classification_logits = outputs['classification']  # [B, 3]
-    start_logits = outputs['start']  # [B, 45]
-    end_logits = outputs['end']  # [B, 45]
+    classification_logits = outputs["classification"]  # [B, 3]
+    start_logits = outputs["start"]  # [B, 45]
+    end_logits = outputs["end"]  # [B, 45]
 
     # Extract targets
-    class_targets = targets['class']  # [B]
-    start_idx_targets = targets['start_idx']  # [B]
-    end_idx_targets = targets['end_idx']  # [B]
+    class_targets = targets["class"]  # [B]
+    start_idx_targets = targets["start_idx"]  # [B]
+    end_idx_targets = targets["end_idx"]  # [B]
 
     batch_size = classification_logits.shape[0]
     inner_window_size = 45
@@ -122,10 +118,10 @@ def compute_multitask_loss(
 
     # Prepare loss dictionary for logging
     loss_dict = {
-        'class': loss_class.item(),
-        'start': loss_start.item(),
-        'end': loss_end.item(),
-        'total': total_loss.item()
+        "class": loss_class.item(),
+        "start": loss_start.item(),
+        "end": loss_end.item(),
+        "total": total_loss.item(),
     }
 
     return total_loss, loss_dict

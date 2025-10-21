@@ -7,7 +7,6 @@ import pandas as pd
 import pandera as pa
 from pandera import Column, DataFrameSchema
 
-
 # Define the canonical training data schema
 TrainingDataSchema = DataFrameSchema(
     {
@@ -46,7 +45,7 @@ TrainingDataSchema = DataFrameSchema(
         ),
     },
     strict=False,  # Allow additional columns
-    coerce=True,   # Coerce column types if possible
+    coerce=True,  # Coerce column types if possible
 )
 
 

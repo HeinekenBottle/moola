@@ -1,22 +1,58 @@
-# Moola: LSTM Optimization for Time Series Classification
+# MOOLA — Production ML Pipeline for NQ Futures Pattern Classification
 
-Moola is a production-grade ML pipeline for binary classification of financial market patterns (consolidation vs. retracement) using BiLSTM pre-training and ensemble methods. Designed for small datasets (89-105 labeled samples) with adversarial class imbalance.
+Production-grade ML pipeline for binary classification of financial patterns (consolidation vs. retracement) in NQ futures using BiLSTM pre-training. Designed for small datasets (33-200 labeled samples) with strict workflow constraints.
+
+## Stones Doctrine (Non-Negotiable)
+
+- **Pointer**: Center+Length (Huber δ≈0.08)
+- **Loss**: Uncertainty-weighted (Kendall) — NO manual λ
+- **Dropout**: recurrent 0.6–0.7, dense 0.4–0.5, input 0.2–0.3
+- **Augment**: jitter σ=0.03 + magnitude-warp σ=0.2 (×3, on-the-fly)
+- **Uncertainty**: MC Dropout 50–100 + Temperature Scaling
+- **Gates**: Hit@±3 ≥60, F1-macro ≥0.50, ECE <0.10, Joint ≥40
+- **Input**: [B,105,11] single canonical schema
+
+## Stones Collection (Production SKUs)
+
+| SKU | Codename | Description |
+|-----|----------|-------------|
+| `moola-lstm-m-v1.0` | **Jade** | Production BiLSTM with multi-task learning |
+| `moola-preenc-fr-s-v1.0` | **Sapphire** | Frozen encoder transfer learning |
+| `moola-preenc-ad-m-v1.0` | **Opal** | Adaptive fine-tuning transfer learning |
 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies (one-time)
+# Install dependencies (one-time)
 pip install -r requirements.txt
 pre-commit install
 
-# 2. Train baseline SimpleLSTM locally
-python -m moola.cli train --model simple_lstm --device cpu --epochs 60
+# Train Jade (production model)
+make train-jade DEVICE=cuda EPOCHS=60
 
-# 3. Or run full pre-training → fine-tuning pipeline on RunPod via SSH
-ssh -i ~/.ssh/runpod_key ubuntu@YOUR_RUNPOD_IP
-cd /workspace/moola
-python -m moola.cli pretrain-bilstm --n-epochs 50 --device cuda
+# Train all Stones models
+make stones DEVICE=cuda
+
+# Evaluate with gates
+make eval
+
+# Generate report
+make report
 ```
+
+See [MODEL_REGISTRY.md](src/moola/models/MODEL_REGISTRY.md) for full documentation.
+
+## Documentation
+
+**Core Documentation** (in this repository):
+- `README.md` — This file (quick start and overview)
+- `CLAUDE.md` — Project context for AI assistants
+- `src/moola/models/MODEL_REGISTRY.md` — Stones SKU documentation
+
+**Extended Documentation** (archived):
+- Phase summaries, implementation guides, and research notes are archived in `../moola_docs_archive/`
+- Legacy code and experimental models are archived in `../moola_legacy_20251021_193518/`
+- Databento utilities are in `../databento/`
 
 ## What's Working
 

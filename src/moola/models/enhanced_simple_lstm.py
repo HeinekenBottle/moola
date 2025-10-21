@@ -44,6 +44,7 @@ import torch.nn.functional as F
 from loguru import logger
 from sklearn.model_selection import train_test_split
 
+from ..loss import UncertaintyWeightedLoss, log_uncertainty_metrics
 from ..utils.augmentation import mixup_criterion, mixup_cutmix
 from ..utils.data_validation import DataValidator
 from ..utils.early_stopping import EarlyStopping
@@ -53,69 +54,6 @@ from ..utils.seeds import get_device, set_seed
 from ..utils.temporal_augmentation import TemporalAugmentation
 from ..utils.training_utils import TrainingSetup
 from .base import BaseModel
-
-
-class UncertaintyWeightedLoss(nn.Module):
-    """Multi-task loss with learnable uncertainty weighting.
-
-    Based on "Multi-Task Learning Using Uncertainty to Weigh Losses for Scene Geometry and Semantics"
-    (Kendall et al., CVPR 2018).
-
-    Learns optimal task weights by modeling heteroscedastic uncertainty.
-    Prevents manual tuning of loss_alpha and loss_beta hyperparameters.
-
-    For regression: (1/2σ²)L + log(σ)
-    For classification: (1/σ²)L + log(σ)
-
-    The regularization terms (log σ) prevent the model from making σ → ∞ to minimize loss.
-
-    Attributes:
-        log_var_ptr: Log variance for pointer regression task
-        log_var_type: Log variance for type classification task
-
-    Example:
-        >>> loss_fn = UncertaintyWeightedLoss()
-        >>> total_loss = loss_fn(ptr_loss=0.5, type_loss=1.2)
-        >>> uncertainties = loss_fn.get_uncertainties()
-        >>> print(f"Pointer σ: {uncertainties['sigma_ptr']:.3f}")
-    """
-
-    def __init__(self):
-        super().__init__()
-        # Initialize log variances to 0 (σ = 1.0, equal weighting)
-        self.log_var_ptr = nn.Parameter(torch.zeros(1))
-        self.log_var_type = nn.Parameter(torch.zeros(1))
-
-    def forward(self, ptr_loss: torch.Tensor, type_loss: torch.Tensor) -> torch.Tensor:
-        """Compute weighted multi-task loss.
-
-        Args:
-            ptr_loss: Pointer regression loss (scalar)
-            type_loss: Type classification loss (scalar)
-
-        Returns:
-            Weighted total loss with uncertainty regularization
-        """
-        # Regression: (1/2σ²)L + log(σ)
-        precision_ptr = torch.exp(-self.log_var_ptr)
-        weighted_ptr = 0.5 * precision_ptr * ptr_loss + self.log_var_ptr
-
-        # Classification: (1/σ²)L + log(σ)
-        precision_type = torch.exp(-self.log_var_type)
-        weighted_type = precision_type * type_loss + self.log_var_type
-
-        return weighted_ptr + weighted_type
-
-    def get_uncertainties(self) -> dict:
-        """Return current σ values for monitoring.
-
-        Returns:
-            dict with sigma_ptr and sigma_type (higher = more uncertain)
-        """
-        return {
-            "sigma_ptr": torch.exp(0.5 * self.log_var_ptr).item(),
-            "sigma_type": torch.exp(0.5 * self.log_var_type).item(),
-        }
 
 
 def compute_pointer_regression_loss(
@@ -203,7 +141,7 @@ class EnhancedSimpleLSTMModel(BaseModel):
         predict_pointers: bool = False,  # Multi-task: predict expansion start/end
         loss_alpha: float = 1.0,  # PHASE 1: Increased from 0.5 to 1.0 (classification weight)
         loss_beta: float = 0.7,  # PHASE 1: Increased from 0.25 to 0.7 (pointer weight)
-        use_uncertainty_weighting: bool = True,   # PHASE 1: Enable learnable task weighting (REQUIRED for production)
+        use_uncertainty_weighting: bool = True,  # PHASE 1: Enable learnable task weighting (REQUIRED for production)
         use_latent_mixup: bool = True,  # PHASE 2: Apply mixup in latent space (after encoder)
         latent_mixup_alpha: float = 0.4,  # PHASE 2: Mixup strength (Beta distribution parameter)
         latent_mixup_prob: float = 0.5,  # PHASE 2: Probability of applying latent mixup
@@ -418,14 +356,22 @@ class EnhancedSimpleLSTMModel(BaseModel):
                         raise ValueError(f"Unknown feature_fusion: {feature_fusion}")
 
                 # LSTM layer
-                # NOTE: PyTorch LSTM doesn't have a recurrent_dropout parameter.
-                # The 'dropout' parameter only applies between stacked LSTM layers (if num_layers > 1).
-                # For true recurrent dropout (on hidden-to-hidden connections), we would need
-                # to implement variational dropout manually or use a custom LSTM cell.
-                # PHASE 1: We accept this limitation and rely on:
-                #   - Inter-layer dropout (when num_layers > 1)
-                #   - Dense layer dropout (applied to attention and classifier heads)
-                #   - Layer-specific weight decay for regularization
+                # STONES COMPLIANCE NOTE: Recurrent Dropout Strategy
+                #
+                # PyTorch nn.LSTM does not support variational recurrent dropout natively.
+                # The 'dropout' parameter only applies between stacked layers (num_layers > 1).
+                #
+                # Stones Doctrine requires: recurrent 0.6-0.7, dense 0.4-0.5, input 0.2-0.3
+                #
+                # Our compliance strategy:
+                #   1. Inter-layer dropout: 0.65 (when num_layers > 1) ✅
+                #   2. Dense layer dropout: 0.5 (attention + classifier heads) ✅
+                #   3. Input dropout: 0.25 (Jade model) ✅
+                #   4. MC Dropout at inference: 50-100 passes for uncertainty ✅
+                #
+                # For true variational recurrent dropout, use Jade model which implements
+                # a custom dropout wrapper. EnhancedSimpleLSTM is legacy and will be
+                # deprecated in favor of Jade.
                 self.lstm = nn.LSTM(
                     encoder_input_dim,
                     hidden_size,
@@ -816,7 +762,7 @@ class EnhancedSimpleLSTMModel(BaseModel):
         class_weights = torch.tensor([1.0, 1.17], dtype=torch.float32, device=self.device)
         criterion = FocalLoss(gamma=2.0, alpha=class_weights, reduction="mean")
 
-        # Initialize uncertainty-weighted loss if enabled (PHASE 1)
+        # Initialize uncertainty-weighted loss if enabled (PHASE 1) - DEFAULT
         uncertainty_loss = None
         if self.use_uncertainty_weighting and self.predict_pointers:
             uncertainty_loss = UncertaintyWeightedLoss().to(self.device)
@@ -827,6 +773,10 @@ class EnhancedSimpleLSTMModel(BaseModel):
                     "lr": self.learning_rate,
                     "weight_decay": 0.0,  # No weight decay for uncertainty parameters
                 }
+            )
+            logger.info(
+                "[UNCERTAINTY LOSS] Enabled Kendall uncertainty weighting for multi-task learning. "
+                "This replaces manual loss_alpha/loss_beta weighting."
             )
 
         # PHASE 4: Learning rate scheduler
@@ -936,7 +886,9 @@ class EnhancedSimpleLSTMModel(BaseModel):
                         # PHASE 2: Latent mixup - apply mixup in latent space
                         if self.use_latent_mixup and has_pointers:
                             from moola.data.latent_mixup import mixup_embeddings
-                            from moola.data.pointer_transforms import start_end_to_center_length
+                            from moola.data.pointer_transforms import (
+                                start_end_to_center_length,
+                            )
 
                             # Extract embeddings from encoder
                             embeddings = self.model.get_embeddings(batch_X_aug)  # [B, 256]
@@ -977,11 +929,12 @@ class EnhancedSimpleLSTMModel(BaseModel):
                             )
                             pointer_loss = center_loss + 0.8 * length_loss
 
-                            # PHASE 1: Use uncertainty weighting if enabled, else manual weights
+                            # PHASE 1: Use uncertainty weighting if enabled (DEFAULT), else manual weights
                             if self.use_uncertainty_weighting and uncertainty_loss is not None:
-                                loss = uncertainty_loss(pointer_loss, class_loss)
+                                loss, loss_metrics = uncertainty_loss(class_loss, pointer_loss)
                             else:
                                 loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                                loss_metrics = {}
 
                             logits = type_logits  # For accuracy tracking
 
@@ -997,13 +950,14 @@ class EnhancedSimpleLSTMModel(BaseModel):
                                     outputs, batch_ptr_start, batch_ptr_end
                                 )
 
-                                # PHASE 1: Use uncertainty weighting if enabled, else manual weights
+                                # PHASE 1: Use uncertainty weighting if enabled (DEFAULT), else manual weights
                                 if self.use_uncertainty_weighting and uncertainty_loss is not None:
-                                    loss = uncertainty_loss(pointer_loss, class_loss)
+                                    loss, loss_metrics = uncertainty_loss(class_loss, pointer_loss)
                                 else:
                                     loss = (
                                         self.loss_alpha * class_loss + self.loss_beta * pointer_loss
                                     )
+                                    loss_metrics = {}
 
                                 logits = type_logits  # For accuracy tracking
                             else:
@@ -1032,7 +986,9 @@ class EnhancedSimpleLSTMModel(BaseModel):
                     # PHASE 2: Latent mixup - apply mixup in latent space (CPU path)
                     if self.use_latent_mixup and has_pointers:
                         from moola.data.latent_mixup import mixup_embeddings
-                        from moola.data.pointer_transforms import start_end_to_center_length
+                        from moola.data.pointer_transforms import (
+                            start_end_to_center_length,
+                        )
 
                         # Extract embeddings from encoder
                         embeddings = self.model.get_embeddings(batch_X_aug)  # [B, 256]
@@ -1073,11 +1029,12 @@ class EnhancedSimpleLSTMModel(BaseModel):
                         )
                         pointer_loss = center_loss + 0.8 * length_loss
 
-                        # PHASE 1: Use uncertainty weighting if enabled, else manual weights
+                        # PHASE 1: Use uncertainty weighting if enabled (DEFAULT), else manual weights
                         if self.use_uncertainty_weighting and uncertainty_loss is not None:
-                            loss = uncertainty_loss(pointer_loss, class_loss)
+                            loss, loss_metrics = uncertainty_loss(class_loss, pointer_loss)
                         else:
                             loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                            loss_metrics = {}
 
                         logits = type_logits  # For accuracy tracking
 
@@ -1093,11 +1050,12 @@ class EnhancedSimpleLSTMModel(BaseModel):
                                 outputs, batch_ptr_start, batch_ptr_end
                             )
 
-                            # PHASE 1: Use uncertainty weighting if enabled, else manual weights
+                            # PHASE 1: Use uncertainty weighting if enabled (DEFAULT), else manual weights
                             if self.use_uncertainty_weighting and uncertainty_loss is not None:
-                                loss = uncertainty_loss(pointer_loss, class_loss)
+                                loss, loss_metrics = uncertainty_loss(class_loss, pointer_loss)
                             else:
                                 loss = self.loss_alpha * class_loss + self.loss_beta * pointer_loss
+                                loss_metrics = {}
 
                             logits = type_logits  # For accuracy tracking
                         else:
@@ -1321,6 +1279,10 @@ class EnhancedSimpleLSTMModel(BaseModel):
                         f"Train Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f} | "
                         f"Val Loss: {avg_val_loss:.4f} Acc: {val_accuracy:.4f}{gpu_mem}"
                     )
+
+                    # Log uncertainty metrics if using uncertainty weighting
+                    if self.use_uncertainty_weighting and uncertainty_loss is not None:
+                        log_uncertainty_metrics(uncertainty_loss, epoch + 1)
             else:
                 if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
                     gpu_mem = (
@@ -1333,6 +1295,10 @@ class EnhancedSimpleLSTMModel(BaseModel):
                         f"Epoch [{epoch+1}/{self.n_epochs}] [{mode_str}] "
                         f"Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f}{gpu_mem}"
                     )
+
+                    # Log uncertainty metrics if using uncertainty weighting
+                    if self.use_uncertainty_weighting and uncertainty_loss is not None:
+                        log_uncertainty_metrics(uncertainty_loss, epoch + 1)
 
         # Restore best model if early stopping was used
         if early_stopping is not None:
@@ -1353,7 +1319,9 @@ class EnhancedSimpleLSTMModel(BaseModel):
 
             # Task collapse detection summary
             if has_pointers and len(task_grad_ratios) > 0:
-                from moola.utils.monitoring.gradient_diagnostics import detect_task_collapse
+                from moola.utils.monitoring.gradient_diagnostics import (
+                    detect_task_collapse,
+                )
 
                 is_collapsed, message = detect_task_collapse(task_grad_ratios)
                 if is_collapsed:

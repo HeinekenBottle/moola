@@ -30,10 +30,10 @@ from loguru import logger
 
 from ..schemas import DataLineage, DataVersion
 
-
 # ============================================================================
 # LINEAGE TRACKER
 # ============================================================================
+
 
 class LineageTracker:
     """Track data lineage and transformations."""
@@ -58,7 +58,7 @@ class LineageTracker:
         rows_out: int,
         params: Optional[Dict[str, Any]] = None,
         parent_datasets: Optional[List[str]] = None,
-        executed_by: str = "system"
+        executed_by: str = "system",
     ) -> DataLineage:
         """Log a data transformation.
 
@@ -98,7 +98,7 @@ class LineageTracker:
             executed_by=executed_by,
             executed_at=datetime.utcnow(),
             execution_time_seconds=execution_time,
-            metadata={}
+            metadata={},
         )
 
         # Store in graph
@@ -162,8 +162,8 @@ class LineageTracker:
             return
 
         # Build graph
-        dot = graphviz.Digraph(comment=f'Lineage for {dataset_id}')
-        dot.attr(rankdir='LR')
+        dot = graphviz.Digraph(comment=f"Lineage for {dataset_id}")
+        dot.attr(rankdir="LR")
 
         # Get all related datasets
         ancestors = self.get_ancestors(dataset_id)
@@ -187,10 +187,10 @@ class LineageTracker:
 
         # Render
         if output_path:
-            dot.render(output_path, format='png', cleanup=True)
+            dot.render(output_path, format="png", cleanup=True)
             logger.info(f"Lineage visualization saved: {output_path}")
         else:
-            dot.render('lineage', view=True, cleanup=True)
+            dot.render("lineage", view=True, cleanup=True)
 
     def export_lineage_report(self, output_path: Path):
         """Export complete lineage graph as JSON.
@@ -201,14 +201,14 @@ class LineageTracker:
         report = {
             "generated_at": datetime.utcnow().isoformat(),
             "total_datasets": len(self.lineage_graph),
-            "lineage": {}
+            "lineage": {},
         }
 
         for dataset_id, lineage in self.lineage_graph.items():
-            report["lineage"][dataset_id] = lineage.model_dump(mode='json')
+            report["lineage"][dataset_id] = lineage.model_dump(mode="json")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(report, f, indent=2, default=str)
 
         logger.info(f"Lineage report exported: {output_path}")
@@ -219,8 +219,8 @@ class LineageTracker:
             return ""
 
         sha256 = hashlib.sha256()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
                 sha256.update(chunk)
 
         return sha256.hexdigest()
@@ -228,8 +228,8 @@ class LineageTracker:
     def _save_lineage(self, lineage: DataLineage):
         """Save lineage to disk."""
         lineage_file = self.lineage_dir / f"{lineage.dataset_id}.json"
-        with open(lineage_file, 'w') as f:
-            json.dump(lineage.model_dump(mode='json'), f, indent=2, default=str)
+        with open(lineage_file, "w") as f:
+            json.dump(lineage.model_dump(mode="json"), f, indent=2, default=str)
 
     def _load_lineage(self):
         """Load existing lineage from disk."""
@@ -238,7 +238,7 @@ class LineageTracker:
 
         for lineage_file in self.lineage_dir.glob("*.json"):
             try:
-                with open(lineage_file, 'r') as f:
+                with open(lineage_file, "r") as f:
                     data = json.load(f)
                     lineage = DataLineage(**data)
                     self.lineage_graph[lineage.dataset_id] = lineage
@@ -251,6 +251,7 @@ class LineageTracker:
 # ============================================================================
 # VERSION CONTROL
 # ============================================================================
+
 
 class DataVersionControl:
     """Data version control with DVC integration."""
@@ -274,7 +275,7 @@ class DataVersionControl:
         transformation: Optional[str] = None,
         created_by: str = "automated_pipeline",
         tags: Optional[List[str]] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> DataVersion:
         """Create a new data version.
 
@@ -301,10 +302,11 @@ class DataVersionControl:
         num_samples = len(df)
 
         # Infer feature shape
-        if 'features' in df.columns:
-            sample = df['features'].iloc[0]
+        if "features" in df.columns:
+            sample = df["features"].iloc[0]
             if isinstance(sample, (list, np.ndarray)):
                 import numpy as np
+
                 arr = np.vstack(sample) if isinstance(sample[0], (list, np.ndarray)) else sample
                 feature_shape = tuple(arr.shape)
             else:
@@ -335,7 +337,7 @@ class DataVersionControl:
             transformation_applied=transformation,
             created_by=created_by,
             tags=tags or [],
-            notes=notes
+            notes=notes,
         )
 
         # Add to registry
@@ -352,11 +354,7 @@ class DataVersionControl:
 
         return version
 
-    def get_version(
-        self,
-        dataset_name: str,
-        version_id: str
-    ) -> Optional[DataVersion]:
+    def get_version(self, dataset_name: str, version_id: str) -> Optional[DataVersion]:
         """Get specific version of dataset."""
         versions = self.versions.get(dataset_name, [])
         for version in versions:
@@ -371,11 +369,7 @@ class DataVersionControl:
             return None
 
         # Sort by created_at descending
-        sorted_versions = sorted(
-            versions,
-            key=lambda v: v.created_at,
-            reverse=True
-        )
+        sorted_versions = sorted(versions, key=lambda v: v.created_at, reverse=True)
         return sorted_versions[0]
 
     def list_versions(self, dataset_name: str) -> List[DataVersion]:
@@ -385,8 +379,8 @@ class DataVersionControl:
     def _compute_dvc_hash(self, file_path: Path) -> str:
         """Compute DVC-compatible MD5 hash."""
         md5 = hashlib.md5()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
                 md5.update(chunk)
         return md5.hexdigest()
 
@@ -396,8 +390,8 @@ class DataVersionControl:
         version_dir.mkdir(parents=True, exist_ok=True)
 
         metadata_file = version_dir / "metadata.json"
-        with open(metadata_file, 'w') as f:
-            json.dump(version.model_dump(mode='json'), f, indent=2, default=str)
+        with open(metadata_file, "w") as f:
+            json.dump(version.model_dump(mode="json"), f, indent=2, default=str)
 
     def _load_versions(self):
         """Load existing versions from disk."""
@@ -418,7 +412,7 @@ class DataVersionControl:
                 metadata_file = version_dir / "metadata.json"
                 if metadata_file.exists():
                     try:
-                        with open(metadata_file, 'r') as f:
+                        with open(metadata_file, "r") as f:
                             data = json.load(f)
                             version = DataVersion(**data)
                             self.versions[dataset_name].append(version)

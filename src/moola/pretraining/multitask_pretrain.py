@@ -74,11 +74,7 @@ class MultiTaskBiLSTM(nn.Module):
     """
 
     def __init__(
-        self,
-        input_dim: int = 11,
-        hidden_dim: int = 128,
-        num_layers: int = 2,
-        dropout: float = 0.3
+        self, input_dim: int = 11, hidden_dim: int = 128, num_layers: int = 2, dropout: float = 0.3
     ):
         super().__init__()
 
@@ -95,7 +91,7 @@ class MultiTaskBiLSTM(nn.Module):
             num_layers=num_layers,
             bidirectional=True,
             batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0
+            dropout=dropout if num_layers > 1 else 0.0,
         )
 
         # Layer normalization for training stability
@@ -109,7 +105,7 @@ class MultiTaskBiLSTM(nn.Module):
             nn.Linear(hidden_dim * 2, 64),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(64, 2)  # Binary classification
+            nn.Linear(64, 2),  # Binary classification
         )
 
         # Task 2: Swing type (high/low/continuation) - Medium importance
@@ -117,7 +113,7 @@ class MultiTaskBiLSTM(nn.Module):
             nn.Linear(hidden_dim * 2, 64),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(64, 3)  # 3-class classification
+            nn.Linear(64, 3),  # 3-class classification
         )
 
         # Task 3: Candle pattern - Least important but useful
@@ -125,7 +121,7 @@ class MultiTaskBiLSTM(nn.Module):
             nn.Linear(hidden_dim * 2, 64),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(64, 4)  # 4-class classification
+            nn.Linear(64, 4),  # 4-class classification
         )
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -157,12 +153,12 @@ class MultiTaskBiLSTM(nn.Module):
             Dictionary with encoder LSTM state dict and hyperparameters
         """
         return {
-            'encoder_lstm': self.encoder_lstm.state_dict(),
-            'hyperparams': {
-                'input_dim': self.input_dim,
-                'hidden_dim': self.hidden_dim,
-                'num_layers': self.num_layers,
-            }
+            "encoder_lstm": self.encoder_lstm.state_dict(),
+            "hyperparams": {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "num_layers": self.num_layers,
+            },
         }
 
 
@@ -196,7 +192,7 @@ class MultiTaskPretrainer:
         learning_rate: float = 1e-3,
         batch_size: int = 512,
         device: str = "cuda",
-        seed: int = 1337
+        seed: int = 1337,
     ):
         set_seed(seed)
         self.device = get_device(device)
@@ -213,27 +209,24 @@ class MultiTaskPretrainer:
 
         # Build model
         self.model = MultiTaskBiLSTM(
-            input_dim=input_dim,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            dropout=dropout
+            input_dim=input_dim, hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout
         ).to(self.device)
 
         # Optimizer with weight decay
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=learning_rate,
-            weight_decay=1e-4
+            self.model.parameters(), lr=learning_rate, weight_decay=1e-4
         )
 
         # LR scheduler (will be initialized in pretrain())
         self.scheduler = None
 
         # Loss functions for each task
-        self.criterion = nn.CrossEntropyLoss(reduction='mean')
+        self.criterion = nn.CrossEntropyLoss(reduction="mean")
 
         logger.info(f"MultiTaskBiLSTM initialized | hidden_dim={hidden_dim} | device={self.device}")
-        logger.info(f"Task weights: expansion={task_weights[0]} swing={task_weights[1]} candle={task_weights[2]}")
+        logger.info(
+            f"Task weights: expansion={task_weights[0]} swing={task_weights[1]} candle={task_weights[2]}"
+        )
 
     def pretrain(
         self,
@@ -245,7 +238,7 @@ class MultiTaskPretrainer:
         val_split: float = 0.1,
         patience: int = 10,
         save_path: Optional[Path] = None,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> dict[str, list]:
         """Pre-train encoder on multi-task objectives.
 
@@ -264,22 +257,20 @@ class MultiTaskPretrainer:
             history: Dictionary with training metrics
         """
         if verbose:
-            logger.info("="*70)
+            logger.info("=" * 70)
             logger.info("MULTI-TASK BILSTM PRE-TRAINING")
-            logger.info("="*70)
+            logger.info("=" * 70)
             logger.info(f"Dataset size: {len(X_unlabeled)} samples")
             logger.info(f"Input shape: {X_unlabeled.shape}")
             logger.info(f"Task weights: {self.task_weights}")
             logger.info(f"Batch size: {self.batch_size}")
             logger.info(f"Epochs: {n_epochs}")
             logger.info(f"Device: {self.device}")
-            logger.info("="*70)
+            logger.info("=" * 70)
 
         # Initialize LR scheduler
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer,
-            T_max=n_epochs,
-            eta_min=1e-5
+            self.optimizer, T_max=n_epochs, eta_min=1e-5
         )
 
         # Split train/val
@@ -315,47 +306,41 @@ class MultiTaskPretrainer:
         # Import optimized DataLoader kwargs
         try:
             from ..config.performance_config import get_optimized_dataloader_kwargs
+
             dataloader_kwargs = get_optimized_dataloader_kwargs(is_training=True)
         except ImportError:
             dataloader_kwargs = {
-                'num_workers': 8 if self.device.type == "cuda" else 0,
-                'pin_memory': True if self.device.type == "cuda" else False,
-                'prefetch_factor': 2 if self.device.type == "cuda" else None,
-                'persistent_workers': True if self.device.type == "cuda" else False,
+                "num_workers": 8 if self.device.type == "cuda" else 0,
+                "pin_memory": True if self.device.type == "cuda" else False,
+                "prefetch_factor": 2 if self.device.type == "cuda" else None,
+                "persistent_workers": True if self.device.type == "cuda" else False,
             }
             dataloader_kwargs = {k: v for k, v in dataloader_kwargs.items() if v is not None}
 
         train_loader = torch.utils.data.DataLoader(
-            train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            **dataloader_kwargs
+            train_dataset, batch_size=self.batch_size, shuffle=True, **dataloader_kwargs
         )
 
         # Early stopping
-        early_stopping = EarlyStopping(
-            patience=patience,
-            mode="min",
-            verbose=verbose
-        )
+        early_stopping = EarlyStopping(patience=patience, mode="min", verbose=verbose)
 
         # Training history
         history = {
-            'train_loss': [],
-            'val_loss': [],
-            'train_expansion_loss': [],
-            'train_swing_loss': [],
-            'train_candle_loss': [],
-            'val_expansion_loss': [],
-            'val_swing_loss': [],
-            'val_candle_loss': [],
-            'train_expansion_acc': [],
-            'train_swing_acc': [],
-            'train_candle_acc': [],
-            'val_expansion_acc': [],
-            'val_swing_acc': [],
-            'val_candle_acc': [],
-            'learning_rate': []
+            "train_loss": [],
+            "val_loss": [],
+            "train_expansion_loss": [],
+            "train_swing_loss": [],
+            "train_candle_loss": [],
+            "val_expansion_loss": [],
+            "val_swing_loss": [],
+            "val_candle_loss": [],
+            "train_expansion_acc": [],
+            "train_swing_acc": [],
+            "train_candle_acc": [],
+            "val_expansion_acc": [],
+            "val_swing_acc": [],
+            "val_candle_acc": [],
+            "learning_rate": [],
         }
 
         # Setup AMP scaler for mixed precision training
@@ -364,11 +349,14 @@ class MultiTaskPretrainer:
         if use_amp:
             try:
                 from ..config.performance_config import get_amp_scaler
+
                 scaler = get_amp_scaler()
                 if scaler and verbose:
-                    logger.info("[PERFORMANCE] Using automatic mixed precision (AMP) for 1.5-2× speedup")
+                    logger.info(
+                        "[PERFORMANCE] Using automatic mixed precision (AMP) for 1.5-2× speedup"
+                    )
             except ImportError:
-                scaler = torch.amp.GradScaler('cuda')
+                scaler = torch.amp.GradScaler("cuda")
                 if verbose:
                     logger.info("[PERFORMANCE] Using AMP with default settings")
 
@@ -387,11 +375,7 @@ class MultiTaskPretrainer:
             train_candle_correct = 0
             train_total = 0
 
-            pbar = tqdm(
-                train_loader,
-                desc=f"Epoch {epoch+1}/{n_epochs}",
-                disable=not verbose
-            )
+            pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{n_epochs}", disable=not verbose)
 
             for batch_X, batch_exp, batch_swing, batch_candle in pbar:
                 batch_X = batch_X.to(self.device, non_blocking=True)
@@ -403,7 +387,7 @@ class MultiTaskPretrainer:
 
                 # Forward pass with optional AMP
                 if scaler:
-                    with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
                         exp_logits, swing_logits, candle_logits = self.model(batch_X)
 
                         # Compute per-task losses
@@ -411,23 +395,20 @@ class MultiTaskPretrainer:
                         B, T, _ = exp_logits.shape
 
                         exp_loss = self.criterion(
-                            exp_logits.reshape(B*T, -1),
-                            batch_exp.reshape(B*T)
+                            exp_logits.reshape(B * T, -1), batch_exp.reshape(B * T)
                         )
                         swing_loss = self.criterion(
-                            swing_logits.reshape(B*T, -1),
-                            batch_swing.reshape(B*T)
+                            swing_logits.reshape(B * T, -1), batch_swing.reshape(B * T)
                         )
                         candle_loss = self.criterion(
-                            candle_logits.reshape(B*T, -1),
-                            batch_candle.reshape(B*T)
+                            candle_logits.reshape(B * T, -1), batch_candle.reshape(B * T)
                         )
 
                         # Multi-task loss: weighted sum
                         loss = (
-                            self.task_weights[0] * exp_loss +
-                            self.task_weights[1] * swing_loss +
-                            self.task_weights[2] * candle_loss
+                            self.task_weights[0] * exp_loss
+                            + self.task_weights[1] * swing_loss
+                            + self.task_weights[2] * candle_loss
                         )
 
                     # Backward pass with gradient scaling
@@ -441,22 +422,19 @@ class MultiTaskPretrainer:
                     B, T, _ = exp_logits.shape
 
                     exp_loss = self.criterion(
-                        exp_logits.reshape(B*T, -1),
-                        batch_exp.reshape(B*T)
+                        exp_logits.reshape(B * T, -1), batch_exp.reshape(B * T)
                     )
                     swing_loss = self.criterion(
-                        swing_logits.reshape(B*T, -1),
-                        batch_swing.reshape(B*T)
+                        swing_logits.reshape(B * T, -1), batch_swing.reshape(B * T)
                     )
                     candle_loss = self.criterion(
-                        candle_logits.reshape(B*T, -1),
-                        batch_candle.reshape(B*T)
+                        candle_logits.reshape(B * T, -1), batch_candle.reshape(B * T)
                     )
 
                     loss = (
-                        self.task_weights[0] * exp_loss +
-                        self.task_weights[1] * swing_loss +
-                        self.task_weights[2] * candle_loss
+                        self.task_weights[0] * exp_loss
+                        + self.task_weights[1] * swing_loss
+                        + self.task_weights[2] * candle_loss
                     )
 
                     loss.backward()
@@ -480,11 +458,13 @@ class MultiTaskPretrainer:
                 train_total += B * T
 
                 # Update progress bar
-                pbar.set_postfix({
-                    'loss': f"{loss.item():.4f}",
-                    'exp_acc': f"{train_exp_correct/train_total:.3f}",
-                    'lr': f"{self.scheduler.get_last_lr()[0]:.6f}"
-                })
+                pbar.set_postfix(
+                    {
+                        "loss": f"{loss.item():.4f}",
+                        "exp_acc": f"{train_exp_correct/train_total:.3f}",
+                        "lr": f"{self.scheduler.get_last_lr()[0]:.6f}",
+                    }
+                )
 
             # Update learning rate
             self.scheduler.step()
@@ -505,35 +485,36 @@ class MultiTaskPretrainer:
             with torch.no_grad():
                 # Process validation data in batches
                 for i in range(0, len(X_val), self.batch_size):
-                    batch_X = X_val[i:i+self.batch_size].to(self.device, non_blocking=True)
-                    batch_exp = exp_val[i:i+self.batch_size].to(self.device, non_blocking=True)
-                    batch_swing = swing_val[i:i+self.batch_size].to(self.device, non_blocking=True)
-                    batch_candle = candle_val[i:i+self.batch_size].to(self.device, non_blocking=True)
+                    batch_X = X_val[i : i + self.batch_size].to(self.device, non_blocking=True)
+                    batch_exp = exp_val[i : i + self.batch_size].to(self.device, non_blocking=True)
+                    batch_swing = swing_val[i : i + self.batch_size].to(
+                        self.device, non_blocking=True
+                    )
+                    batch_candle = candle_val[i : i + self.batch_size].to(
+                        self.device, non_blocking=True
+                    )
 
                     # Forward pass with optional AMP
                     if scaler:
-                        with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                        with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
                             exp_logits, swing_logits, candle_logits = self.model(batch_X)
 
                             B, T, _ = exp_logits.shape
 
                             exp_loss = self.criterion(
-                                exp_logits.reshape(B*T, -1),
-                                batch_exp.reshape(B*T)
+                                exp_logits.reshape(B * T, -1), batch_exp.reshape(B * T)
                             )
                             swing_loss = self.criterion(
-                                swing_logits.reshape(B*T, -1),
-                                batch_swing.reshape(B*T)
+                                swing_logits.reshape(B * T, -1), batch_swing.reshape(B * T)
                             )
                             candle_loss = self.criterion(
-                                candle_logits.reshape(B*T, -1),
-                                batch_candle.reshape(B*T)
+                                candle_logits.reshape(B * T, -1), batch_candle.reshape(B * T)
                             )
 
                             loss = (
-                                self.task_weights[0] * exp_loss +
-                                self.task_weights[1] * swing_loss +
-                                self.task_weights[2] * candle_loss
+                                self.task_weights[0] * exp_loss
+                                + self.task_weights[1] * swing_loss
+                                + self.task_weights[2] * candle_loss
                             )
                     else:
                         exp_logits, swing_logits, candle_logits = self.model(batch_X)
@@ -541,22 +522,19 @@ class MultiTaskPretrainer:
                         B, T, _ = exp_logits.shape
 
                         exp_loss = self.criterion(
-                            exp_logits.reshape(B*T, -1),
-                            batch_exp.reshape(B*T)
+                            exp_logits.reshape(B * T, -1), batch_exp.reshape(B * T)
                         )
                         swing_loss = self.criterion(
-                            swing_logits.reshape(B*T, -1),
-                            batch_swing.reshape(B*T)
+                            swing_logits.reshape(B * T, -1), batch_swing.reshape(B * T)
                         )
                         candle_loss = self.criterion(
-                            candle_logits.reshape(B*T, -1),
-                            batch_candle.reshape(B*T)
+                            candle_logits.reshape(B * T, -1), batch_candle.reshape(B * T)
                         )
 
                         loss = (
-                            self.task_weights[0] * exp_loss +
-                            self.task_weights[1] * swing_loss +
-                            self.task_weights[2] * candle_loss
+                            self.task_weights[0] * exp_loss
+                            + self.task_weights[1] * swing_loss
+                            + self.task_weights[2] * candle_loss
                         )
 
                     val_losses.append(loss.item())
@@ -591,29 +569,33 @@ class MultiTaskPretrainer:
             current_lr = self.scheduler.get_last_lr()[0]
 
             # Record history
-            history['train_loss'].append(avg_train_loss)
-            history['val_loss'].append(avg_val_loss)
-            history['train_expansion_loss'].append(np.mean(train_exp_losses))
-            history['train_swing_loss'].append(np.mean(train_swing_losses))
-            history['train_candle_loss'].append(np.mean(train_candle_losses))
-            history['val_expansion_loss'].append(np.mean(val_exp_losses))
-            history['val_swing_loss'].append(np.mean(val_swing_losses))
-            history['val_candle_loss'].append(np.mean(val_candle_losses))
-            history['train_expansion_acc'].append(train_exp_acc)
-            history['train_swing_acc'].append(train_swing_acc)
-            history['train_candle_acc'].append(train_candle_acc)
-            history['val_expansion_acc'].append(val_exp_acc)
-            history['val_swing_acc'].append(val_swing_acc)
-            history['val_candle_acc'].append(val_candle_acc)
-            history['learning_rate'].append(current_lr)
+            history["train_loss"].append(avg_train_loss)
+            history["val_loss"].append(avg_val_loss)
+            history["train_expansion_loss"].append(np.mean(train_exp_losses))
+            history["train_swing_loss"].append(np.mean(train_swing_losses))
+            history["train_candle_loss"].append(np.mean(train_candle_losses))
+            history["val_expansion_loss"].append(np.mean(val_exp_losses))
+            history["val_swing_loss"].append(np.mean(val_swing_losses))
+            history["val_candle_loss"].append(np.mean(val_candle_losses))
+            history["train_expansion_acc"].append(train_exp_acc)
+            history["train_swing_acc"].append(train_swing_acc)
+            history["train_candle_acc"].append(train_candle_acc)
+            history["val_expansion_acc"].append(val_exp_acc)
+            history["val_swing_acc"].append(val_swing_acc)
+            history["val_candle_acc"].append(val_candle_acc)
+            history["learning_rate"].append(current_lr)
 
             # Print epoch summary
             if verbose:
                 logger.info(f"\nEpoch [{epoch+1}/{n_epochs}]")
                 logger.info(f"  Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
                 logger.info(f"  Expansion  - Train: {train_exp_acc:.3f} | Val: {val_exp_acc:.3f}")
-                logger.info(f"  Swing      - Train: {train_swing_acc:.3f} | Val: {val_swing_acc:.3f}")
-                logger.info(f"  Candle     - Train: {train_candle_acc:.3f} | Val: {val_candle_acc:.3f}")
+                logger.info(
+                    f"  Swing      - Train: {train_swing_acc:.3f} | Val: {val_swing_acc:.3f}"
+                )
+                logger.info(
+                    f"  Candle     - Train: {train_candle_acc:.3f} | Val: {val_candle_acc:.3f}"
+                )
                 logger.info(f"  LR: {current_lr:.6f}")
 
             # Early stopping check
@@ -628,9 +610,9 @@ class MultiTaskPretrainer:
         early_stopping.load_best_model(self.model)
 
         if verbose:
-            logger.info("="*70)
+            logger.info("=" * 70)
             logger.info("PRE-TRAINING COMPLETE")
-            logger.info("="*70)
+            logger.info("=" * 70)
             logger.info(f"  Final train loss: {history['train_loss'][-1]:.4f}")
             logger.info(f"  Final val loss: {history['val_loss'][-1]:.4f}")
             logger.info(f"  Best val loss: {min(history['val_loss']):.4f}")
@@ -645,7 +627,7 @@ class MultiTaskPretrainer:
                 logger.info(f"  Encoder saved: {save_path}")
 
         if verbose:
-            logger.info("="*70)
+            logger.info("=" * 70)
 
         return history
 
@@ -661,18 +643,18 @@ class MultiTaskPretrainer:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         checkpoint = {
-            'encoder_state_dict': self.model.encoder_lstm.state_dict(),
-            'hyperparams': {
-                'input_dim': self.input_dim,
-                'hidden_dim': self.hidden_dim,
-                'num_layers': self.num_layers,
-                'dropout': self.dropout,
+            "encoder_state_dict": self.model.encoder_lstm.state_dict(),
+            "hyperparams": {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "num_layers": self.num_layers,
+                "dropout": self.dropout,
             },
-            'training_config': {
-                'task_weights': self.task_weights,
-                'learning_rate': self.learning_rate,
-                'batch_size': self.batch_size,
-            }
+            "training_config": {
+                "task_weights": self.task_weights,
+                "learning_rate": self.learning_rate,
+                "batch_size": self.batch_size,
+            },
         }
 
         torch.save(checkpoint, path)
@@ -687,6 +669,6 @@ class MultiTaskPretrainer:
         checkpoint = torch.load(path, map_location=self.device)
 
         # Restore encoder weights
-        self.model.encoder_lstm.load_state_dict(checkpoint['encoder_state_dict'])
+        self.model.encoder_lstm.load_state_dict(checkpoint["encoder_state_dict"])
 
         logger.info(f"[PRETRAINING] Loaded encoder from {path}")

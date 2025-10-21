@@ -4,8 +4,9 @@ Provides metrics where BOTH tasks must be correct for a prediction to count as c
 This is critical for dual-task models where partial correctness is insufficient.
 """
 
-import numpy as np
 from typing import Dict, Tuple
+
+import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 
 
@@ -201,9 +202,10 @@ def select_best_model_by_joint_metric(
 
     for i, result in enumerate(results):
         # Check minimum thresholds
-        if result.get("pointer_hit_rate", 0) >= min_pointer_hit and result.get(
-            "type_accuracy", 0
-        ) >= min_type_acc:
+        if (
+            result.get("pointer_hit_rate", 0) >= min_pointer_hit
+            and result.get("type_accuracy", 0) >= min_type_acc
+        ):
             valid_results.append(result)
             valid_indices.append(i)
 

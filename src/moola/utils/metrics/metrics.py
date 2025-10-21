@@ -1,7 +1,14 @@
 """Metric computation utilities for model evaluation and calibration."""
 
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, log_loss, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    log_loss,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 
 def calculate_ece(y_true: np.ndarray, y_proba: np.ndarray, n_bins: int = 10) -> float:
@@ -23,8 +30,9 @@ def calculate_ece(y_true: np.ndarray, y_proba: np.ndarray, n_bins: int = 10) -> 
     y_pred_conf = np.max(y_proba, axis=1)
 
     # Convert string labels to numeric if needed
-    if y_true.dtype.kind in ['U', 'S', 'O']:  # Unicode, bytes, or object
+    if y_true.dtype.kind in ["U", "S", "O"]:  # Unicode, bytes, or object
         from sklearn.preprocessing import LabelEncoder
+
         le = LabelEncoder()
         y_true_encoded = le.fit_transform(y_true)
         y_pred_correct = (y_pred_class == y_true_encoded).astype(int)
@@ -114,36 +122,34 @@ def calculate_metrics_pack(
             - ece: Expected Calibration Error
             - log_loss: Log loss (cross-entropy)
     """
-    from sklearn.metrics import brier_score_loss, precision_recall_curve
-    from sklearn.metrics import auc as compute_auc
     import logging
+
+    from sklearn.metrics import auc as compute_auc
+    from sklearn.metrics import brier_score_loss, precision_recall_curve
 
     logger = logging.getLogger(__name__)
 
     # Basic metrics
     accuracy = accuracy_score(y_true, y_pred)
-    precision_macro = precision_score(y_true, y_pred, average='macro', zero_division=0)
-    recall_macro = recall_score(y_true, y_pred, average='macro', zero_division=0)
-    f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
+    precision_macro = precision_score(y_true, y_pred, average="macro", zero_division=0)
+    recall_macro = recall_score(y_true, y_pred, average="macro", zero_division=0)
+    f1_macro = f1_score(y_true, y_pred, average="macro", zero_division=0)
 
     # Per-class F1
     f1_per_class = f1_score(y_true, y_pred, average=None, zero_division=0).tolist()
 
     metrics = {
-        'accuracy': float(accuracy),
-        'precision_macro': float(precision_macro),
-        'recall_macro': float(recall_macro),
-        'f1_macro': float(f1_macro),
-        'f1_per_class': f1_per_class,
+        "accuracy": float(accuracy),
+        "precision_macro": float(precision_macro),
+        "recall_macro": float(recall_macro),
+        "f1_macro": float(f1_macro),
+        "f1_per_class": f1_per_class,
     }
 
     # Add class names if provided
     if class_names:
-        metrics['class_names'] = class_names
-        metrics['f1_by_class'] = {
-            name: float(f1)
-            for name, f1 in zip(class_names, f1_per_class)
-        }
+        metrics["class_names"] = class_names
+        metrics["f1_by_class"] = {name: float(f1) for name, f1 in zip(class_names, f1_per_class)}
 
     # Probability-based metrics (require y_proba)
     if y_proba is not None:
@@ -165,33 +171,33 @@ def calculate_metrics_pack(
             pr_auc = compute_auc(recall, precision)
             pr_auc_scores.append(pr_auc)
 
-        metrics['pr_auc'] = float(np.mean(pr_auc_scores))
-        metrics['pr_auc_per_class'] = [float(x) for x in pr_auc_scores]
+        metrics["pr_auc"] = float(np.mean(pr_auc_scores))
+        metrics["pr_auc_per_class"] = [float(x) for x in pr_auc_scores]
 
         # Brier score (multiclass)
         # For multiclass, use mean over classes
         y_true_onehot = np.eye(n_classes)[y_true]
         brier = np.mean((y_proba - y_true_onehot) ** 2)
-        metrics['brier'] = float(brier)
+        metrics["brier"] = float(brier)
 
         # ECE (Expected Calibration Error)
         ece = calculate_ece(y_true, y_proba)
-        metrics['ece'] = float(ece)
+        metrics["ece"] = float(ece)
 
         # Log loss
         try:
             logloss = log_loss(y_true, y_proba)
-            metrics['log_loss'] = float(logloss)
+            metrics["log_loss"] = float(logloss)
         except Exception as e:
             logger.warning(f"Could not compute log loss: {e}")
-            metrics['log_loss'] = None
+            metrics["log_loss"] = None
 
     else:
         logger.warning("y_proba not provided - skipping calibration metrics (PR-AUC, Brier, ECE)")
-        metrics['pr_auc'] = None
-        metrics['brier'] = None
-        metrics['ece'] = None
-        metrics['log_loss'] = None
+        metrics["pr_auc"] = None
+        metrics["brier"] = None
+        metrics["ece"] = None
+        metrics["log_loss"] = None
 
     return metrics
 
@@ -201,7 +207,7 @@ def compute_pointer_metrics(
     end_preds: np.ndarray,
     start_true: np.ndarray,
     end_true: np.ndarray,
-    k: int = 3
+    k: int = 3,
 ) -> dict:
     """Compute comprehensive pointer detection metrics for expansion localization.
 
@@ -286,14 +292,20 @@ def compute_pointer_metrics(
     inner_window_size = 45
 
     # Validate inputs
-    assert start_preds.shape == (n_samples, inner_window_size), \
-        f"start_preds shape mismatch: expected ({n_samples}, {inner_window_size}), got {start_preds.shape}"
-    assert end_preds.shape == (n_samples, inner_window_size), \
-        f"end_preds shape mismatch: expected ({n_samples}, {inner_window_size}), got {end_preds.shape}"
-    assert start_true.shape == (n_samples,), \
-        f"start_true shape mismatch: expected ({n_samples},), got {start_true.shape}"
-    assert end_true.shape == (n_samples,), \
-        f"end_true shape mismatch: expected ({n_samples},), got {end_true.shape}"
+    assert start_preds.shape == (
+        n_samples,
+        inner_window_size,
+    ), f"start_preds shape mismatch: expected ({n_samples}, {inner_window_size}), got {start_preds.shape}"
+    assert end_preds.shape == (
+        n_samples,
+        inner_window_size,
+    ), f"end_preds shape mismatch: expected ({n_samples}, {inner_window_size}), got {end_preds.shape}"
+    assert start_true.shape == (
+        n_samples,
+    ), f"start_true shape mismatch: expected ({n_samples},), got {start_true.shape}"
+    assert end_true.shape == (
+        n_samples,
+    ), f"end_true shape mismatch: expected ({n_samples},), got {end_true.shape}"
 
     # 1. AUC Computation (ranking quality)
     # Flatten to [N*45] for sklearn
@@ -345,18 +357,15 @@ def compute_pointer_metrics(
 
     return {
         # Ranking metrics
-        'start_auc': start_auc,
-        'end_auc': end_auc,
-
+        "start_auc": start_auc,
+        "end_auc": end_auc,
         # Top-k metrics
-        'start_precision_at_k': start_precision_at_k,
-        'end_precision_at_k': end_precision_at_k,
-
+        "start_precision_at_k": start_precision_at_k,
+        "end_precision_at_k": end_precision_at_k,
         # Exact accuracy
-        'start_exact_accuracy': start_exact_accuracy,
-        'end_exact_accuracy': end_exact_accuracy,
-
+        "start_exact_accuracy": start_exact_accuracy,
+        "end_exact_accuracy": end_exact_accuracy,
         # Localization error
-        'avg_start_error': avg_start_error,
-        'avg_end_error': avg_end_error,
+        "avg_start_error": avg_start_error,
+        "avg_end_error": avg_end_error,
     }

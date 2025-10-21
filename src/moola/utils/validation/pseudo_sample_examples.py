@@ -11,41 +11,41 @@ Examples include:
 5. Self-supervised pseudo-labeling workflows
 """
 
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
 import torch.nn as nn
-from typing import Dict, List, Tuple, Optional, Any
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pathlib import Path
-import logging
 
 from .pseudo_sample_generation import (
-    PseudoSampleGenerationPipeline,
-    TemporalAugmentationGenerator,
-    PatternBasedSynthesisGenerator,
-    StatisticalSimulationGenerator,
     MarketConditionSimulationGenerator,
-    SelfSupervisedPseudoLabelingGenerator
+    PatternBasedSynthesisGenerator,
+    PseudoSampleGenerationPipeline,
+    SelfSupervisedPseudoLabelingGenerator,
+    StatisticalSimulationGenerator,
+    TemporalAugmentationGenerator,
 )
 from .pseudo_sample_validation import FinancialDataValidator, ValidationReport
 from .training_pipeline_integration import (
-    TrainingPipelineIntegrator,
     AugmentationConfig,
     AugmentedDataset,
-    DynamicAugmentedDataset
+    DynamicAugmentedDataset,
+    TrainingPipelineIntegrator,
 )
-
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def create_sample_financial_data(n_samples: int = 105,
-                               seq_length: int = 105,
-                               n_features: int = 4) -> Tuple[np.ndarray, np.ndarray]:
+def create_sample_financial_data(
+    n_samples: int = 105, seq_length: int = 105, n_features: int = 4
+) -> Tuple[np.ndarray, np.ndarray]:
     """Create sample financial data for demonstration.
 
     Args:
@@ -70,7 +70,7 @@ def create_sample_financial_data(n_samples: int = 105,
 
         # Add some autocorrelation
         for j in range(1, seq_length):
-            returns[j] += 0.1 * returns[j-1]
+            returns[j] += 0.1 * returns[j - 1]
 
         # Generate prices from returns
         prices = [initial_price]
@@ -91,7 +91,7 @@ def create_sample_financial_data(n_samples: int = 105,
                 open_price = close
             else:
                 gap = np.random.normal(0, daily_vol * 0.5)
-                open_price = max(1e-6, prices[j-1] + gap)
+                open_price = max(1e-6, prices[j - 1] + gap)
 
             # High and low
             if close >= open_price:
@@ -116,9 +116,9 @@ def create_sample_financial_data(n_samples: int = 105,
         trend = abs(prices[-1] - prices[0]) / prices[0]
 
         if volatility < 0.01 and trend < 0.05:
-            labels.append('consolidation')
+            labels.append("consolidation")
         else:
-            labels.append('retracement')
+            labels.append("retracement")
 
     return np.array(data), np.array(labels)
 
@@ -173,10 +173,10 @@ def example_2_individual_strategies():
 
     # Test each strategy individually
     strategies = {
-        'Temporal Augmentation': TemporalAugmentationGenerator(seed=1337),
-        'Pattern Synthesis': PatternBasedSynthesisGenerator(seed=1337),
-        'Statistical Simulation': StatisticalSimulationGenerator(seed=1337),
-        'Market Condition': MarketConditionSimulationGenerator(seed=1337)
+        "Temporal Augmentation": TemporalAugmentationGenerator(seed=1337),
+        "Pattern Synthesis": PatternBasedSynthesisGenerator(seed=1337),
+        "Statistical Simulation": StatisticalSimulationGenerator(seed=1337),
+        "Market Condition": MarketConditionSimulationGenerator(seed=1337),
     }
 
     validator = FinancialDataValidator()
@@ -195,11 +195,18 @@ def example_2_individual_strategies():
         print(f"OHLC integrity: {report.ohlc_integrity:.3f}")
 
         # Key metrics
-        key_metrics = ['ks_similarity', 'volatility_clustering_similarity', 'autocorr_overall_similarity']
+        key_metrics = [
+            "ks_similarity",
+            "volatility_clustering_similarity",
+            "autocorr_overall_similarity",
+        ]
         for metric in key_metrics:
             if metric in report.statistical_similarity or metric in report.temporal_consistency:
-                value = (report.statistical_similarity.get(metric) or
-                        report.temporal_consistency.get(metric) or 0)
+                value = (
+                    report.statistical_similarity.get(metric)
+                    or report.temporal_consistency.get(metric)
+                    or 0
+                )
                 print(f"  {metric}: {value:.3f}")
 
 
@@ -213,17 +220,11 @@ def example_3_quality_validation():
     original_data, original_labels = create_sample_financial_data(n_samples=100)
 
     # Generate samples with different quality levels
-    pipeline_good = PseudoSampleGenerationPipeline(
-        seed=1337, validation_threshold=0.8
-    )
-    pipeline_poor = PseudoSampleGenerationPipeline(
-        seed=999, validation_threshold=0.3
-    )
+    pipeline_good = PseudoSampleGenerationPipeline(seed=1337, validation_threshold=0.8)
+    pipeline_poor = PseudoSampleGenerationPipeline(seed=999, validation_threshold=0.3)
 
     # Generate good quality samples
-    good_data, good_labels, _ = pipeline_good.generate_samples(
-        original_data, original_labels, 100
-    )
+    good_data, good_labels, _ = pipeline_good.generate_samples(original_data, original_labels, 100)
 
     # Generate poor quality samples (for comparison)
     # Create intentionally distorted samples
@@ -247,6 +248,7 @@ def example_3_quality_validation():
     # Generate visualizations
     try:
         from .pseudo_sample_validation import QualityMetricsVisualizer
+
         visualizer = QualityMetricsVisualizer()
 
         # Plot validation results
@@ -277,7 +279,7 @@ def example_4_training_integration():
     original_data, original_labels = create_sample_financial_data(n_samples=105)
 
     # Convert labels to numerical format
-    label_map = {'consolidation': 0, 'retracement': 1}
+    label_map = {"consolidation": 0, "retracement": 1}
     numerical_labels = np.array([label_map[label] for label in original_labels])
 
     # Configure augmentation
@@ -286,11 +288,11 @@ def example_4_training_integration():
         augmentation_ratio=2.0,
         quality_threshold=0.7,
         strategy_weights={
-            'temporal_augmentation': 0.3,
-            'pattern_synthesis': 0.3,
-            'statistical_simulation': 0.2,
-            'market_condition': 0.2
-        }
+            "temporal_augmentation": 0.3,
+            "pattern_synthesis": 0.3,
+            "statistical_simulation": 0.2,
+            "market_condition": 0.2,
+        },
     )
 
     # Initialize integrator
@@ -298,8 +300,7 @@ def example_4_training_integration():
 
     # Prepare augmented dataloader
     dataloader = integrator.prepare_augmented_dataloader(
-        original_data, numerical_labels,
-        batch_size=16, shuffle=True, dynamic_generation=True
+        original_data, numerical_labels, batch_size=16, shuffle=True, dynamic_generation=True
     )
 
     print(f"Dataset size: {len(dataloader.dataset)}")
@@ -323,7 +324,7 @@ def example_4_training_integration():
             # 3. Backward pass and optimize
 
         # Get statistics for dynamic dataset
-        if hasattr(dataloader.dataset, 'get_statistics'):
+        if hasattr(dataloader.dataset, "get_statistics"):
             stats = dataloader.dataset.get_statistics()
             print(f"  Generation stats: {stats}")
 
@@ -352,7 +353,7 @@ def example_5_self_supervised_learning():
                 nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
                 nn.ReLU(),
-                nn.Linear(hidden_size, output_size)
+                nn.Linear(hidden_size, output_size),
             )
             self.classifier = nn.Linear(output_size, 2)  # Binary classification
 
@@ -375,7 +376,7 @@ def example_5_self_supervised_learning():
                 return probs.cpu().numpy()
 
     # Initialize model
-    model = SimpleEncoder(input_size=105*4, hidden_size=64, output_size=32)
+    model = SimpleEncoder(input_size=105 * 4, hidden_size=64, output_size=32)
     model.eval()
 
     # Initialize pipeline with self-supervised learning
@@ -399,7 +400,9 @@ def example_5_self_supervised_learning():
     report = validator.validate_pseudo_samples(original_data, pseudo_data)
 
     print(f"Quality score: {report.overall_quality_score:.3f}")
-    print(f"Self-supervised metrics: {report.statistical_similarity.get('avg_confidence_score', 'N/A')}")
+    print(
+        f"Self-supervised metrics: {report.statistical_similarity.get('avg_confidence_score', 'N/A')}"
+    )
 
 
 def example_6_performance_optimization():
@@ -412,11 +415,10 @@ def example_6_performance_optimization():
     original_data, original_labels = create_sample_financial_data(n_samples=200)
 
     # Test different generation strategies for performance
-    strategies = ['temporal_augmentation', 'pattern_synthesis', 'statistical_simulation']
+    strategies = ["temporal_augmentation", "pattern_synthesis", "statistical_simulation"]
 
     config = AugmentationConfig(
-        max_memory_usage_gb=2.0,  # Conservative memory limit
-        validation_threshold=0.7
+        max_memory_usage_gb=2.0, validation_threshold=0.7  # Conservative memory limit
     )
 
     integrator = TrainingPipelineIntegrator(config, logger=logger)
@@ -435,6 +437,7 @@ def example_6_performance_optimization():
 
         # Measure performance
         import time
+
         start_time = time.time()
 
         generated_data, generated_labels, metadata = integrator.generate_with_constraints(
@@ -471,7 +474,7 @@ def run_all_examples():
         example_3_quality_validation,
         example_4_training_integration,
         example_5_self_supervised_learning,
-        example_6_performance_optimization
+        example_6_performance_optimization,
     ]
 
     for i, example_func in enumerate(examples, 1):
@@ -482,9 +485,10 @@ def run_all_examples():
         except Exception as e:
             print(f"\nExample {i} failed with error: {e}")
             import traceback
+
             traceback.print_exc()
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
 
 
 if __name__ == "__main__":

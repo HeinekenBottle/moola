@@ -87,18 +87,32 @@ def extract_hopsketch_features(X: np.ndarray) -> np.ndarray:
         run_length = np.zeros(105)
         current_run = 1
         for i in range(1, 105):
-            if direction[i] == direction[i-1]:
+            if direction[i] == direction[i - 1]:
                 current_run += 1
             else:
                 current_run = 1
             run_length[i] = current_run
 
         # Stack all 15 features per bar: [105, 15]
-        sample_features = np.column_stack([
-            o_norm, h_norm, l_norm, c_norm,  # 4
-            body, bar_range, body_frac, upper_wick, lower_wick, close_pos, open_pos,  # 7
-            direction, gap_prev, pct_up, run_length  # 4
-        ])  # [105, 15]
+        sample_features = np.column_stack(
+            [
+                o_norm,
+                h_norm,
+                l_norm,
+                c_norm,  # 4
+                body,
+                bar_range,
+                body_frac,
+                upper_wick,
+                lower_wick,
+                close_pos,
+                open_pos,  # 7
+                direction,
+                gap_prev,
+                pct_up,
+                run_length,  # 4
+            ]
+        )  # [105, 15]
 
         # Flatten to [1575] for XGBoost
         features_list.append(sample_features.flatten())
@@ -113,9 +127,7 @@ def extract_hopsketch_features(X: np.ndarray) -> np.ndarray:
 
 
 def engineer_multiscale_features(
-    X: np.ndarray,
-    expansion_start: np.ndarray = None,
-    expansion_end: np.ndarray = None
+    X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
 ) -> np.ndarray:
     """Multi-scale feature extraction for financial pattern classification.
 
@@ -159,7 +171,7 @@ def engineer_multiscale_features(
         end = int(expansion_end[i])
 
         # Extract pattern region (within [30:75])
-        pattern = X[i, start:end+1, :]  # [T_pattern, 4]
+        pattern = X[i, start : end + 1, :]  # [T_pattern, 4]
         context = context_window[i]  # [45, 4]
 
         # OHLC extraction
@@ -231,7 +243,7 @@ def engineer_multiscale_features(
         if len(c_c) > 1:
             x = np.arange(len(c_c))
             slope, _, r_value, _, _ = linregress(x, c_c)
-            trend_strength = slope * (r_value ** 2)
+            trend_strength = slope * (r_value**2)
         else:
             trend_strength = 0.0
         features.append(trend_strength)
@@ -321,12 +333,8 @@ def engineer_multiscale_features(
     return feature_matrix
 
 
-
-
 def engineer_classical_features(
-    X: np.ndarray,
-    expansion_start: np.ndarray = None,
-    expansion_end: np.ndarray = None
+    X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
 ) -> np.ndarray:
     """Transform raw OHLC time series to engineered price action features.
 
@@ -394,17 +402,28 @@ def engineer_classical_features(
 
             # Right context: 10 bars after expansion (or less if at end)
             right_end = min(105, end + 11)
-            right_region = X[i, end+1:right_end, :]
+            right_region = X[i, end + 1 : right_end, :]
 
-            o_left_list.append(left_region[:, 0] if len(left_region) > 0 else np.array([X[i, start, 0]]))
-            h_left_list.append(left_region[:, 1] if len(left_region) > 0 else np.array([X[i, start, 1]]))
-            l_left_list.append(left_region[:, 2] if len(left_region) > 0 else np.array([X[i, start, 2]]))
-            c_left_list.append(left_region[:, 3] if len(left_region) > 0 else np.array([X[i, start, 3]]))
-            c_right_list.append(right_region[:, 3] if len(right_region) > 0 else np.array([X[i, end, 3]]))
+            o_left_list.append(
+                left_region[:, 0] if len(left_region) > 0 else np.array([X[i, start, 0]])
+            )
+            h_left_list.append(
+                left_region[:, 1] if len(left_region) > 0 else np.array([X[i, start, 1]])
+            )
+            l_left_list.append(
+                left_region[:, 2] if len(left_region) > 0 else np.array([X[i, start, 2]])
+            )
+            c_left_list.append(
+                left_region[:, 3] if len(left_region) > 0 else np.array([X[i, start, 3]])
+            )
+            c_right_list.append(
+                right_region[:, 3] if len(right_region) > 0 else np.array([X[i, end, 3]])
+            )
 
     else:
         # Fall back to default windowing (legacy behavior)
         from ..utils.windowing import get_window_regions
+
         left_buffer, inner_window, right_buffer = get_window_regions(X)
 
         # Extract OHLC from inner window
@@ -471,17 +490,20 @@ def engineer_classical_features(
         l_left_arr = l_left_list[i].reshape(1, -1)
         c_right_arr = c_right_list[i].reshape(1, -1)
 
-        sample_features.extend(_extract_buffer_context(
-            c_left_arr, h_left_arr, l_left_arr,
-            c_arr,  # inner close (expansion region)
-            c_right_arr  # right close
-        ))
+        sample_features.extend(
+            _extract_buffer_context(
+                c_left_arr,
+                h_left_arr,
+                l_left_arr,
+                c_arr,  # inner close (expansion region)
+                c_right_arr,  # right close
+            )
+        )
 
         # Flatten sample features and add to collection
-        sample_feature_vector = np.concatenate([
-            f.flatten() if isinstance(f, np.ndarray) else np.array([f])
-            for f in sample_features
-        ])
+        sample_feature_vector = np.concatenate(
+            [f.flatten() if isinstance(f, np.ndarray) else np.array([f]) for f in sample_features]
+        )
         all_sample_features.append(sample_feature_vector)
 
     # Stack all samples
@@ -753,7 +775,7 @@ def _extract_geometry_features(c: np.ndarray) -> list:
         if T > 1:
             slope, intercept, r_value, _, _ = linregress(np.arange(T), c[i])
             slopes[i] = slope
-            r_values[i] = r_value ** 2  # R-squared
+            r_values[i] = r_value**2  # R-squared
 
     features.append(slopes)  # slope
     features.append(r_values)  # r_squared
@@ -903,8 +925,13 @@ def _extract_market_regime_features(h: np.ndarray, l: np.ndarray, c: np.ndarray)
     return features
 
 
-def _extract_buffer_context(c_left: np.ndarray, h_left: np.ndarray, l_left: np.ndarray,
-                             c_inner: np.ndarray, c_right: np.ndarray) -> list:
+def _extract_buffer_context(
+    c_left: np.ndarray,
+    h_left: np.ndarray,
+    l_left: np.ndarray,
+    c_inner: np.ndarray,
+    c_right: np.ndarray,
+) -> list:
     """Extract context features from buffer regions.
 
     Args:

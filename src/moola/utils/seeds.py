@@ -38,7 +38,7 @@ def set_seed(seed: int = 1337) -> None:
     import os
 
     # Python hash seed (for dictionary ordering)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
     # Python random module
     random.seed(seed)
@@ -76,6 +76,7 @@ def get_device(device: str = "cpu") -> torch.device:
 
     if device == "cuda" and not torch.cuda.is_available():
         import warnings
+
         warnings.warn("CUDA requested but not available. Falling back to CPU.")
         device = "cpu"
 
@@ -148,28 +149,28 @@ def log_environment() -> dict:
     logger = logging.getLogger(__name__)
 
     env_info = {
-        'python_version': platform.python_version(),
-        'torch_version': torch.__version__,
-        'numpy_version': np.__version__,
-        'cuda_available': torch.cuda.is_available(),
-        'cuda_version': torch.version.cuda if torch.cuda.is_available() else None,
-        'cudnn_version': torch.backends.cudnn.version() if torch.cuda.is_available() else None,
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'platform': platform.platform(),
-        'python_hash_seed': os.environ.get('PYTHONHASHSEED', 'not set'),
+        "python_version": platform.python_version(),
+        "torch_version": torch.__version__,
+        "numpy_version": np.__version__,
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
+        "cudnn_version": torch.backends.cudnn.version() if torch.cuda.is_available() else None,
+        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "platform": platform.platform(),
+        "python_hash_seed": os.environ.get("PYTHONHASHSEED", "not set"),
     }
 
     # Get git SHA
     try:
         git_sha = subprocess.check_output(
-            ['git', 'rev-parse', 'HEAD'],
+            ["git", "rev-parse", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
-            cwd=os.path.dirname(__file__)
+            cwd=os.path.dirname(__file__),
         ).strip()[:8]
-        env_info['git_sha'] = git_sha
+        env_info["git_sha"] = git_sha
     except Exception:
-        env_info['git_sha'] = 'unknown'
+        env_info["git_sha"] = "unknown"
 
     logger.info("Environment Information:")
     for key, value in env_info.items():

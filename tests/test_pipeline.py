@@ -46,11 +46,13 @@ def test_train_saves_model(tmp_path):
         d.mkdir(parents=True)
 
     # Create dummy train.parquet
-    df = pd.DataFrame({
-        "window_id": list(range(100)),
-        "label": ["class_A" if i % 2 == 0 else "class_B" for i in range(100)],
-        "features": [np.random.randn(5).tolist() for _ in range(100)],
-    })
+    df = pd.DataFrame(
+        {
+            "window_id": list(range(100)),
+            "label": ["class_A" if i % 2 == 0 else "class_B" for i in range(100)],
+            "features": [np.random.randn(5).tolist() for _ in range(100)],
+        }
+    )
     train_path = processed_dir / "train.parquet"
     df.to_parquet(train_path, index=False)
 
@@ -61,9 +63,7 @@ def test_train_saves_model(tmp_path):
     env["MOOLA_LOG_DIR"] = str(logs_dir)
 
     # Run train command
-    result = subprocess.run(
-        ["moola", "train"], env=env, capture_output=True, text=True
-    )
+    result = subprocess.run(["moola", "train"], env=env, capture_output=True, text=True)
 
     # Check model.bin was created
     model_path = artifacts_dir / "model.bin"
@@ -94,11 +94,13 @@ def test_evaluate_writes_metrics(tmp_path):
 
     # Create dummy train.parquet
     np.random.seed(42)
-    df = pd.DataFrame({
-        "window_id": list(range(100)),
-        "label": ["class_A" if i % 2 == 0 else "class_B" for i in range(100)],
-        "features": [np.random.randn(5).tolist() for _ in range(100)],
-    })
+    df = pd.DataFrame(
+        {
+            "window_id": list(range(100)),
+            "label": ["class_A" if i % 2 == 0 else "class_B" for i in range(100)],
+            "features": [np.random.randn(5).tolist() for _ in range(100)],
+        }
+    )
     train_path = processed_dir / "train.parquet"
     df.to_parquet(train_path, index=False)
 
@@ -119,9 +121,7 @@ def test_evaluate_writes_metrics(tmp_path):
     env["MOOLA_LOG_DIR"] = str(logs_dir)
 
     # Run evaluate command
-    result = subprocess.run(
-        ["moola", "evaluate"], env=env, capture_output=True, text=True
-    )
+    result = subprocess.run(["moola", "evaluate"], env=env, capture_output=True, text=True)
 
     # Check metrics.json exists
     metrics_path = artifacts_dir / "metrics.json"

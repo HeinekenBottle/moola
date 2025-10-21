@@ -14,21 +14,22 @@ Key improvements over basic drift detection:
 4. Adaptive thresholds based on market conditions
 """
 
-import numpy as np
-import pandas as pd
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Union
 from enum import Enum
+from typing import Dict, List, Optional, Tuple, Union
 
+import numpy as np
+import pandas as pd
+from loguru import logger
 from scipy import stats
 from scipy.spatial.distance import jensenshannon
 from sklearn.preprocessing import StandardScaler
-from loguru import logger
 
 
 class MarketRegime(str, Enum):
     """Market regime classification."""
+
     TRENDING_UP = "trending_up"
     TRENDING_DOWN = "trending_down"
     RANGING = "ranging"
@@ -83,7 +84,7 @@ class MarketRegimeDriftDetector:
         window_size: int = 105,
         regime_detection_period: int = 30,
         sensitivity: str = "medium",  # "low", "medium", "high"
-        adaptive_thresholds: bool = True
+        adaptive_thresholds: bool = True,
     ):
         """Initialize market regime drift detector.
 
@@ -116,7 +117,7 @@ class MarketRegimeDriftDetector:
                 "wasserstein_threshold": 0.02,
                 "concept_threshold": 0.15,
                 "temporal_threshold": 0.1,
-                "microstructure_threshold": 0.05
+                "microstructure_threshold": 0.05,
             },
             "medium": {
                 "ks_threshold": 0.05,
@@ -124,7 +125,7 @@ class MarketRegimeDriftDetector:
                 "wasserstein_threshold": 0.05,
                 "concept_threshold": 0.1,
                 "temporal_threshold": 0.15,
-                "microstructure_threshold": 0.1
+                "microstructure_threshold": 0.1,
             },
             "high": {
                 "ks_threshold": 0.1,
@@ -132,8 +133,8 @@ class MarketRegimeDriftDetector:
                 "wasserstein_threshold": 0.1,
                 "concept_threshold": 0.05,
                 "temporal_threshold": 0.2,
-                "microstructure_threshold": 0.15
-            }
+                "microstructure_threshold": 0.15,
+            },
         }
 
         return base_thresholds[self.sensitivity]
@@ -145,32 +146,32 @@ class MarketRegimeDriftDetector:
                 "expected_return_sign": 1,
                 "volatility_tolerance": 0.3,
                 "trend_consistency_threshold": 0.7,
-                "reversal_penalty": 2.0
+                "reversal_penalty": 2.0,
             },
             MarketRegime.TRENDING_DOWN: {
                 "expected_return_sign": -1,
                 "volatility_tolerance": 0.3,
                 "trend_consistency_threshold": 0.7,
-                "reversal_penalty": 2.0
+                "reversal_penalty": 2.0,
             },
             MarketRegime.RANGING: {
                 "expected_return_sign": 0,
                 "volatility_tolerance": 0.5,
                 "trend_consistency_threshold": 0.3,
-                "reversal_penalty": 1.0
+                "reversal_penalty": 1.0,
             },
             MarketRegime.VOLATILE: {
                 "expected_return_sign": 0,
                 "volatility_tolerance": 1.0,
                 "trend_consistency_threshold": 0.2,
-                "reversal_penalty": 0.5
+                "reversal_penalty": 0.5,
             },
             MarketRegime.UNCERTAIN: {
                 "expected_return_sign": 0,
                 "volatility_tolerance": 0.7,
                 "trend_consistency_threshold": 0.4,
-                "reversal_penalty": 1.0
-            }
+                "reversal_penalty": 1.0,
+            },
         }
 
     def detect_market_regime_drift(
@@ -178,7 +179,7 @@ class MarketRegimeDriftDetector:
         baseline_data: Union[np.ndarray, pd.DataFrame],
         current_data: Union[np.ndarray, pd.DataFrame],
         baseline_labels: Optional[np.ndarray] = None,
-        current_labels: Optional[np.ndarray] = None
+        current_labels: Optional[np.ndarray] = None,
     ) -> RegimeDriftReport:
         """Comprehensive market regime drift detection.
 
@@ -216,13 +217,11 @@ class MarketRegimeDriftDetector:
             overall_drift_score=0.0,
             drift_severity="none",
             confidence=0.0,
-            recommendations=[]
+            recommendations=[],
         )
 
         # 1. Distribution drift detection
-        report.distribution_drift = self._detect_distribution_drift(
-            baseline_df, current_df
-        )
+        report.distribution_drift = self._detect_distribution_drift(baseline_df, current_df)
 
         # 2. Concept drift detection (pattern relationships)
         if baseline_labels is not None and current_labels is not None:
@@ -231,18 +230,15 @@ class MarketRegimeDriftDetector:
             )
 
         # 3. Temporal drift detection
-        report.temporal_drift = self._detect_temporal_drift(
-            baseline_df, current_df
-        )
+        report.temporal_drift = self._detect_temporal_drift(baseline_df, current_df)
 
         # 4. Microstructure drift detection
-        report.microstructure_drift = self._detect_microstructure_drift(
-            baseline_df, current_df
-        )
+        report.microstructure_drift = self._detect_microstructure_drift(baseline_df, current_df)
 
         # Compute overall drift assessment
-        report.overall_drift_score, report.drift_severity, report.confidence = \
+        report.overall_drift_score, report.drift_severity, report.confidence = (
             self._compute_overall_drift_assessment(report)
+        )
 
         # Generate recommendations
         report.recommendations = self._generate_recommendations(report)
@@ -262,18 +258,18 @@ class MarketRegimeDriftDetector:
                 # Reshape [N, 105, 4] to [N*105, 4]
                 n_samples = data.shape[0]
                 reshaped = data.reshape(-1, 4)
-                df = pd.DataFrame(reshaped, columns=['open', 'high', 'low', 'close'])
+                df = pd.DataFrame(reshaped, columns=["open", "high", "low", "close"])
 
                 # Add sample_id and timestep for analysis
                 sample_ids = np.repeat(np.arange(n_samples), 105)
                 timesteps = np.tile(np.arange(105), n_samples)
-                df['sample_id'] = sample_ids
-                df['timestep'] = timesteps
+                df["sample_id"] = sample_ids
+                df["timestep"] = timesteps
 
                 return df
 
             elif data.ndim == 2 and data.shape[1] == 4:
-                df = pd.DataFrame(data, columns=['open', 'high', 'low', 'close'])
+                df = pd.DataFrame(data, columns=["open", "high", "low", "close"])
                 return df
 
         return None
@@ -287,18 +283,18 @@ class MarketRegimeDriftDetector:
         recent_df = df.tail(self.regime_detection_period)
 
         # Calculate returns
-        returns = recent_df['close'].pct_change().dropna()
+        returns = recent_df["close"].pct_change().dropna()
 
         # Calculate trend strength
         x = np.arange(len(recent_df))
-        slope, _, r_value, _, _ = stats.linregress(x, recent_df['close'])
-        trend_strength = abs(slope) * (r_value ** 2)
+        slope, _, r_value, _, _ = stats.linregress(x, recent_df["close"])
+        trend_strength = abs(slope) * (r_value**2)
 
         # Calculate volatility
         volatility = returns.std() * np.sqrt(252)  # Annualized
 
         # Calculate range ratio (how much price moves relative to level)
-        price_range = (recent_df['high'].max() - recent_df['low'].min()) / recent_df['close'].mean()
+        price_range = (recent_df["high"].max() - recent_df["low"].min()) / recent_df["close"].mean()
 
         # Regime classification logic
         if trend_strength > 0.5 and volatility < 0.3:
@@ -317,57 +313,55 @@ class MarketRegimeDriftDetector:
             return MarketRegime.UNCERTAIN
 
     def _detect_distribution_drift(
-        self,
-        baseline_df: pd.DataFrame,
-        current_df: pd.DataFrame
+        self, baseline_df: pd.DataFrame, current_df: pd.DataFrame
     ) -> List[DriftSignal]:
         """Detect distribution drift using multiple statistical methods."""
         signals = []
 
         # Extract OHLC features
-        baseline_features = baseline_df[['open', 'high', 'low', 'close']].values
-        current_features = current_df[['open', 'high', 'low', 'close']].values
+        baseline_features = baseline_df[["open", "high", "low", "close"]].values
+        current_features = current_df[["open", "high", "low", "close"]].values
 
         # 1. Kolmogorov-Smirnov test for each OHLC component
-        for i, feature in enumerate(['open', 'high', 'low', 'close']):
+        for i, feature in enumerate(["open", "high", "low", "close"]):
             baseline_vals = baseline_features[:, i]
             current_vals = current_features[:, i]
 
             ks_stat, ks_pvalue = stats.ks_2samp(baseline_vals, current_vals)
             drift_detected = ks_pvalue < self.thresholds["ks_threshold"]
 
-            signals.append(DriftSignal(
-                signal_name=f"ks_test_{feature}",
-                drift_score=float(ks_stat),
-                threshold=self.thresholds["ks_threshold"],
-                drift_detected=drift_detected,
-                confidence=float(1 - ks_pvalue),
-                regime_specific=False,
-                description=f"Kolmogorov-Smirnov test for {feature} distribution"
-            ))
+            signals.append(
+                DriftSignal(
+                    signal_name=f"ks_test_{feature}",
+                    drift_score=float(ks_stat),
+                    threshold=self.thresholds["ks_threshold"],
+                    drift_detected=drift_detected,
+                    confidence=float(1 - ks_pvalue),
+                    regime_specific=False,
+                    description=f"Kolmogorov-Smirnov test for {feature} distribution",
+                )
+            )
 
         # 2. Population Stability Index (PSI)
-        for i, feature in enumerate(['open', 'high', 'low', 'close']):
-            psi_score = self._compute_psi(
-                baseline_features[:, i],
-                current_features[:, i]
-            )
+        for i, feature in enumerate(["open", "high", "low", "close"]):
+            psi_score = self._compute_psi(baseline_features[:, i], current_features[:, i])
             drift_detected = psi_score > self.thresholds["psi_threshold"]
 
-            signals.append(DriftSignal(
-                signal_name=f"psi_{feature}",
-                drift_score=psi_score,
-                threshold=self.thresholds["psi_threshold"],
-                drift_detected=drift_detected,
-                confidence=min(psi_score / self.thresholds["psi_threshold"], 1.0),
-                regime_specific=False,
-                description=f"Population Stability Index for {feature}"
-            ))
+            signals.append(
+                DriftSignal(
+                    signal_name=f"psi_{feature}",
+                    drift_score=psi_score,
+                    threshold=self.thresholds["psi_threshold"],
+                    drift_detected=drift_detected,
+                    confidence=min(psi_score / self.thresholds["psi_threshold"], 1.0),
+                    regime_specific=False,
+                    description=f"Population Stability Index for {feature}",
+                )
+            )
 
         # 3. Wasserstein distance
         wasserstein_dist = stats.wasserstein_distance(
-            baseline_features.flatten(),
-            current_features.flatten()
+            baseline_features.flatten(), current_features.flatten()
         )
 
         # Normalize by baseline range
@@ -376,15 +370,17 @@ class MarketRegimeDriftDetector:
 
         drift_detected = normalized_distance > self.thresholds["wasserstein_threshold"]
 
-        signals.append(DriftSignal(
-            signal_name="wasserstein_all_features",
-            drift_score=normalized_distance,
-            threshold=self.thresholds["wasserstein_threshold"],
-            drift_detected=drift_detected,
-            confidence=min(normalized_distance / self.thresholds["wasserstein_threshold"], 1.0),
-            regime_specific=False,
-            description="Wasserstein distance across all OHLC features"
-        ))
+        signals.append(
+            DriftSignal(
+                signal_name="wasserstein_all_features",
+                drift_score=normalized_distance,
+                threshold=self.thresholds["wasserstein_threshold"],
+                drift_detected=drift_detected,
+                confidence=min(normalized_distance / self.thresholds["wasserstein_threshold"], 1.0),
+                regime_specific=False,
+                description="Wasserstein distance across all OHLC features",
+            )
+        )
 
         return signals
 
@@ -419,7 +415,7 @@ class MarketRegimeDriftDetector:
         baseline_df: pd.DataFrame,
         current_df: pd.DataFrame,
         baseline_labels: np.ndarray,
-        current_labels: np.ndarray
+        current_labels: np.ndarray,
     ) -> List[DriftSignal]:
         """Detect concept drift in pattern-label relationships."""
         signals = []
@@ -436,15 +432,17 @@ class MarketRegimeDriftDetector:
         js_divergence = jensenshannon(baseline_probs, current_probs) ** 2
         drift_detected = js_divergence > self.thresholds["concept_threshold"]
 
-        signals.append(DriftSignal(
-            signal_name="label_distribution_shift",
-            drift_score=js_divergence,
-            threshold=self.thresholds["concept_threshold"],
-            drift_detected=drift_detected,
-            confidence=min(js_divergence / self.thresholds["concept_threshold"], 1.0),
-            regime_specific=True,
-            description="Shift in pattern label distribution"
-        ))
+        signals.append(
+            DriftSignal(
+                signal_name="label_distribution_shift",
+                drift_score=js_divergence,
+                threshold=self.thresholds["concept_threshold"],
+                drift_detected=drift_detected,
+                confidence=min(js_divergence / self.thresholds["concept_threshold"], 1.0),
+                regime_specific=True,
+                description="Shift in pattern label distribution",
+            )
+        )
 
         # 2. Pattern-feature relationship change
         # Compute average OHLC patterns per label
@@ -460,15 +458,19 @@ class MarketRegimeDriftDetector:
                 pattern_distance = np.linalg.norm(baseline_avg - current_avg)
                 drift_detected = pattern_distance > self.thresholds["concept_threshold"]
 
-                signals.append(DriftSignal(
-                    signal_name=f"pattern_drift_{label}",
-                    drift_score=pattern_distance,
-                    threshold=self.thresholds["concept_threshold"],
-                    drift_detected=drift_detected,
-                    confidence=min(pattern_distance / self.thresholds["concept_threshold"], 1.0),
-                    regime_specific=True,
-                    description=f"Pattern feature drift for label {label}"
-                ))
+                signals.append(
+                    DriftSignal(
+                        signal_name=f"pattern_drift_{label}",
+                        drift_score=pattern_distance,
+                        threshold=self.thresholds["concept_threshold"],
+                        drift_detected=drift_detected,
+                        confidence=min(
+                            pattern_distance / self.thresholds["concept_threshold"], 1.0
+                        ),
+                        regime_specific=True,
+                        description=f"Pattern feature drift for label {label}",
+                    )
+                )
 
         return signals
 
@@ -482,11 +484,11 @@ class MarketRegimeDriftDetector:
 
             # Compute pattern features
             features = [
-                label_data['close'].mean(),
-                label_data['close'].std(),
-                (label_data['high'] - label_data['low']).mean() / label_data['close'].mean(),
-                (label_data['close'] - label_data['open']).mean() / label_data['open'].mean(),
-                label_data['close'].autocorr(lag=1) if len(label_data) > 1 else 0
+                label_data["close"].mean(),
+                label_data["close"].std(),
+                (label_data["high"] - label_data["low"]).mean() / label_data["close"].mean(),
+                (label_data["close"] - label_data["open"]).mean() / label_data["open"].mean(),
+                label_data["close"].autocorr(lag=1) if len(label_data) > 1 else 0,
             ]
 
             pattern_features[label] = np.array(features)
@@ -494,9 +496,7 @@ class MarketRegimeDriftDetector:
         return pattern_features
 
     def _detect_temporal_drift(
-        self,
-        baseline_df: pd.DataFrame,
-        current_df: pd.DataFrame
+        self, baseline_df: pd.DataFrame, current_df: pd.DataFrame
     ) -> List[DriftSignal]:
         """Detect temporal drift in time series dependencies."""
         signals = []
@@ -508,15 +508,17 @@ class MarketRegimeDriftDetector:
         autocorr_distance = np.linalg.norm(baseline_autocorr - current_autocorr)
         drift_detected = autocorr_distance > self.thresholds["temporal_threshold"]
 
-        signals.append(DriftSignal(
-            signal_name="autocorrelation_drift",
-            drift_score=autocorr_distance,
-            threshold=self.thresholds["temporal_threshold"],
-            drift_detected=drift_detected,
-            confidence=min(autocorr_distance / self.thresholds["temporal_threshold"], 1.0),
-            regime_specific=True,
-            description="Drift in temporal autocorrelation structure"
-        ))
+        signals.append(
+            DriftSignal(
+                signal_name="autocorrelation_drift",
+                drift_score=autocorr_distance,
+                threshold=self.thresholds["temporal_threshold"],
+                drift_detected=drift_detected,
+                confidence=min(autocorr_distance / self.thresholds["temporal_threshold"], 1.0),
+                regime_specific=True,
+                description="Drift in temporal autocorrelation structure",
+            )
+        )
 
         # 2. Volatility clustering drift
         baseline_vol_cluster = self._compute_volatility_clustering(baseline_df)
@@ -525,21 +527,23 @@ class MarketRegimeDriftDetector:
         vol_cluster_drift = abs(baseline_vol_cluster - current_vol_cluster)
         drift_detected = vol_cluster_drift > self.thresholds["temporal_threshold"]
 
-        signals.append(DriftSignal(
-            signal_name="volatility_clustering_drift",
-            drift_score=vol_cluster_drift,
-            threshold=self.thresholds["temporal_threshold"],
-            drift_detected=drift_detected,
-            confidence=min(vol_cluster_drift / self.thresholds["temporal_threshold"], 1.0),
-            regime_specific=True,
-            description="Drift in volatility clustering behavior"
-        ))
+        signals.append(
+            DriftSignal(
+                signal_name="volatility_clustering_drift",
+                drift_score=vol_cluster_drift,
+                threshold=self.thresholds["temporal_threshold"],
+                drift_detected=drift_detected,
+                confidence=min(vol_cluster_drift / self.thresholds["temporal_threshold"], 1.0),
+                regime_specific=True,
+                description="Drift in volatility clustering behavior",
+            )
+        )
 
         return signals
 
     def _compute_autocorrelation_features(self, df: pd.DataFrame) -> np.ndarray:
         """Compute autocorrelation features for temporal analysis."""
-        returns = df['close'].pct_change().dropna()
+        returns = df["close"].pct_change().dropna()
 
         # Compute autocorrelations at different lags
         lags = [1, 5, 10, 20]  # Different time scales
@@ -556,7 +560,7 @@ class MarketRegimeDriftDetector:
 
     def _compute_volatility_clustering(self, df: pd.DataFrame) -> float:
         """Compute volatility clustering metric."""
-        returns = df['close'].pct_change().dropna()
+        returns = df["close"].pct_change().dropna()
 
         if len(returns) < 10:
             return 0.0
@@ -568,9 +572,7 @@ class MarketRegimeDriftDetector:
         return vol_clustering if not np.isnan(vol_clustering) else 0.0
 
     def _detect_microstructure_drift(
-        self,
-        baseline_df: pd.DataFrame,
-        current_df: pd.DataFrame
+        self, baseline_df: pd.DataFrame, current_df: pd.DataFrame
     ) -> List[DriftSignal]:
         """Detect microstructure drift in market properties."""
         signals = []
@@ -582,15 +584,17 @@ class MarketRegimeDriftDetector:
         spread_change = abs(current_spread - baseline_spread) / baseline_spread
         drift_detected = spread_change > self.thresholds["microstructure_threshold"]
 
-        signals.append(DriftSignal(
-            signal_name="spread_drift",
-            drift_score=spread_change,
-            threshold=self.thresholds["microstructure_threshold"],
-            drift_detected=drift_detected,
-            confidence=min(spread_change / self.thresholds["microstructure_threshold"], 1.0),
-            regime_specific=True,
-            description="Drift in bid-ask spread characteristics"
-        ))
+        signals.append(
+            DriftSignal(
+                signal_name="spread_drift",
+                drift_score=spread_change,
+                threshold=self.thresholds["microstructure_threshold"],
+                drift_detected=drift_detected,
+                confidence=min(spread_change / self.thresholds["microstructure_threshold"], 1.0),
+                regime_specific=True,
+                description="Drift in bid-ask spread characteristics",
+            )
+        )
 
         # 2. Price impact drift
         baseline_impact = self._compute_price_impact(baseline_df)
@@ -599,28 +603,30 @@ class MarketRegimeDriftDetector:
         impact_change = abs(current_impact - baseline_impact)
         drift_detected = impact_change > self.thresholds["microstructure_threshold"]
 
-        signals.append(DriftSignal(
-            signal_name="price_impact_drift",
-            drift_score=impact_change,
-            threshold=self.thresholds["microstructure_threshold"],
-            drift_detected=drift_detected,
-            confidence=min(impact_change / self.thresholds["microstructure_threshold"], 1.0),
-            regime_specific=True,
-            description="Drift in price impact characteristics"
-        ))
+        signals.append(
+            DriftSignal(
+                signal_name="price_impact_drift",
+                drift_score=impact_change,
+                threshold=self.thresholds["microstructure_threshold"],
+                drift_detected=drift_detected,
+                confidence=min(impact_change / self.thresholds["microstructure_threshold"], 1.0),
+                regime_specific=True,
+                description="Drift in price impact characteristics",
+            )
+        )
 
         return signals
 
     def _compute_average_spread(self, df: pd.DataFrame) -> float:
         """Compute average spread (proxy using high-low range)."""
-        spread = (df['high'] - df['low']) / df['close']
+        spread = (df["high"] - df["low"]) / df["close"]
         return spread.mean()
 
     def _compute_price_impact(self, df: pd.DataFrame) -> float:
         """Compute price impact proxy (volume-weighted price movement)."""
         # Use range-based volume proxy
-        volume_proxy = df['high'] - df['low']
-        price_movement = abs(df['close'] - df['open']).mean()
+        volume_proxy = df["high"] - df["low"]
+        price_movement = abs(df["close"] - df["open"]).mean()
 
         if volume_proxy.sum() > 0:
             impact = (price_movement * volume_proxy).sum() / volume_proxy.sum()
@@ -630,15 +636,14 @@ class MarketRegimeDriftDetector:
         return impact
 
     def _compute_overall_drift_assessment(
-        self,
-        report: RegimeDriftReport
+        self, report: RegimeDriftReport
     ) -> Tuple[float, str, float]:
         """Compute overall drift score and severity."""
         all_signals = (
-            report.distribution_drift +
-            report.concept_drift +
-            report.temporal_drift +
-            report.microstructure_drift
+            report.distribution_drift
+            + report.concept_drift
+            + report.temporal_drift
+            + report.microstructure_drift
         )
 
         if not all_signals:
@@ -722,7 +727,7 @@ def detect_market_regime_drift(
     current_data: Union[np.ndarray, pd.DataFrame],
     baseline_labels: Optional[np.ndarray] = None,
     current_labels: Optional[np.ndarray] = None,
-    sensitivity: str = "medium"
+    sensitivity: str = "medium",
 ) -> RegimeDriftReport:
     """Convenience function for market regime drift detection.
 

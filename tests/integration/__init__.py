@@ -7,13 +7,13 @@ feature engineering, model training, and pre-training transfer learning.
 import json
 import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from moola.cli import ingest, train, evaluate
+from moola.cli import evaluate, ingest, train
 from moola.features import AdvancedFeatureEngineer, FeatureConfig
 from moola.models import get_model
 from moola.utils.seeds import set_seed
@@ -45,7 +45,7 @@ class IntegrationTestSuite:
         for i in range(N):
             # Apply feature engineering
             engineer = AdvancedFeatureEngineer(FeatureConfig())
-            X_engineered = engineer.transform(X[i:i+1])
+            X_engineered = engineer.transform(X[i : i + 1])
 
             # Create data row
             row_data = {
@@ -98,7 +98,9 @@ class IntegrationTestSuite:
         if result["within_range"]:
             print(f"✅ Parameter count validation passed: {param_count:,} params")
         else:
-            print(f"⚠️  Parameter count validation: {param_count:,} params (expected {expected_min:,}-{expected_max:,})")
+            print(
+                f"⚠️  Parameter count validation: {param_count:,} params (expected {expected_min:,}-{expected_max:,})"
+            )
 
         self.results["parameter_count"] = result
         return result
@@ -127,7 +129,9 @@ class IntegrationTestSuite:
         }
 
         if result["valid_shape"] and result["feature_count_range"]:
-            print(f"✅ Feature engineering integration passed: {X_engineered.shape[2]} features generated")
+            print(
+                f"✅ Feature engineering integration passed: {X_engineered.shape[2]} features generated"
+            )
             print(f"   Feature names: {len(engineer.feature_names)}")
         else:
             print(f"❌ Feature engineering integration failed: {X_engineered.shape}")
@@ -222,7 +226,9 @@ class IntegrationTestSuite:
             "training_success": training_success,
             "prediction_success": prediction_success,
             "valid_predictions": valid_predictions if "valid_predictions" in locals() else False,
-            "valid_probabilities": valid_probabilities if "valid_probabilities" in locals() else False,
+            "valid_probabilities": (
+                valid_probabilities if "valid_probabilities" in locals() else False
+            ),
         }
 
         if all(result.values()):
@@ -242,9 +248,9 @@ class IntegrationTestSuite:
 
         result = {
             "pretraining_support": True,  # Based on code analysis
-            "encoder_loading": True,     # Function exists and works
+            "encoder_loading": True,  # Function exists and works
             "two_phase_training": True,  # Two-phase training implemented
-            "fine_tuning": True,        # Fine-tuning capability exists
+            "fine_tuning": True,  # Fine-tuning capability exists
         }
 
         if all(result.values()):
@@ -283,7 +289,9 @@ class IntegrationTestSuite:
             print(f"❌ CLI compatibility broken: {e}")
 
         result = {
-            "model_compatibility": all(compatibility_results.get(m, False) for m in compatible_models),
+            "model_compatibility": all(
+                compatibility_results.get(m, False) for m in compatible_models
+            ),
             "cli_compatibility": compatibility_results.get("cli", False),
             "overall_compatible": all(compatibility_results.values()),
         }
@@ -312,9 +320,14 @@ class IntegrationTestSuite:
 
         # Generate test summary
         total_tests = len(self.results)
-        passed_tests = sum(1 for result in self.results.values()
-                          if isinstance(result, dict) and result.get("overall_compatible",
-                          all(result.values()) if isinstance(result, dict) else result))
+        passed_tests = sum(
+            1
+            for result in self.results.values()
+            if isinstance(result, dict)
+            and result.get(
+                "overall_compatible", all(result.values()) if isinstance(result, dict) else result
+            )
+        )
 
         summary = {
             "total_tests": total_tests,

@@ -42,28 +42,20 @@ from pydantic import BaseModel, Field, field_validator
 
 # Prometheus metrics
 PREDICTION_COUNTER = Counter(
-    "predictions_total",
-    "Total number of predictions made",
-    ["model_type", "pattern"]
+    "predictions_total", "Total number of predictions made", ["model_type", "pattern"]
 )
 PREDICTION_LATENCY = Histogram(
     "prediction_latency_seconds",
     "Prediction latency in seconds",
-    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
 )
 CONFIDENCE_GAUGE = Gauge(
-    "prediction_confidence",
-    "Average prediction confidence (last 100 predictions)"
+    "prediction_confidence", "Average prediction confidence (last 100 predictions)"
 )
 ERROR_COUNTER = Counter(
-    "prediction_errors_total",
-    "Total number of prediction errors",
-    ["error_type"]
+    "prediction_errors_total", "Total number of prediction errors", ["error_type"]
 )
-MODEL_LOAD_TIME = Gauge(
-    "model_load_time_seconds",
-    "Time taken to load model at startup"
-)
+MODEL_LOAD_TIME = Gauge("model_load_time_seconds", "Time taken to load model at startup")
 
 # FastAPI app
 app = FastAPI(
@@ -83,14 +75,15 @@ class PredictionRequest(BaseModel):
 
     Expected input: 105-bar window with OHLC values
     """
+
     features: List[List[float]] = Field(
         ...,
         description="105-bar OHLC window as list of [open, high, low, close]",
         min_length=105,
-        max_length=105
+        max_length=105,
     )
 
-    @field_validator('features')
+    @field_validator("features")
     @classmethod
     def validate_features(cls, v):
         """Validate feature dimensions."""
@@ -122,16 +115,18 @@ class PredictionRequest(BaseModel):
 
 class BatchPredictionRequest(BaseModel):
     """Batch prediction request for multiple windows."""
+
     windows: List[List[List[float]]] = Field(
         ...,
         description="List of 105-bar OHLC windows",
         min_length=1,
-        max_length=100  # Limit batch size
+        max_length=100,  # Limit batch size
     )
 
 
 class PredictionResponse(BaseModel):
     """Response for single prediction."""
+
     prediction: str = Field(..., description="Predicted pattern (consolidation or retracement)")
     confidence: float = Field(..., description="Confidence score (0-1)")
     probabilities: dict = Field(..., description="Class probabilities")
@@ -144,12 +139,9 @@ class PredictionResponse(BaseModel):
                 {
                     "prediction": "consolidation",
                     "confidence": 0.87,
-                    "probabilities": {
-                        "consolidation": 0.87,
-                        "retracement": 0.13
-                    },
+                    "probabilities": {"consolidation": 0.87, "retracement": 0.13},
                     "timestamp": "2025-10-16T12:34:56Z",
-                    "model_version": "v1.0.0-abc123"
+                    "model_version": "v1.0.0-abc123",
                 }
             ]
         }
@@ -158,6 +150,7 @@ class PredictionResponse(BaseModel):
 
 class BatchPredictionResponse(BaseModel):
     """Response for batch prediction."""
+
     predictions: List[PredictionResponse]
     batch_size: int
     total_latency: float
@@ -165,6 +158,7 @@ class BatchPredictionResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response."""
+
     status: str
     model_loaded: bool
     timestamp: str
@@ -192,7 +186,8 @@ async def load_model():
         metadata_path = model_path.parent / "metrics.json"
         if metadata_path.exists():
             import json
-            with open(metadata_path, 'r') as f:
+
+            with open(metadata_path, "r") as f:
                 model_metadata = json.load(f)
 
         load_time = time.time() - start_time
@@ -214,17 +209,14 @@ async def health():
         status="healthy" if model is not None else "degraded",
         model_loaded=model is not None,
         timestamp=datetime.utcnow().isoformat() + "Z",
-        version="1.0.0"
+        version="1.0.0",
     )
 
 
 @app.get("/metrics")
 async def metrics():
     """Prometheus metrics endpoint."""
-    return Response(
-        content=generate_latest(REGISTRY),
-        media_type=CONTENT_TYPE_LATEST
-    )
+    return Response(content=generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/predict", response_model=PredictionResponse)
@@ -243,8 +235,7 @@ async def predict(request: PredictionRequest):
     if model is None:
         ERROR_COUNTER.labels(error_type="model_not_loaded").inc()
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Model not loaded"
         )
 
     start_time = time.time()
@@ -263,10 +254,7 @@ async def predict(request: PredictionRequest):
         prediction = class_labels[pred_class_idx]
 
         # Build probability dict
-        probabilities = {
-            label: float(proba[i])
-            for i, label in enumerate(class_labels)
-        }
+        probabilities = {label: float(proba[i]) for i, label in enumerate(class_labels)}
 
         # Track metrics
         latency = time.time() - start_time
@@ -284,14 +272,13 @@ async def predict(request: PredictionRequest):
             confidence=confidence,
             probabilities=probabilities,
             timestamp=datetime.utcnow().isoformat() + "Z",
-            model_version=model_metadata.get("model", "unknown")
+            model_version=model_metadata.get("model", "unknown"),
         )
 
     except Exception as e:
         ERROR_COUNTER.labels(error_type="prediction_error").inc()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Prediction failed: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Prediction failed: {str(e)}"
         )
 
 
@@ -311,8 +298,7 @@ async def predict_batch(request: BatchPredictionRequest):
     if model is None:
         ERROR_COUNTER.labels(error_type="model_not_loaded").inc()
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Model not loaded"
         )
 
     start_time = time.time()
@@ -328,19 +314,18 @@ async def predict_batch(request: BatchPredictionRequest):
         total_latency = time.time() - start_time
 
         return BatchPredictionResponse(
-            predictions=predictions,
-            batch_size=len(predictions),
-            total_latency=total_latency
+            predictions=predictions, batch_size=len(predictions), total_latency=total_latency
         )
 
     except Exception as e:
         ERROR_COUNTER.labels(error_type="batch_prediction_error").inc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Batch prediction failed: {str(e)}"
+            detail=f"Batch prediction failed: {str(e)}",
         )
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

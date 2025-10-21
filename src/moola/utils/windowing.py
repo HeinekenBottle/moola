@@ -12,7 +12,6 @@ from typing import Tuple
 
 import numpy as np
 
-
 # Window constants
 BUFFER_LEFT = 30
 INNER_WINDOW = 45
@@ -109,13 +108,13 @@ def get_window_regions(data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.nda
     if data.ndim == 2:
         # Single sample [105, F]
         left_buffer = data[:BUFFER_LEFT, :]
-        inner_window = data[BUFFER_LEFT:BUFFER_LEFT + INNER_WINDOW, :]
-        right_buffer = data[BUFFER_LEFT + INNER_WINDOW:, :]
+        inner_window = data[BUFFER_LEFT : BUFFER_LEFT + INNER_WINDOW, :]
+        right_buffer = data[BUFFER_LEFT + INNER_WINDOW :, :]
     elif data.ndim == 3:
         # Batch [N, 105, F]
         left_buffer = data[:, :BUFFER_LEFT, :]
-        inner_window = data[:, BUFFER_LEFT:BUFFER_LEFT + INNER_WINDOW, :]
-        right_buffer = data[:, BUFFER_LEFT + INNER_WINDOW:, :]
+        inner_window = data[:, BUFFER_LEFT : BUFFER_LEFT + INNER_WINDOW, :]
+        right_buffer = data[:, BUFFER_LEFT + INNER_WINDOW :, :]
     else:
         raise ValueError(f"Expected 2D or 3D data, got shape {data.shape}")
 

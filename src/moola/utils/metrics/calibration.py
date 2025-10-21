@@ -4,9 +4,10 @@ Implements smooth Expected Calibration Error (ECE), Brier score, and reliability
 for assessing and visualizing model calibration quality.
 """
 
-import numpy as np
 from typing import Dict, Optional
+
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def compute_smooth_ece(

@@ -58,7 +58,9 @@ class TrainingSetup:
         return loader
 
     @staticmethod
-    def setup_mixed_precision(use_amp: bool, device: torch.device) -> Optional[torch.cuda.amp.GradScaler]:
+    def setup_mixed_precision(
+        use_amp: bool, device: torch.device
+    ) -> Optional[torch.cuda.amp.GradScaler]:
         """Setup automatic mixed precision (FP16) training.
 
         Args:
@@ -81,7 +83,7 @@ class TrainingSetup:
         stratify: bool = True,
     ) -> Union[
         Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
-        Tuple[torch.Tensor, None, torch.Tensor, None]
+        Tuple[torch.Tensor, None, torch.Tensor, None],
     ]:
         """Split data into train/validation sets.
 

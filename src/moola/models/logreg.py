@@ -29,7 +29,13 @@ class LogRegModel(BaseModel):
             random_state=self.seed, max_iter=self.max_iter, **self.kwargs
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "LogRegModel":
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        expansion_start: np.ndarray = None,
+        expansion_end: np.ndarray = None,
+    ) -> "LogRegModel":
         """Train logistic regression model.
 
         Args:
@@ -48,7 +54,9 @@ class LogRegModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:  # [N, T, F] format
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = engineer_classical_features(
+                X, expansion_start=expansion_start, expansion_end=expansion_end
+            )
         else:
             X_engineered = X
 
@@ -56,7 +64,9 @@ class LogRegModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
+    def predict(
+        self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
+    ) -> np.ndarray:
         """Predict class labels.
 
         Args:
@@ -76,13 +86,17 @@ class LogRegModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = engineer_classical_features(
+                X, expansion_start=expansion_start, expansion_end=expansion_end
+            )
         else:
             X_engineered = X
 
         return self.model.predict(X_engineered)
 
-    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
+    def predict_proba(
+        self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
+    ) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
@@ -102,7 +116,9 @@ class LogRegModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = engineer_classical_features(
+                X, expansion_start=expansion_start, expansion_end=expansion_end
+            )
         else:
             X_engineered = X
 

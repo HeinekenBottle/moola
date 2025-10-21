@@ -23,10 +23,10 @@ import pandas as pd
 from loguru import logger
 from scipy import stats
 
-
 # ============================================================================
 # DRIFT DETECTION METHODS
 # ============================================================================
+
 
 @dataclass
 class DriftResult:
@@ -45,9 +45,7 @@ class DriftDetector:
     """Statistical drift detection for time-series features."""
 
     def __init__(
-        self,
-        method: Literal["ks_test", "psi", "wasserstein"] = "ks_test",
-        threshold: float = 0.05
+        self, method: Literal["ks_test", "psi", "wasserstein"] = "ks_test", threshold: float = 0.05
     ):
         """Initialize drift detector.
 
@@ -62,10 +60,7 @@ class DriftDetector:
         self.threshold = threshold
 
     def detect_drift(
-        self,
-        baseline_data: np.ndarray,
-        current_data: np.ndarray,
-        feature_name: str = "feature"
+        self, baseline_data: np.ndarray, current_data: np.ndarray, feature_name: str = "feature"
     ) -> DriftResult:
         """Detect drift between baseline and current data.
 
@@ -98,7 +93,7 @@ class DriftDetector:
             drift_detected=drift,
             method=self.method,
             baseline_stats=baseline_stats,
-            current_stats=current_stats
+            current_stats=current_stats,
         )
 
     def _compute_stats(self, data: np.ndarray) -> Dict[str, float]:
@@ -113,21 +108,14 @@ class DriftDetector:
             "q75": float(np.percentile(data, 75)),
         }
 
-    def _ks_test(
-        self,
-        baseline: np.ndarray,
-        current: np.ndarray
-    ) -> Tuple[float, float, bool]:
+    def _ks_test(self, baseline: np.ndarray, current: np.ndarray) -> Tuple[float, float, bool]:
         """Kolmogorov-Smirnov two-sample test."""
         statistic, p_value = stats.ks_2samp(baseline, current)
         drift_detected = p_value < self.threshold
         return float(statistic), float(p_value), drift_detected
 
     def _psi(
-        self,
-        baseline: np.ndarray,
-        current: np.ndarray,
-        num_bins: int = 10
+        self, baseline: np.ndarray, current: np.ndarray, num_bins: int = 10
     ) -> Tuple[float, None, bool]:
         """Population Stability Index (PSI).
 
@@ -137,10 +125,7 @@ class DriftDetector:
         - PSI >= 0.2: Significant change (drift)
         """
         # Create bins based on baseline
-        bins = np.percentile(
-            baseline,
-            np.linspace(0, 100, num_bins + 1)
-        )
+        bins = np.percentile(baseline, np.linspace(0, 100, num_bins + 1))
 
         # Ensure unique bins
         bins = np.unique(bins)
@@ -165,11 +150,7 @@ class DriftDetector:
         drift_detected = psi >= self.threshold
         return float(psi), None, drift_detected
 
-    def _wasserstein(
-        self,
-        baseline: np.ndarray,
-        current: np.ndarray
-    ) -> Tuple[float, None, bool]:
+    def _wasserstein(self, baseline: np.ndarray, current: np.ndarray) -> Tuple[float, None, bool]:
         """Wasserstein distance (Earth Mover's Distance)."""
         distance = stats.wasserstein_distance(baseline, current)
 
@@ -188,20 +169,17 @@ class DriftDetector:
 # TIME-SERIES DRIFT MONITORING
 # ============================================================================
 
+
 class TimeSeriesDriftMonitor:
     """Monitor drift in time-series OHLC features."""
 
     def __init__(
-        self,
-        method: Literal["ks_test", "psi", "wasserstein"] = "ks_test",
-        threshold: float = 0.05
+        self, method: Literal["ks_test", "psi", "wasserstein"] = "ks_test", threshold: float = 0.05
     ):
         self.detector = DriftDetector(method=method, threshold=threshold)
 
     def monitor_dataset_drift(
-        self,
-        baseline_df: pd.DataFrame,
-        current_df: pd.DataFrame
+        self, baseline_df: pd.DataFrame, current_df: pd.DataFrame
     ) -> Dict[str, DriftResult]:
         """Monitor drift across entire dataset.
 
@@ -223,14 +201,12 @@ class TimeSeriesDriftMonitor:
         current_prices = self._extract_all_prices(current_df)
 
         # Check drift for each OHLC component
-        for i, feature_name in enumerate(['open', 'high', 'low', 'close']):
+        for i, feature_name in enumerate(["open", "high", "low", "close"]):
             baseline_feat = baseline_prices[:, i]
             current_feat = current_prices[:, i]
 
             result = self.detector.detect_drift(
-                baseline_feat,
-                current_feat,
-                feature_name=feature_name
+                baseline_feat, current_feat, feature_name=feature_name
             )
             results[feature_name] = result
 
@@ -243,11 +219,7 @@ class TimeSeriesDriftMonitor:
         baseline_all = baseline_prices.flatten()
         current_all = current_prices.flatten()
 
-        result = self.detector.detect_drift(
-            baseline_all,
-            current_all,
-            feature_name="all_prices"
-        )
+        result = self.detector.detect_drift(baseline_all, current_all, feature_name="all_prices")
         results["all_prices"] = result
 
         return results
@@ -260,9 +232,11 @@ class TimeSeriesDriftMonitor:
         """
         all_prices = []
 
-        for features in df['features']:
+        for features in df["features"]:
             if isinstance(features, (list, np.ndarray)):
-                arr = np.vstack(features) if isinstance(features[0], (list, np.ndarray)) else features
+                arr = (
+                    np.vstack(features) if isinstance(features[0], (list, np.ndarray)) else features
+                )
                 all_prices.append(arr)
 
         if not all_prices:
@@ -271,11 +245,7 @@ class TimeSeriesDriftMonitor:
         stacked = np.vstack(all_prices)
         return stacked
 
-    def generate_drift_report(
-        self,
-        results: Dict[str, DriftResult],
-        output_path: Path
-    ):
+    def generate_drift_report(self, results: Dict[str, DriftResult], output_path: Path):
         """Generate comprehensive drift report.
 
         Args:
@@ -297,7 +267,7 @@ class TimeSeriesDriftMonitor:
             },
             "method": self.detector.method,
             "threshold": self.detector.threshold,
-            "features": {}
+            "features": {},
         }
 
         # Add per-feature results
@@ -312,16 +282,18 @@ class TimeSeriesDriftMonitor:
 
         # Save report
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(report, f, indent=2)
 
         logger.info(f"Drift report saved: {output_path}")
 
         # Log summary
-        logger.info("\n" + "="*70)
+        logger.info("\n" + "=" * 70)
         logger.info("DRIFT DETECTION SUMMARY")
-        logger.info("="*70)
-        logger.info(f"Drift detected in {drifted_features}/{total_features} features ({drift_percentage:.1f}%)")
+        logger.info("=" * 70)
+        logger.info(
+            f"Drift detected in {drifted_features}/{total_features} features ({drift_percentage:.1f}%)"
+        )
 
         if report["summary"]["overall_drift_detected"]:
             logger.warning("⚠️  SIGNIFICANT DRIFT DETECTED - Consider retraining model")
@@ -333,39 +305,29 @@ class TimeSeriesDriftMonitor:
 # CLI
 # ============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(description="Data Drift Detection")
     parser.add_argument(
-        '--baseline',
-        type=Path,
-        required=True,
-        help='Baseline dataset (training data)'
+        "--baseline", type=Path, required=True, help="Baseline dataset (training data)"
     )
     parser.add_argument(
-        '--current',
-        type=Path,
-        required=True,
-        help='Current dataset (production data)'
+        "--current", type=Path, required=True, help="Current dataset (production data)"
     )
     parser.add_argument(
-        '--output',
+        "--output",
         type=Path,
-        default=Path('data/monitoring/drift_report.json'),
-        help='Output path for drift report'
+        default=Path("data/monitoring/drift_report.json"),
+        help="Output path for drift report",
     )
     parser.add_argument(
-        '--method',
+        "--method",
         type=str,
-        default='ks_test',
-        choices=['ks_test', 'psi', 'wasserstein'],
-        help='Drift detection method'
+        default="ks_test",
+        choices=["ks_test", "psi", "wasserstein"],
+        help="Drift detection method",
     )
-    parser.add_argument(
-        '--threshold',
-        type=float,
-        default=0.05,
-        help='Drift detection threshold'
-    )
+    parser.add_argument("--threshold", type=float, default=0.05, help="Drift detection threshold")
 
     args = parser.parse_args()
 
@@ -377,10 +339,7 @@ def main():
     current_df = pd.read_parquet(args.current)
 
     # Initialize monitor
-    monitor = TimeSeriesDriftMonitor(
-        method=args.method,
-        threshold=args.threshold
-    )
+    monitor = TimeSeriesDriftMonitor(method=args.method, threshold=args.threshold)
 
     # Detect drift
     results = monitor.monitor_dataset_drift(baseline_df, current_df)
@@ -389,5 +348,5 @@ def main():
     monitor.generate_drift_report(results, args.output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

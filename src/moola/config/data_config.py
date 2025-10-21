@@ -110,6 +110,7 @@ def compute_checksum(data, algorithm: str = "sha256") -> str:
 # DATA SHAPE SPECIFICATIONS
 # ============================================================================
 
+
 class DataShapeSpec:
     """Specification for expected data shapes."""
 
@@ -150,6 +151,7 @@ class DataShapeSpec:
 # DATA PIPELINE STAGES
 # ============================================================================
 
+
 class PipelineStages:
     """Specifications for each data pipeline stage."""
 
@@ -186,6 +188,7 @@ class PipelineStages:
 # QUALITY METRICS
 # ============================================================================
 
+
 class QualityMetrics:
     """Data quality thresholds and checks."""
 
@@ -204,8 +207,8 @@ class QualityMetrics:
     # Label distribution
     EXPECTED_CLASS_DISTRIBUTION = {
         "consolidation": (0.35, 0.45),  # Expected range: 35-45%
-        "retracement": (0.30, 0.40),    # Expected range: 30-40%
-        "expansion": (0.15, 0.25),      # Expected range: 15-25%
+        "retracement": (0.30, 0.40),  # Expected range: 30-40%
+        "expansion": (0.15, 0.25),  # Expected range: 15-25%
     }
 
     # Feature statistics
@@ -215,6 +218,7 @@ class QualityMetrics:
 # ============================================================================
 # DATA LOGGING & DIAGNOSTICS
 # ============================================================================
+
 
 class DiagnosticThresholds:
     """Thresholds for diagnostic messages."""

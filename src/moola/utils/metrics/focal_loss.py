@@ -29,7 +29,7 @@ class FocalLoss(nn.Module):
         reduction: Specifies the reduction to apply: 'none', 'mean', or 'sum'
     """
 
-    def __init__(self, gamma: float = 2.0, alpha: torch.Tensor = None, reduction: str = 'mean'):
+    def __init__(self, gamma: float = 2.0, alpha: torch.Tensor = None, reduction: str = "mean"):
         super().__init__()
         self.gamma = gamma
         self.alpha = alpha
@@ -46,7 +46,7 @@ class FocalLoss(nn.Module):
             Focal loss (scalar if reduction='mean'/'sum', tensor if reduction='none')
         """
         # Compute cross entropy loss (no reduction)
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        ce_loss = F.cross_entropy(inputs, targets, reduction="none")
 
         # Get probabilities for the true class
         p = torch.exp(-ce_loss)  # p_t = exp(-ce_loss)
@@ -65,9 +65,9 @@ class FocalLoss(nn.Module):
             focal_loss = alpha_t * focal_loss
 
         # Apply reduction
-        if self.reduction == 'mean':
+        if self.reduction == "mean":
             return focal_loss.mean()
-        elif self.reduction == 'sum':
+        elif self.reduction == "sum":
             return focal_loss.sum()
         else:
             return focal_loss

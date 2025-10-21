@@ -15,9 +15,7 @@ import torch.nn as nn
 
 
 def validate_encoder_loading(
-    model: nn.Module,
-    encoder_path: Path,
-    tolerance: float = 1e-6
+    model: nn.Module, encoder_path: Path, tolerance: float = 1e-6
 ) -> Dict[str, int]:
     """Verify encoder weights loaded correctly from checkpoint.
 
@@ -52,25 +50,25 @@ def validate_encoder_loading(
         raise FileNotFoundError(f"Encoder checkpoint not found: {encoder_path}")
 
     # Load checkpoint
-    checkpoint = torch.load(encoder_path, map_location='cpu')
-    encoder_state = checkpoint['encoder_state_dict']
+    checkpoint = torch.load(encoder_path, map_location="cpu")
+    encoder_state = checkpoint["encoder_state_dict"]
 
     # Get model state dict
     model_state = model.state_dict()
 
     # Track verification stats
     stats = {
-        'total_layers': len(encoder_state),
-        'matched_layers': 0,
-        'mismatched_layers': 0,
-        'missing_layers': 0
+        "total_layers": len(encoder_state),
+        "matched_layers": 0,
+        "mismatched_layers": 0,
+        "missing_layers": 0,
     }
 
     # Compare each layer
     for key, encoder_weight in encoder_state.items():
         if key not in model_state:
             print(f"[VALIDATION] ⚠️  Layer {key} missing in model")
-            stats['missing_layers'] += 1
+            stats["missing_layers"] += 1
             continue
 
         model_weight = model_state[key]
@@ -79,7 +77,7 @@ def validate_encoder_loading(
         if encoder_weight.shape != model_weight.shape:
             print(f"[VALIDATION] ❌ Shape mismatch: {key}")
             print(f"              Encoder: {encoder_weight.shape}, Model: {model_weight.shape}")
-            stats['mismatched_layers'] += 1
+            stats["mismatched_layers"] += 1
             continue
 
         # Check weight values match
@@ -87,21 +85,21 @@ def validate_encoder_loading(
             print(f"[VALIDATION] ❌ Weight mismatch: {key}")
             max_diff = (encoder_weight - model_weight).abs().max().item()
             print(f"              Max difference: {max_diff:.2e} (tolerance: {tolerance:.2e})")
-            stats['mismatched_layers'] += 1
+            stats["mismatched_layers"] += 1
             continue
 
-        stats['matched_layers'] += 1
+        stats["matched_layers"] += 1
 
     # Print summary
     print(f"\n[VALIDATION] Encoder Loading Verification:")
     print(f"  ✓ Matched layers: {stats['matched_layers']}/{stats['total_layers']}")
-    if stats['mismatched_layers'] > 0:
+    if stats["mismatched_layers"] > 0:
         print(f"  ❌ Mismatched layers: {stats['mismatched_layers']}")
-    if stats['missing_layers'] > 0:
+    if stats["missing_layers"] > 0:
         print(f"  ⚠️  Missing layers: {stats['missing_layers']}")
 
     # Assert critical layers loaded
-    if stats['matched_layers'] == 0:
+    if stats["matched_layers"] == 0:
         raise AssertionError("CRITICAL: No encoder weights loaded successfully!")
 
     return stats
@@ -112,7 +110,7 @@ def detect_class_collapse(
     labels: np.ndarray,
     epoch: int,
     threshold: float = 0.1,
-    class_names: Optional[Dict[int, str]] = None
+    class_names: Optional[Dict[int, str]] = None,
 ) -> Dict[int, float]:
     """Detect class collapse during training (early warning for imbalanced learning).
 
@@ -167,17 +165,16 @@ def detect_class_collapse(
 
         # Warn if below threshold
         if accuracy < threshold:
-            print(f"  ⚠️  {class_label}: {accuracy:.1%} ({correct}/{n_samples}) - COLLAPSE DETECTED!")
+            print(
+                f"  ⚠️  {class_label}: {accuracy:.1%} ({correct}/{n_samples}) - COLLAPSE DETECTED!"
+            )
         else:
             print(f"  ✓ {class_label}: {accuracy:.1%} ({correct}/{n_samples})")
 
     return class_accs
 
 
-def verify_gradient_flow(
-    model: nn.Module,
-    phase: str = "training"
-) -> Dict[str, Dict[str, int]]:
+def verify_gradient_flow(model: nn.Module, phase: str = "training") -> Dict[str, Dict[str, int]]:
     """Verify gradients are flowing correctly through the model.
 
     Use this to debug:
@@ -215,39 +212,30 @@ def verify_gradient_flow(
                 gradient_params.append(name)
 
     stats = {
-        'frozen': {
-            'count': len(frozen_params),
-            'params': frozen_params[:5]  # Show first 5
-        },
-        'trainable': {
-            'count': len(trainable_params),
-            'params': trainable_params[:5]
-        },
-        'gradients': {
-            'count': len(gradient_params),
-            'params': gradient_params[:5]
-        }
+        "frozen": {"count": len(frozen_params), "params": frozen_params[:5]},  # Show first 5
+        "trainable": {"count": len(trainable_params), "params": trainable_params[:5]},
+        "gradients": {"count": len(gradient_params), "params": gradient_params[:5]},
     }
 
     # Print summary
     print(f"\n[GRADIENT FLOW] Phase: {phase}")
     print(f"  Frozen params: {stats['frozen']['count']}")
-    if stats['frozen']['count'] > 0:
+    if stats["frozen"]["count"] > 0:
         print(f"    Examples: {', '.join(stats['frozen']['params'][:3])}")
 
     print(f"  Trainable params: {stats['trainable']['count']}")
-    if stats['trainable']['count'] > 0:
+    if stats["trainable"]["count"] > 0:
         print(f"    Examples: {', '.join(stats['trainable']['params'][:3])}")
 
     print(f"  Params with gradients: {stats['gradients']['count']}")
-    if stats['gradients']['count'] > 0:
+    if stats["gradients"]["count"] > 0:
         print(f"    Examples: {', '.join(stats['gradients']['params'][:3])}")
 
     # Warnings
-    if stats['trainable']['count'] == 0:
+    if stats["trainable"]["count"] == 0:
         print("  ⚠️  WARNING: No trainable parameters! Model won't learn.")
 
-    if stats['gradients']['count'] == 0 and phase != "frozen":
+    if stats["gradients"]["count"] == 0 and phase != "frozen":
         print("  ⚠️  WARNING: No gradients computed! Call backward() first.")
 
     return stats

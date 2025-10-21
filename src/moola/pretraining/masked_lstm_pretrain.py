@@ -73,7 +73,7 @@ class MaskedLSTMPretrainer:
         learning_rate: float = 1e-3,
         batch_size: int = 512,
         device: str = "cuda",
-        seed: int = 1337
+        seed: int = 1337,
     ):
         set_seed(seed)
         self.device = get_device(device)
@@ -92,17 +92,12 @@ class MaskedLSTMPretrainer:
 
         # Build model
         self.model = BiLSTMMaskedAutoencoder(
-            input_dim=input_dim,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            dropout=dropout
+            input_dim=input_dim, hidden_dim=hidden_dim, num_layers=num_layers, dropout=dropout
         ).to(self.device)
 
         # Optimizer with weight decay for regularization
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=learning_rate,
-            weight_decay=1e-4
+            self.model.parameters(), lr=learning_rate, weight_decay=1e-4
         )
 
         # LR scheduler: cosine annealing for smooth learning rate decay
@@ -118,7 +113,7 @@ class MaskedLSTMPretrainer:
         val_split: float = 0.1,
         patience: int = 10,
         save_path: Path | None = None,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> dict[str, list]:
         """Pre-train on unlabeled data using masked reconstruction.
 
@@ -148,9 +143,7 @@ class MaskedLSTMPretrainer:
 
         # Initialize LR scheduler now that we know n_epochs
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer,
-            T_max=n_epochs,
-            eta_min=1e-5
+            self.optimizer, T_max=n_epochs, eta_min=1e-5
         )
 
         # Split train/val
@@ -175,38 +168,32 @@ class MaskedLSTMPretrainer:
         # Import optimized DataLoader kwargs
         try:
             from ..config.performance_config import get_optimized_dataloader_kwargs
+
             dataloader_kwargs = get_optimized_dataloader_kwargs(is_training=True)
         except ImportError:
             # Fallback to manual configuration
             dataloader_kwargs = {
-                'num_workers': 8 if self.device.type == "cuda" else 0,
-                'pin_memory': True if self.device.type == "cuda" else False,
-                'prefetch_factor': 2 if self.device.type == "cuda" else None,
-                'persistent_workers': True if self.device.type == "cuda" else False,
+                "num_workers": 8 if self.device.type == "cuda" else 0,
+                "pin_memory": True if self.device.type == "cuda" else False,
+                "prefetch_factor": 2 if self.device.type == "cuda" else None,
+                "persistent_workers": True if self.device.type == "cuda" else False,
             }
             dataloader_kwargs = {k: v for k, v in dataloader_kwargs.items() if v is not None}
 
         train_loader = torch.utils.data.DataLoader(
-            train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            **dataloader_kwargs
+            train_dataset, batch_size=self.batch_size, shuffle=True, **dataloader_kwargs
         )
 
         # Early stopping
-        early_stopping = EarlyStopping(
-            patience=patience,
-            mode="min",
-            verbose=verbose
-        )
+        early_stopping = EarlyStopping(patience=patience, mode="min", verbose=verbose)
 
         # Training history
         history = {
-            'train_loss': [],
-            'val_loss': [],
-            'train_recon': [],
-            'val_recon': [],
-            'learning_rate': []
+            "train_loss": [],
+            "val_loss": [],
+            "train_recon": [],
+            "val_recon": [],
+            "learning_rate": [],
         }
 
         # Setup AMP scaler for mixed precision training
@@ -215,11 +202,12 @@ class MaskedLSTMPretrainer:
         if use_amp:
             try:
                 from ..config.performance_config import get_amp_scaler
+
                 scaler = get_amp_scaler()
                 if scaler and verbose:
                     print("[PERFORMANCE] Using automatic mixed precision (AMP) for 1.5-2× speedup")
             except ImportError:
-                scaler = torch.amp.GradScaler('cuda')
+                scaler = torch.amp.GradScaler("cuda")
                 if verbose:
                     print("[PERFORMANCE] Using AMP with default settings")
 
@@ -233,11 +221,7 @@ class MaskedLSTMPretrainer:
             train_recon_losses = []
 
             # Progress bar
-            pbar = tqdm(
-                train_loader,
-                desc=f"Epoch {epoch+1}/{n_epochs}",
-                disable=not verbose
-            )
+            pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{n_epochs}", disable=not verbose)
 
             for (batch_X,) in pbar:
                 batch_X = batch_X.to(self.device, non_blocking=True)
@@ -248,14 +232,14 @@ class MaskedLSTMPretrainer:
                     self.model.mask_token,
                     mask_strategy=self.mask_strategy,
                     mask_ratio=self.mask_ratio,
-                    patch_size=self.patch_size
+                    patch_size=self.patch_size,
                 )
 
                 self.optimizer.zero_grad()
 
                 # Forward pass with optional AMP
                 if scaler:
-                    with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
                         reconstruction = self.model(x_masked)
                         loss, loss_dict = self.model.compute_loss(reconstruction, batch_X, mask)
 
@@ -274,15 +258,17 @@ class MaskedLSTMPretrainer:
                     self.optimizer.step()
 
                 # Track metrics
-                train_losses.append(loss_dict['total'])
-                train_recon_losses.append(loss_dict['reconstruction'])
+                train_losses.append(loss_dict["total"])
+                train_recon_losses.append(loss_dict["reconstruction"])
 
                 # Update progress bar
-                pbar.set_postfix({
-                    'loss': f"{loss_dict['total']:.4f}",
-                    'recon': f"{loss_dict['reconstruction']:.4f}",
-                    'lr': f"{self.scheduler.get_last_lr()[0]:.6f}"
-                })
+                pbar.set_postfix(
+                    {
+                        "loss": f"{loss_dict['total']:.4f}",
+                        "recon": f"{loss_dict['reconstruction']:.4f}",
+                        "lr": f"{self.scheduler.get_last_lr()[0]:.6f}",
+                    }
+                )
 
             # Update learning rate
             self.scheduler.step()
@@ -297,7 +283,7 @@ class MaskedLSTMPretrainer:
             with torch.no_grad():
                 # Process validation data in batches
                 for i in range(0, len(X_val), self.batch_size):
-                    batch_X = X_val[i:i+self.batch_size].to(self.device, non_blocking=True)
+                    batch_X = X_val[i : i + self.batch_size].to(self.device, non_blocking=True)
 
                     # Apply masking
                     x_masked, mask = apply_masking(
@@ -305,20 +291,20 @@ class MaskedLSTMPretrainer:
                         self.model.mask_token,
                         mask_strategy=self.mask_strategy,
                         mask_ratio=self.mask_ratio,
-                        patch_size=self.patch_size
+                        patch_size=self.patch_size,
                     )
 
                     # Forward pass with optional AMP
                     if scaler:
-                        with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                        with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
                             reconstruction = self.model(x_masked)
                             loss, loss_dict = self.model.compute_loss(reconstruction, batch_X, mask)
                     else:
                         reconstruction = self.model(x_masked)
                         loss, loss_dict = self.model.compute_loss(reconstruction, batch_X, mask)
 
-                    val_losses.append(loss_dict['total'])
-                    val_recon_losses.append(loss_dict['reconstruction'])
+                    val_losses.append(loss_dict["total"])
+                    val_recon_losses.append(loss_dict["reconstruction"])
 
             # ============================================================
             # LOGGING AND CHECKPOINTING
@@ -330,11 +316,11 @@ class MaskedLSTMPretrainer:
             current_lr = self.scheduler.get_last_lr()[0]
 
             # Record history
-            history['train_loss'].append(avg_train_loss)
-            history['val_loss'].append(avg_val_loss)
-            history['train_recon'].append(avg_train_recon)
-            history['val_recon'].append(avg_val_recon)
-            history['learning_rate'].append(current_lr)
+            history["train_loss"].append(avg_train_loss)
+            history["val_loss"].append(avg_val_loss)
+            history["train_recon"].append(avg_train_recon)
+            history["val_recon"].append(avg_val_recon)
+            history["learning_rate"].append(current_lr)
 
             # Print epoch summary
             if verbose:
@@ -386,21 +372,21 @@ class MaskedLSTMPretrainer:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         checkpoint = {
-            'encoder_state_dict': self.model.encoder_lstm.state_dict(),
-            'hyperparams': {
-                'input_dim': self.input_dim,
-                'hidden_dim': self.hidden_dim,
-                'num_layers': self.num_layers,
-                'dropout': self.dropout,
+            "encoder_state_dict": self.model.encoder_lstm.state_dict(),
+            "hyperparams": {
+                "input_dim": self.input_dim,
+                "hidden_dim": self.hidden_dim,
+                "num_layers": self.num_layers,
+                "dropout": self.dropout,
             },
-            'mask_token': self.model.mask_token.data,
-            'training_config': {
-                'mask_strategy': self.mask_strategy,
-                'mask_ratio': self.mask_ratio,
-                'patch_size': self.patch_size,
-                'learning_rate': self.learning_rate,
-                'batch_size': self.batch_size,
-            }
+            "mask_token": self.model.mask_token.data,
+            "training_config": {
+                "mask_strategy": self.mask_strategy,
+                "mask_ratio": self.mask_ratio,
+                "patch_size": self.patch_size,
+                "learning_rate": self.learning_rate,
+                "batch_size": self.batch_size,
+            },
         }
 
         torch.save(checkpoint, path)
@@ -414,10 +400,10 @@ class MaskedLSTMPretrainer:
         checkpoint = torch.load(path, map_location=self.device)
 
         # Restore encoder weights
-        self.model.encoder_lstm.load_state_dict(checkpoint['encoder_state_dict'])
+        self.model.encoder_lstm.load_state_dict(checkpoint["encoder_state_dict"])
 
         # Restore mask token
-        self.model.mask_token.data = checkpoint['mask_token']
+        self.model.mask_token.data = checkpoint["mask_token"]
 
         print(f"[PRETRAINING] Loaded encoder from {path}")
 
@@ -427,7 +413,7 @@ def visualize_reconstruction(
     X_sample: torch.Tensor,
     mask_strategy: str = "random",
     mask_ratio: float = 0.15,
-    device: str = "cuda"
+    device: str = "cuda",
 ) -> dict[str, np.ndarray]:
     """Visualize masked reconstruction quality (for debugging/analysis).
 
@@ -447,18 +433,15 @@ def visualize_reconstruction(
     with torch.no_grad():
         # Apply masking
         x_masked, mask = apply_masking(
-            X_sample,
-            model.mask_token,
-            mask_strategy=mask_strategy,
-            mask_ratio=mask_ratio
+            X_sample, model.mask_token, mask_strategy=mask_strategy, mask_ratio=mask_ratio
         )
 
         # Reconstruct
         reconstruction = model(x_masked)
 
     return {
-        'original': X_sample.cpu().numpy(),
-        'masked': x_masked.cpu().numpy(),
-        'reconstructed': reconstruction.cpu().numpy(),
-        'mask': mask.cpu().numpy()
+        "original": X_sample.cpu().numpy(),
+        "masked": x_masked.cpu().numpy(),
+        "reconstructed": reconstruction.cpu().numpy(),
+        "mask": mask.cpu().numpy(),
     }

@@ -14,20 +14,21 @@ Key improvements over generic time series augmentation:
 4. Adaptive augmentation based on market conditions
 """
 
-import numpy as np
-import torch
-import pandas as pd
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
 from enum import Enum
+from typing import Dict, List, Optional, Tuple, Union
 
+import numpy as np
+import pandas as pd
+import torch
+from loguru import logger
 from scipy import stats
 from scipy.signal import savgol_filter
-from loguru import logger
 
 
 class AugmentationType(str, Enum):
     """Types of financial augmentation strategies."""
+
     MARKET_MIXUP = "market_mixup"  # Market-aware mixup
     VOLATILITY_SCALING = "volatility_scaling"  # Regime-aware volatility changes
     TREND_PRESERVING_JITTER = "trend_preserving_jitter"  # Noise that maintains trends
@@ -102,7 +103,7 @@ class FinancialAugmentationPipeline:
                 "trend_jitter_sigma": 0.03,  # Higher noise tolerance
                 "volatility_scaling_range": (0.8, 1.5),  # Wider volatility changes
                 "market_mixup_alpha": 0.4,
-            }
+            },
         }
 
     def augment_batch(
@@ -110,7 +111,7 @@ class FinancialAugmentationPipeline:
         x: torch.Tensor,
         y: torch.Tensor,
         regime_info: Optional[Dict] = None,
-        expansion_indices: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        expansion_indices: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """Apply financial-aware augmentation to a batch.
 
@@ -159,7 +160,7 @@ class FinancialAugmentationPipeline:
             self.config.trend_preserving_jitter_prob,
             self.config.microstructure_warp_prob,
             self.config.pattern_preserving_cutmix_prob,
-            self.config.economic_scenario_prob
+            self.config.economic_scenario_prob,
         ]
 
         augmentation_types = [
@@ -168,7 +169,7 @@ class FinancialAugmentationPipeline:
             AugmentationType.TREND_PRESERVING_JITTER,
             AugmentationType.MARKET_MICROSTRUCTURE_WARP,
             AugmentationType.PATTERN_PRESERVING_CUTMIX,
-            AugmentationType.ECONOMIC_SCENARIO_SIMULATION
+            AugmentationType.ECONOMIC_SCENARIO_SIMULATION,
         ]
 
         # Normalize probabilities
@@ -189,10 +190,7 @@ class FinancialAugmentationPipeline:
         return AugmentationType.MARKET_MIXUP
 
     def _market_mixup(
-        self,
-        x: torch.Tensor,
-        y: torch.Tensor,
-        regime_info: Optional[Dict] = None
+        self, x: torch.Tensor, y: torch.Tensor, regime_info: Optional[Dict] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """Market-aware mixup that preserves OHLC relationships."""
         if self.config.market_mixup_alpha > 0:
@@ -208,12 +206,7 @@ class FinancialAugmentationPipeline:
 
         return x_mixed, y, y[index], lam
 
-    def _mix_ohlc_series(
-        self,
-        x1: torch.Tensor,
-        x2: torch.Tensor,
-        lam: float
-    ) -> torch.Tensor:
+    def _mix_ohlc_series(self, x1: torch.Tensor, x2: torch.Tensor, lam: float) -> torch.Tensor:
         """Mix two OHLC series while preserving constraints."""
         # Mix log prices (ensures positivity)
         log_x1 = torch.log(torch.clamp(x1, min=1e-8))
@@ -254,10 +247,7 @@ class FinancialAugmentationPipeline:
         return x_constrained
 
     def _volatility_scaling(
-        self,
-        x: torch.Tensor,
-        y: torch.Tensor,
-        regime_info: Optional[Dict] = None
+        self, x: torch.Tensor, y: torch.Tensor, regime_info: Optional[Dict] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """Scale volatility while preserving price levels and trends."""
         batch_size = x.size(0)
@@ -318,10 +308,7 @@ class FinancialAugmentationPipeline:
         return torch.from_numpy(trend).to(x.device)
 
     def _trend_preserving_jitter(
-        self,
-        x: torch.Tensor,
-        y: torch.Tensor,
-        regime_info: Optional[Dict] = None
+        self, x: torch.Tensor, y: torch.Tensor, regime_info: Optional[Dict] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """Add jitter that preserves trend structure."""
         # Get regime-specific parameters
@@ -350,10 +337,7 @@ class FinancialAugmentationPipeline:
         return x_jittered, y, y, 1.0
 
     def _market_microstructure_warp(
-        self,
-        x: torch.Tensor,
-        y: torch.Tensor,
-        regime_info: Optional[Dict] = None
+        self, x: torch.Tensor, y: torch.Tensor, regime_info: Optional[Dict] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """Apply realistic market microstructure changes."""
         # Add microstructure noise to OHLC components
@@ -361,8 +345,12 @@ class FinancialAugmentationPipeline:
 
         # Different noise levels for different components
         open_noise = torch.randn_like(x[..., 0]) * noise_scale
-        high_noise = torch.abs(torch.randn_like(x[..., 1])) * noise_scale * 2  # Positive bias for high
-        low_noise = -torch.abs(torch.randn_like(x[..., 2])) * noise_scale * 2  # Negative bias for low
+        high_noise = (
+            torch.abs(torch.randn_like(x[..., 1])) * noise_scale * 2
+        )  # Positive bias for high
+        low_noise = (
+            -torch.abs(torch.randn_like(x[..., 2])) * noise_scale * 2
+        )  # Negative bias for low
         close_noise = torch.randn_like(x[..., 3]) * noise_scale
 
         # Apply noise
@@ -382,7 +370,7 @@ class FinancialAugmentationPipeline:
         self,
         x: torch.Tensor,
         y: torch.Tensor,
-        expansion_indices: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        expansion_indices: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """CutMix that preserves pattern regions."""
         if self.config.market_mixup_alpha > 0:
@@ -396,9 +384,7 @@ class FinancialAugmentationPipeline:
         # Determine cut region
         if expansion_indices is not None:
             # Avoid cutting through pattern regions
-            cut_start, cut_end = self._find_safe_cut_region(
-                expansion_indices, seq_len, lam
-            )
+            cut_start, cut_end = self._find_safe_cut_region(expansion_indices, seq_len, lam)
         else:
             # Use default central region for cutting
             cut_len = int(seq_len * (1 - lam))
@@ -415,10 +401,7 @@ class FinancialAugmentationPipeline:
         return x_mixed, y, y[index], actual_lam
 
     def _find_safe_cut_region(
-        self,
-        expansion_indices: Tuple[torch.Tensor, torch.Tensor],
-        seq_len: int,
-        lam: float
+        self, expansion_indices: Tuple[torch.Tensor, torch.Tensor], seq_len: int, lam: float
     ) -> Tuple[int, int]:
         """Find safe region for cutting that avoids pattern areas."""
         exp_start, exp_end = expansion_indices
@@ -428,10 +411,7 @@ class FinancialAugmentationPipeline:
         max_end = exp_end.max().item()
 
         # Define safe regions (outside pattern areas)
-        safe_regions = [
-            (0, min_start),  # Before pattern
-            (max_end + 1, seq_len)  # After pattern
-        ]
+        safe_regions = [(0, min_start), (max_end + 1, seq_len)]  # Before pattern  # After pattern
 
         # Filter out invalid regions
         safe_regions = [(s, e) for s, e in safe_regions if s < e]
@@ -449,10 +429,7 @@ class FinancialAugmentationPipeline:
         return cut_start, cut_end
 
     def _economic_scenario_simulation(
-        self,
-        x: torch.Tensor,
-        y: torch.Tensor,
-        regime_info: Optional[Dict] = None
+        self, x: torch.Tensor, y: torch.Tensor, regime_info: Optional[Dict] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
         """Simulate economic scenarios (stress testing)."""
         # Choose scenario type
@@ -470,7 +447,9 @@ class FinancialAugmentationPipeline:
 
         return x_stressed, y, y, 1.0
 
-    def _simulate_market_crash(self, x: torch.Tensor, crash_magnitude: float = -0.2) -> torch.Tensor:
+    def _simulate_market_crash(
+        self, x: torch.Tensor, crash_magnitude: float = -0.2
+    ) -> torch.Tensor:
         """Simulate market crash scenario."""
         crash_start = np.random.randint(30, 75)  # Start crash in prediction window
         crash_duration = np.random.randint(5, 15)  # 5-15 bar crash
@@ -484,7 +463,7 @@ class FinancialAugmentationPipeline:
             price_impact = crash_magnitude * decay_factor
 
             # Apply to all OHLC components
-            x_crashed[:, i, :] *= (1 + price_impact)
+            x_crashed[:, i, :] *= 1 + price_impact
 
         # Ensure OHLC constraints
         if self.config.maintain_ohlc_constraints:
@@ -492,7 +471,9 @@ class FinancialAugmentationPipeline:
 
         return x_crashed
 
-    def _simulate_market_rally(self, x: torch.Tensor, rally_magnitude: float = 0.15) -> torch.Tensor:
+    def _simulate_market_rally(
+        self, x: torch.Tensor, rally_magnitude: float = 0.15
+    ) -> torch.Tensor:
         """Simulate market rally scenario."""
         rally_start = np.random.randint(30, 75)
         rally_duration = np.random.randint(5, 15)
@@ -504,14 +485,16 @@ class FinancialAugmentationPipeline:
             rally_factor = 1 - np.exp(-0.2 * (i - rally_start))
             price_impact = rally_magnitude * rally_factor
 
-            x_rallied[:, i, :] *= (1 + price_impact)
+            x_rallied[:, i, :] *= 1 + price_impact
 
         if self.config.maintain_ohlc_constraints:
             x_rallied = self._enforce_ohlc_constraints(x_rallied)
 
         return x_rallied
 
-    def _simulate_volatility_spike(self, x: torch.Tensor, spike_factor: float = 3.0) -> torch.Tensor:
+    def _simulate_volatility_spike(
+        self, x: torch.Tensor, spike_factor: float = 3.0
+    ) -> torch.Tensor:
         """Simulate volatility spike scenario."""
         spike_start = np.random.randint(30, 75)
         spike_duration = np.random.randint(3, 10)
@@ -560,11 +543,7 @@ class FinancialAugmentationPipeline:
 
 
 def financial_mixup_criterion(
-    criterion: callable,
-    pred: torch.Tensor,
-    y_a: torch.Tensor,
-    y_b: torch.Tensor,
-    lam: float
+    criterion: callable, pred: torch.Tensor, y_a: torch.Tensor, y_b: torch.Tensor, lam: float
 ) -> torch.Tensor:
     """Compute loss for financial mixup augmentation.
 
@@ -582,9 +561,7 @@ def financial_mixup_criterion(
 
 
 def create_financial_augmentation_pipeline(
-    sensitivity: str = "medium",
-    preserve_patterns: bool = True,
-    adaptive_to_regime: bool = True
+    sensitivity: str = "medium", preserve_patterns: bool = True, adaptive_to_regime: bool = True
 ) -> FinancialAugmentationPipeline:
     """Create a financial augmentation pipeline with sensible defaults.
 
@@ -625,8 +602,6 @@ def create_financial_augmentation_pipeline(
     # Override based on parameters
     config.adaptive_to_regime = adaptive_to_regime
     if preserve_patterns:
-        config.pattern_preserving_cutmix_prob = max(
-            config.pattern_preserving_cutmix_prob, 0.4
-        )
+        config.pattern_preserving_cutmix_prob = max(config.pattern_preserving_cutmix_prob, 0.4)
 
     return FinancialAugmentationPipeline(config)

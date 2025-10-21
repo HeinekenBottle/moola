@@ -143,7 +143,7 @@ def verify_manifest(artifacts_dir: Path, manifest_path: Path) -> dict[str, bool]
         else:
             try:
                 actual_hash = compute_sha256(file_path)
-                verification[relative_path] = (actual_hash == expected_hash)
+                verification[relative_path] = actual_hash == expected_hash
             except Exception:
                 verification[relative_path] = False
 

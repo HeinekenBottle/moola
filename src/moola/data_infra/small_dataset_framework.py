@@ -16,24 +16,27 @@ Key components:
 5. Uncertainty quantification and risk assessment
 """
 
+import warnings
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union, Any, Callable
-from enum import Enum
 from scipy import stats
-from scipy.stats import bootstrap, ttest_ind, mannwhitneyu
-from sklearn.model_selection import StratifiedKFold, LeaveOneOut
+from scipy.stats import bootstrap, mannwhitneyu, ttest_ind
 from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.model_selection import LeaveOneOut, StratifiedKFold
 from sklearn.utils import resample
-import warnings
-warnings.filterwarnings('ignore')
+
+warnings.filterwarnings("ignore")
 
 from loguru import logger
 
 
 class SmallDatasetStrategy(str, Enum):
     """Strategies for handling small datasets."""
+
     CONSERVATIVE = "conservative"  # Prioritize avoiding overfitting
     BIAS_CORRECTED = "bias_corrected"  # Apply statistical bias correction
     BOOTSTRAP_HEAVY = "bootstrap_heavy"  # Heavy use of bootstrap methods
@@ -97,7 +100,9 @@ class SmallDatasetCrossValidator:
         else:
             return self._default_cv_splits(X, y)
 
-    def _conservative_cv_splits(self, X: np.ndarray, y: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def _conservative_cv_splits(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Conservative CV with stratification and size constraints."""
         # Use stratified K-fold but ensure minimum class representation
         n_splits = min(self.config.n_outer_folds, len(X) // self.config.min_samples_per_class)
@@ -120,7 +125,9 @@ class SmallDatasetCrossValidator:
 
         return splits
 
-    def _bootstrap_cv_splits(self, X: np.ndarray, y: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def _bootstrap_cv_splits(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Bootstrap-based CV for small datasets."""
         splits = []
         n_samples = len(X)
@@ -139,12 +146,16 @@ class SmallDatasetCrossValidator:
 
         return splits
 
-    def _uncertainty_aware_cv_splits(self, X: np.ndarray, y: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def _uncertainty_aware_cv_splits(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Uncertainty-aware CV that emphasizes boundary samples."""
         # For now, use stratified CV with uncertainty weighting in training
         return self._conservative_cv_splits(X, y)
 
-    def _default_cv_splits(self, X: np.ndarray, y: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def _default_cv_splits(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Default stratified CV."""
         n_splits = min(5, len(X) // 2)
         skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
@@ -158,7 +169,7 @@ class SmallDatasetStatistics:
     def compute_confidence_interval(
         data: np.ndarray,
         confidence_level: float = 0.95,
-        method: str = "t"  # "t" for t-distribution, "bootstrap" for bootstrap
+        method: str = "t",  # "t" for t-distribution, "bootstrap" for bootstrap
     ) -> Tuple[float, float]:
         """Compute confidence interval for small sample."""
         n = len(data)
@@ -168,7 +179,7 @@ class SmallDatasetStatistics:
             mean = np.mean(data)
             sem = stats.sem(data)  # Standard error of mean
             alpha = 1 - confidence_level
-            t_critical = stats.t.ppf(1 - alpha/2, n-1)
+            t_critical = stats.t.ppf(1 - alpha / 2, n - 1)
 
             ci_lower = mean - t_critical * sem
             ci_upper = mean + t_critical * sem
@@ -177,8 +188,13 @@ class SmallDatasetStatistics:
         elif method == "bootstrap" and n >= 3:
             # Bootstrap confidence interval
             try:
-                result = bootstrap((data,), np.mean, confidence_level=confidence_level,
-                                 n_resamples=1000, random_state=42)
+                result = bootstrap(
+                    (data,),
+                    np.mean,
+                    confidence_level=confidence_level,
+                    n_resamples=1000,
+                    random_state=42,
+                )
                 return result.confidence_interval.low, result.confidence_interval.high
             except:
                 # Fallback to t-interval
@@ -190,7 +206,7 @@ class SmallDatasetStatistics:
             # Normal approximation as last resort
             mean = np.mean(data)
             std = np.std(data, ddof=1)
-            z_critical = stats.norm.ppf(1 - (1-confidence_level)/2)
+            z_critical = stats.norm.ppf(1 - (1 - confidence_level) / 2)
 
             ci_lower = mean - z_critical * std / np.sqrt(n)
             ci_upper = mean + z_critical * std / np.sqrt(n)
@@ -208,7 +224,7 @@ class SmallDatasetStatistics:
         mean1, mean2 = np.mean(group1), np.mean(group2)
         var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
 
-        pooled_std = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1+n2-2))
+        pooled_std = np.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
 
         if pooled_std == 0:
             return 0.0, "no_variance"
@@ -229,37 +245,32 @@ class SmallDatasetStatistics:
 
     @staticmethod
     def statistical_power_analysis(
-        effect_size: float,
-        n_samples: int,
-        alpha: float = 0.05,
-        power: float = 0.8
+        effect_size: float, n_samples: int, alpha: float = 0.05, power: float = 0.8
     ) -> Dict[str, float]:
         """Perform statistical power analysis for small samples."""
         # Simplified power calculation for two-sample t-test
         from scipy.stats import norm
 
-        z_alpha = norm.ppf(1 - alpha/2)
+        z_alpha = norm.ppf(1 - alpha / 2)
         z_beta = norm.ppf(power)
 
         # Required sample size for given effect size
         n_required = 2 * ((z_alpha + z_beta) / effect_size) ** 2
 
         # Actual power with given sample size
-        z_actual = np.sqrt(n_samples/2) * abs(effect_size) - z_alpha
+        z_actual = np.sqrt(n_samples / 2) * abs(effect_size) - z_alpha
         actual_power = norm.cdf(z_actual)
 
         return {
             "required_n_per_group": n_required,
             "actual_power": actual_power,
             "sufficient_power": actual_power >= power,
-            "power_gap": power - actual_power
+            "power_gap": power - actual_power,
         }
 
     @staticmethod
     def bias_corrected_accuracy(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        n_bootstrap: int = 1000
+        y_true: np.ndarray, y_pred: np.ndarray, n_bootstrap: int = 1000
     ) -> Dict[str, float]:
         """Compute bias-corrected accuracy for small samples."""
         n_samples = len(y_true)
@@ -294,7 +305,7 @@ class SmallDatasetStatistics:
             "bootstrap_bias": bias,
             "ci_lower": ci_lower,
             "ci_upper": ci_upper,
-            "n_bootstrap": n_bootstrap
+            "n_bootstrap": n_bootstrap,
         }
 
 
@@ -307,11 +318,7 @@ class SmallDatasetModelSelector:
         self.results_history: List[Dict] = []
 
     def nested_cross_validation(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        model_configs: List[Dict],
-        model_factory: Callable
+        self, X: np.ndarray, y: np.ndarray, model_configs: List[Dict], model_factory: Callable
     ) -> Dict[str, Any]:
         """Perform nested cross-validation for unbiased model selection."""
         cv = SmallDatasetCrossValidator(self.config)
@@ -321,7 +328,7 @@ class SmallDatasetModelSelector:
             "model_scores": {config["name"]: [] for config in model_configs},
             "best_models": [],
             "overall_best": None,
-            "uncertainty_estimates": {}
+            "uncertainty_estimates": {},
         }
 
         for outer_fold, (train_idx, val_idx) in enumerate(outer_splits):
@@ -334,7 +341,9 @@ class SmallDatasetModelSelector:
             )
 
             # Train best model on full outer training data
-            best_config = next(config for config in model_configs if config["name"] == best_model_name)
+            best_config = next(
+                config for config in model_configs if config["name"] == best_model_name
+            )
             best_model = model_factory(**best_config)
 
             # Train model (placeholder - actual training would happen here)
@@ -348,12 +357,14 @@ class SmallDatasetModelSelector:
             score = np.random.uniform(0.3, 0.8)
 
             results["model_scores"][best_model_name].append(score)
-            results["best_models"].append({
-                "fold": outer_fold,
-                "model_name": best_model_name,
-                "score": score,
-                "config": best_config
-            })
+            results["best_models"].append(
+                {
+                    "fold": outer_fold,
+                    "model_name": best_model_name,
+                    "score": score,
+                    "config": best_config,
+                }
+            )
 
         # Determine overall best model
         mean_scores = {
@@ -374,18 +385,14 @@ class SmallDatasetModelSelector:
                     "std": np.std(scores),
                     "ci_lower": ci_lower,
                     "ci_upper": ci_upper,
-                    "n_folds": len(scores)
+                    "n_folds": len(scores),
                 }
 
         self.results_history.append(results)
         return results
 
     def _inner_cv_selection(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        model_configs: List[Dict],
-        model_factory: Callable
+        self, X: np.ndarray, y: np.ndarray, model_configs: List[Dict], model_factory: Callable
     ) -> Tuple[str, float]:
         """Inner CV for model/hyperparameter selection."""
         inner_cv = SmallDatasetCrossValidator(self.config)
@@ -412,11 +419,16 @@ class SmallDatasetModelSelector:
 
         # Select best model (prefer simpler models in case of ties)
         mean_scores = {
-            name: np.mean(scores) if scores else 0.0
-            for name, scores in model_scores.items()
+            name: np.mean(scores) if scores else 0.0 for name, scores in model_scores.items()
         }
 
-        best_model = max(mean_scores.items(), key=lambda x: (x[1], -next(c["complexity"] for c in model_configs if c["name"] == x[0])))
+        best_model = max(
+            mean_scores.items(),
+            key=lambda x: (
+                x[1],
+                -next(c["complexity"] for c in model_configs if c["name"] == x[0]),
+            ),
+        )
 
         return best_model
 
@@ -447,22 +459,22 @@ class SmallDatasetFramework:
             "class_imbalance_ratio": max(class_counts) / min(class_counts),
             "samples_per_feature": n_samples / n_features,
             "samples_per_class": n_samples / len(unique_classes),
-            "min_class_samples": min(class_counts)
+            "min_class_samples": min(class_counts),
         }
 
         # Assess data sufficiency
-        analysis["sufficient_samples"] = all([
-            n_samples >= 50,
-            analysis["min_class_samples"] >= 5,
-            analysis["samples_per_feature"] >= 5
-        ])
+        analysis["sufficient_samples"] = all(
+            [
+                n_samples >= 50,
+                analysis["min_class_samples"] >= 5,
+                analysis["samples_per_feature"] >= 5,
+            ]
+        )
 
         # Power analysis
         if len(unique_classes) == 2:
             effect_size = 0.5  # Medium effect size
-            power_analysis = self.statistics.statistical_power_analysis(
-                effect_size, n_samples
-            )
+            power_analysis = self.statistics.statistical_power_analysis(effect_size, n_samples)
             analysis["power_analysis"] = power_analysis
 
         # Recommendations
@@ -490,14 +502,14 @@ class SmallDatasetFramework:
         y: np.ndarray,
         model_factory: Callable,
         model_config: Dict,
-        n_repetitions: int = 100
+        n_repetitions: int = 100,
     ) -> Dict[str, Any]:
         """Evaluate model robustness with uncertainty quantification."""
         results = {
             "repetition_scores": [],
             "confidence_intervals": {},
             "bias_corrected_metrics": {},
-            "sensitivity_analysis": {}
+            "sensitivity_analysis": {},
         }
 
         # Multiple CV repetitions
@@ -535,14 +547,14 @@ class SmallDatasetFramework:
             "std": np.std(scores_array),
             "ci_lower": ci_lower,
             "ci_upper": ci_upper,
-            "coefficient_of_variation": np.std(scores_array) / np.mean(scores_array)
+            "coefficient_of_variation": np.std(scores_array) / np.mean(scores_array),
         }
 
         # Bias correction
         if len(scores_array) >= 10:
             bias_corrected = self.statistics.bias_corrected_accuracy(
                 np.repeat(1, len(scores_array)),  # Placeholder true labels
-                (scores_array > 0.5).astype(int)  # Placeholder predictions
+                (scores_array > 0.5).astype(int),  # Placeholder predictions
             )
             results["bias_corrected_metrics"] = bias_corrected
 
@@ -555,11 +567,7 @@ class SmallDatasetFramework:
         return results
 
     def _perform_sensitivity_analysis(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        model_factory: Callable,
-        model_config: Dict
+        self, X: np.ndarray, y: np.ndarray, model_factory: Callable, model_config: Dict
     ) -> Dict[str, Any]:
         """Perform sensitivity analysis to model assumptions."""
         sensitivity_results = {}
@@ -585,7 +593,7 @@ class SmallDatasetFramework:
             sensitivity_results["data_stability"] = {
                 "mean_score": np.mean(stability_scores),
                 "score_std": np.std(stability_scores),
-                "stability_coefficient": 1 - (np.std(stability_scores) / base_score)
+                "stability_coefficient": 1 - (np.std(stability_scores) / base_score),
             }
 
         return sensitivity_results
@@ -598,10 +606,10 @@ class SmallDatasetFramework:
         report = {
             "summary": {
                 "n_experiments": len(self.experiment_results),
-                "config": self.config.__dict__
+                "config": self.config.__dict__,
             },
             "performance_summary": {},
-            "recommendations": []
+            "recommendations": [],
         }
 
         # Aggregate results across experiments
@@ -621,7 +629,7 @@ class SmallDatasetFramework:
                 "std_score": np.std(scores_array),
                 "ci_lower": ci_lower,
                 "ci_upper": ci_upper,
-                "n_total_evaluations": len(scores_array)
+                "n_total_evaluations": len(scores_array),
             }
 
         # Generate recommendations
@@ -663,7 +671,7 @@ class SmallDatasetFramework:
 def create_small_dataset_framework(
     n_samples: int = 98,
     strategy: SmallDatasetStrategy = SmallDatasetStrategy.CONSERVATIVE,
-    confidence_level: float = 0.95
+    confidence_level: float = 0.95,
 ) -> SmallDatasetFramework:
     """Create a small dataset framework with sensible defaults.
 
@@ -680,16 +688,14 @@ def create_small_dataset_framework(
         cv_strategy=strategy,
         confidence_level=confidence_level,
         n_outer_folds=min(5, n_samples // 3),
-        n_inner_folds=min(3, n_samples // 5)
+        n_inner_folds=min(3, n_samples // 5),
     )
 
     return SmallDatasetFramework(config)
 
 
 def analyze_small_dataset_feasibility(
-    X: np.ndarray,
-    y: np.ndarray,
-    target_accuracy: float = 0.7
+    X: np.ndarray, y: np.ndarray, target_accuracy: float = 0.7
 ) -> Dict[str, Any]:
     """Analyze feasibility of machine learning with small dataset.
 
@@ -710,7 +716,7 @@ def analyze_small_dataset_feasibility(
         "feasibility_score": 0.0,
         "challenges": [],
         "mitigation_strategies": [],
-        "minimum_samples_needed": 0
+        "minimum_samples_needed": 0,
     }
 
     # Calculate feasibility score
@@ -743,12 +749,14 @@ def analyze_small_dataset_feasibility(
     if analysis["samples_per_feature"] < 10:
         feasibility["mitigation_strategies"].append("Apply aggressive feature selection")
 
-    feasibility["mitigation_strategies"].extend([
-        "Use nested cross-validation",
-        "Apply strong regularization",
-        "Use data augmentation",
-        "Report confidence intervals",
-        "Consider ensemble methods"
-    ])
+    feasibility["mitigation_strategies"].extend(
+        [
+            "Use nested cross-validation",
+            "Apply strong regularization",
+            "Use data augmentation",
+            "Report confidence intervals",
+            "Consider ensemble methods",
+        ]
+    )
 
     return feasibility

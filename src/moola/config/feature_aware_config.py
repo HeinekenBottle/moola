@@ -34,11 +34,13 @@ class FeatureAwarePretrainingConfig:
     patch_size: int = 7
 
     # Loss weights
-    loss_weights: dict = field(default_factory=lambda: {
-        'ohlc_weight': 0.4,
-        'feature_weight': 0.4,
-        'regularization_weight': 0.2
-    })
+    loss_weights: dict = field(
+        default_factory=lambda: {
+            "ohlc_weight": 0.4,
+            "feature_weight": 0.4,
+            "regularization_weight": 0.2,
+        }
+    )
 
     # Training hyperparameters
     learning_rate: float = 1e-3
@@ -135,9 +137,9 @@ class FeatureEngineeringConfig:
 
 # Preset configurations for different scenarios
 
+
 def get_feature_aware_pretraining_config(
-    feature_fusion: str = "concat",
-    preset: str = "default"
+    feature_fusion: str = "concat", preset: str = "default"
 ) -> FeatureAwarePretrainingConfig:
     """Get feature-aware pre-training configuration.
 
@@ -166,17 +168,15 @@ def get_feature_aware_pretraining_config(
         base_config.early_stopping_patience = 20
         base_config.learning_rate = 5e-4
         base_config.loss_weights = {
-            'ohlc_weight': 0.3,
-            'feature_weight': 0.5,
-            'regularization_weight': 0.2
+            "ohlc_weight": 0.3,
+            "feature_weight": 0.5,
+            "regularization_weight": 0.2,
         }
 
     return base_config
 
 
-def get_enhanced_simple_lstm_config(
-    preset: str = "default"
-) -> EnhancedSimpleLSTMConfig:
+def get_enhanced_simple_lstm_config(preset: str = "default") -> EnhancedSimpleLSTMConfig:
     """Get enhanced SimpleLSTM configuration.
 
     Args:
@@ -208,9 +208,7 @@ def get_enhanced_simple_lstm_config(
     return base_config
 
 
-def get_feature_engineering_config(
-    preset: str = "default"
-) -> FeatureEngineeringConfig:
+def get_feature_engineering_config(preset: str = "default") -> FeatureEngineeringConfig:
     """Get feature engineering configuration.
 
     Args:
@@ -243,6 +241,7 @@ def get_feature_engineering_config(
 
 # GPU-optimized configurations
 
+
 def get_gpu_optimized_config(gpu_memory_gb: int = 24) -> dict:
     """Get GPU-optimized configuration based on available memory.
 
@@ -254,39 +253,40 @@ def get_gpu_optimized_config(gpu_memory_gb: int = 24) -> dict:
     """
     if gpu_memory_gb >= 24:  # RTX 4090, A100
         return {
-            'batch_size': 512,
-            'num_workers': 16,
-            'pin_memory': True,
-            'prefetch_factor': 2,
-            'persistent_workers': True,
+            "batch_size": 512,
+            "num_workers": 16,
+            "pin_memory": True,
+            "prefetch_factor": 2,
+            "persistent_workers": True,
         }
     elif gpu_memory_gb >= 16:  # RTX 3080, V100
         return {
-            'batch_size': 256,
-            'num_workers': 12,
-            'pin_memory': True,
-            'prefetch_factor': 2,
-            'persistent_workers': True,
+            "batch_size": 256,
+            "num_workers": 12,
+            "pin_memory": True,
+            "prefetch_factor": 2,
+            "persistent_workers": True,
         }
     elif gpu_memory_gb >= 8:  # RTX 3070, GTX 1080 Ti
         return {
-            'batch_size': 128,
-            'num_workers': 8,
-            'pin_memory': True,
-            'prefetch_factor': 2,
-            'persistent_workers': False,
+            "batch_size": 128,
+            "num_workers": 8,
+            "pin_memory": True,
+            "prefetch_factor": 2,
+            "persistent_workers": False,
         }
     else:  # Low memory GPUs
         return {
-            'batch_size': 64,
-            'num_workers': 4,
-            'pin_memory': False,
-            'prefetch_factor': 1,
-            'persistent_workers': False,
+            "batch_size": 64,
+            "num_workers": 4,
+            "pin_memory": False,
+            "prefetch_factor": 1,
+            "persistent_workers": False,
         }
 
 
 # Environment-specific configurations
+
 
 def get_environment_config() -> dict:
     """Get environment-specific configuration.
@@ -294,14 +294,16 @@ def get_environment_config() -> dict:
     Returns:
         Dictionary with environment settings
     """
-    import torch
     import psutil
+    import torch
 
     # GPU detection
     if torch.cuda.is_available():
         gpu_count = torch.cuda.device_count()
         gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "Unknown"
-        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3) if gpu_count > 0 else 0
+        gpu_memory = (
+            torch.cuda.get_device_properties(0).total_memory / (1024**3) if gpu_count > 0 else 0
+        )
     else:
         gpu_count = 0
         gpu_name = "None"
@@ -312,18 +314,21 @@ def get_environment_config() -> dict:
     memory_gb = psutil.virtual_memory().total / (1024**3)
 
     return {
-        'gpu_available': gpu_count > 0,
-        'gpu_count': gpu_count,
-        'gpu_name': gpu_name,
-        'gpu_memory_gb': gpu_memory,
-        'cpu_count': cpu_count,
-        'memory_gb': memory_gb,
-        'recommended_device': 'cuda' if gpu_count > 0 else 'cpu',
-        'recommended_batch_size': get_gpu_optimized_config(gpu_memory)['batch_size'] if gpu_count > 0 else 32,
+        "gpu_available": gpu_count > 0,
+        "gpu_count": gpu_count,
+        "gpu_name": gpu_name,
+        "gpu_memory_gb": gpu_memory,
+        "cpu_count": cpu_count,
+        "memory_gb": memory_gb,
+        "recommended_device": "cuda" if gpu_count > 0 else "cpu",
+        "recommended_batch_size": (
+            get_gpu_optimized_config(gpu_memory)["batch_size"] if gpu_count > 0 else 32
+        ),
     }
 
 
 # Validation functions
+
 
 def validate_feature_aware_config(config: FeatureAwarePretrainingConfig) -> bool:
     """Validate feature-aware pre-training configuration.

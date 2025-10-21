@@ -28,6 +28,7 @@ import torch
 
 try:
     import pynvml
+
     PYNVML_AVAILABLE = True
 except ImportError:
     PYNVML_AVAILABLE = False
@@ -132,10 +133,7 @@ class ProfilerContext:
         print("\n" + "=" * 80)
         print("PROFILER SUMMARY - Top Operations by CUDA Time")
         print("=" * 80)
-        print(self.profiler.key_averages().table(
-            sort_by=sort_by,
-            row_limit=row_limit
-        ))
+        print(self.profiler.key_averages().table(sort_by=sort_by, row_limit=row_limit))
 
 
 class GPUMonitor:
@@ -159,9 +157,7 @@ class GPUMonitor:
 
     def __init__(self, device: int = 0, sampling_interval: float = 1.0):
         if not PYNVML_AVAILABLE:
-            raise ImportError(
-                "nvidia-ml-py not installed. Install with: pip install nvidia-ml-py"
-            )
+            raise ImportError("nvidia-ml-py not installed. Install with: pip install nvidia-ml-py")
 
         self.device = device
         self.sampling_interval = sampling_interval
@@ -196,11 +192,11 @@ class GPUMonitor:
         mem_info = pynvml.nvmlDeviceGetMemoryInfo(self.handle)
 
         sample = {
-            'timestamp': time.time() - self.start_time,
-            'gpu_utilization': util.gpu,  # 0-100%
-            'memory_utilization': util.memory,  # 0-100%
-            'memory_used_mb': mem_info.used / 1024**2,  # MB
-            'memory_total_mb': mem_info.total / 1024**2,  # MB
+            "timestamp": time.time() - self.start_time,
+            "gpu_utilization": util.gpu,  # 0-100%
+            "memory_utilization": util.memory,  # 0-100%
+            "memory_used_mb": mem_info.used / 1024**2,  # MB
+            "memory_total_mb": mem_info.total / 1024**2,  # MB
         }
 
         self.samples.append(sample)
@@ -218,27 +214,29 @@ class GPUMonitor:
             return {}
 
         # Aggregate statistics
-        gpu_utils = [s['gpu_utilization'] for s in self.samples]
-        mem_utils = [s['memory_utilization'] for s in self.samples]
-        mem_used = [s['memory_used_mb'] for s in self.samples]
+        gpu_utils = [s["gpu_utilization"] for s in self.samples]
+        mem_utils = [s["memory_utilization"] for s in self.samples]
+        mem_used = [s["memory_used_mb"] for s in self.samples]
 
         stats = {
-            'avg_utilization': sum(gpu_utils) / len(gpu_utils),
-            'max_utilization': max(gpu_utils),
-            'min_utilization': min(gpu_utils),
-            'avg_memory_utilization': sum(mem_utils) / len(mem_utils),
-            'peak_memory_mb': max(mem_used),
-            'avg_memory_mb': sum(mem_used) / len(mem_used),
-            'total_memory_mb': self.samples[0]['memory_total_mb'],
-            'num_samples': len(self.samples),
-            'duration_sec': time.time() - self.start_time,
+            "avg_utilization": sum(gpu_utils) / len(gpu_utils),
+            "max_utilization": max(gpu_utils),
+            "min_utilization": min(gpu_utils),
+            "avg_memory_utilization": sum(mem_utils) / len(mem_utils),
+            "peak_memory_mb": max(mem_used),
+            "avg_memory_mb": sum(mem_used) / len(mem_used),
+            "total_memory_mb": self.samples[0]["memory_total_mb"],
+            "num_samples": len(self.samples),
+            "duration_sec": time.time() - self.start_time,
         }
 
         print(f"\n[GPU MONITOR] Monitoring stopped - Summary:")
         print(f"  Duration: {stats['duration_sec']:.1f}s")
         print(f"  Avg GPU utilization: {stats['avg_utilization']:.1f}%")
         print(f"  Peak GPU utilization: {stats['max_utilization']:.1f}%")
-        print(f"  Peak memory: {stats['peak_memory_mb']:.0f} MB / {stats['total_memory_mb']:.0f} MB")
+        print(
+            f"  Peak memory: {stats['peak_memory_mb']:.0f} MB / {stats['total_memory_mb']:.0f} MB"
+        )
 
         return stats
 
@@ -300,9 +298,11 @@ def log_gpu_stats(device: int = 0, prefix: str = ""):
     mem_reserved = torch.cuda.memory_reserved(device) / 1024**2
     mem_max = torch.cuda.get_device_properties(device).total_memory / 1024**2
 
-    print(f"{prefix} GPU Memory: {mem_allocated:.0f} MB allocated, "
-          f"{mem_reserved:.0f} MB reserved, "
-          f"{mem_max:.0f} MB total")
+    print(
+        f"{prefix} GPU Memory: {mem_allocated:.0f} MB allocated, "
+        f"{mem_reserved:.0f} MB reserved, "
+        f"{mem_max:.0f} MB total"
+    )
 
     # NVML stats if available
     if PYNVML_AVAILABLE:
@@ -352,13 +352,13 @@ def estimate_training_time(
     total_seconds = total_batches * seconds_per_batch
 
     return {
-        'batches_per_epoch': batches_per_epoch,
-        'total_batches': total_batches,
-        'seconds_per_batch': seconds_per_batch,
-        'seconds_per_epoch': batches_per_epoch * seconds_per_batch,
-        'total_seconds': total_seconds,
-        'total_minutes': total_seconds / 60,
-        'total_hours': total_seconds / 3600,
+        "batches_per_epoch": batches_per_epoch,
+        "total_batches": total_batches,
+        "seconds_per_batch": seconds_per_batch,
+        "seconds_per_epoch": batches_per_epoch * seconds_per_batch,
+        "total_seconds": total_seconds,
+        "total_minutes": total_seconds / 60,
+        "total_hours": total_seconds / 3600,
     }
 
 
@@ -367,9 +367,9 @@ def estimate_training_time(
 # ============================================================================
 
 __all__ = [
-    'ProfilerContext',
-    'GPUMonitor',
-    'profile_training',
-    'log_gpu_stats',
-    'estimate_training_time',
+    "ProfilerContext",
+    "GPUMonitor",
+    "profile_training",
+    "log_gpu_stats",
+    "estimate_training_time",
 ]

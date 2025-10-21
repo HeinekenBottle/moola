@@ -85,7 +85,14 @@ def test_joint_hit_f1_perfect():
     true_type = np.zeros(n, dtype=int)
 
     result = compute_joint_hit_f1(
-        pred_start, pred_end, true_start, true_end, pred_type, true_type, tolerance=3, average="weighted"
+        pred_start,
+        pred_end,
+        true_start,
+        true_end,
+        pred_type,
+        true_type,
+        tolerance=3,
+        average="weighted",
     )
 
     assert result["joint_f1"] == 1.0
@@ -105,7 +112,14 @@ def test_joint_hit_f1_partial():
     true_type = np.array([0, 0, 1, 1, 0])
 
     result = compute_joint_hit_f1(
-        pred_start, pred_end, true_start, true_end, pred_type, true_type, tolerance=3, average="weighted"
+        pred_start,
+        pred_end,
+        true_start,
+        true_end,
+        pred_type,
+        true_type,
+        tolerance=3,
+        average="weighted",
     )
 
     # Should have non-zero but imperfect F1
@@ -261,7 +275,14 @@ def test_joint_hit_f1_macro_average():
     true_type = np.array([0, 0, 1, 1])
 
     result = compute_joint_hit_f1(
-        pred_start, pred_end, true_start, true_end, pred_type, true_type, tolerance=3, average="macro"
+        pred_start,
+        pred_end,
+        true_start,
+        true_end,
+        pred_type,
+        true_type,
+        tolerance=3,
+        average="macro",
     )
 
     assert result["average"] == "macro"

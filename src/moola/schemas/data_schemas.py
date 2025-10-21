@@ -17,13 +17,14 @@ from typing import Any, Dict, List, Literal, Optional, Union
 import numpy as np
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 # ============================================================================
 # ENUMS AND CONSTANTS
 # ============================================================================
 
+
 class PatternLabel(str, Enum):
     """Valid pattern classification labels."""
+
     CONSOLIDATION = "consolidation"
     RETRACEMENT = "retracement"
     EXPANSION = "expansion"
@@ -31,6 +32,7 @@ class PatternLabel(str, Enum):
 
 class DataStage(str, Enum):
     """Data pipeline stages."""
+
     RAW = "raw"
     PROCESSED = "processed"
     VALIDATED = "validated"
@@ -40,6 +42,7 @@ class DataStage(str, Enum):
 
 class DataFormat(str, Enum):
     """Supported data formats."""
+
     PARQUET = "parquet"
     NPY = "npy"
     PICKLE = "pkl"
@@ -50,6 +53,7 @@ class DataFormat(str, Enum):
 # TIME-SERIES DATA SCHEMAS
 # ============================================================================
 
+
 class OHLCBar(BaseModel):
     """Single OHLC candlestick bar with validation."""
 
@@ -59,8 +63,8 @@ class OHLCBar(BaseModel):
     close: float = Field(..., ge=0.001, description="Closing price")
     timestamp: Optional[datetime] = Field(None, description="Bar timestamp")
 
-    @model_validator(mode='after')
-    def validate_ohlc_logic(self) -> 'OHLCBar':
+    @model_validator(mode="after")
+    def validate_ohlc_logic(self) -> "OHLCBar":
         """Validate OHLC logical constraints: high >= low, etc."""
         if self.high < self.low:
             raise ValueError(f"High ({self.high}) cannot be less than Low ({self.low})")
@@ -103,13 +107,13 @@ class TimeSeriesWindow(BaseModel):
         ...,
         min_length=105,
         max_length=105,
-        description="105 OHLC bars, each [open, high, low, close]"
+        description="105 OHLC bars, each [open, high, low, close]",
     )
     symbol: Optional[str] = Field(None, description="Trading symbol")
     start_timestamp: Optional[datetime] = Field(None, description="Window start time")
     end_timestamp: Optional[datetime] = Field(None, description="Window end time")
 
-    @field_validator('features')
+    @field_validator("features")
     @classmethod
     def validate_features_shape(cls, v: List[List[float]]) -> List[List[float]]:
         """Validate each timestep has exactly 4 features (OHLC)."""
@@ -118,9 +122,7 @@ class TimeSeriesWindow(BaseModel):
 
         for i, bar in enumerate(v):
             if len(bar) != 4:
-                raise ValueError(
-                    f"Timestep {i} has {len(bar)} features, expected 4 (OHLC)"
-                )
+                raise ValueError(f"Timestep {i} has {len(bar)} features, expected 4 (OHLC)")
 
             # Validate OHLC constraints
             open_p, high, low, close = bar
@@ -138,14 +140,11 @@ class TimeSeriesWindow(BaseModel):
         return np.array(self.features, dtype=np.float32)
 
     @classmethod
-    def from_numpy(cls, arr: np.ndarray, window_id: str) -> 'TimeSeriesWindow':
+    def from_numpy(cls, arr: np.ndarray, window_id: str) -> "TimeSeriesWindow":
         """Create from numpy array [105, 4]."""
         if arr.shape != (105, 4):
             raise ValueError(f"Expected shape (105, 4), got {arr.shape}")
-        return cls(
-            window_id=window_id,
-            features=arr.tolist()
-        )
+        return cls(window_id=window_id, features=arr.tolist())
 
 
 class LabeledWindow(TimeSeriesWindow):
@@ -153,26 +152,15 @@ class LabeledWindow(TimeSeriesWindow):
 
     label: PatternLabel = Field(..., description="Pattern classification label")
     expansion_start: int = Field(
-        ...,
-        ge=30,
-        le=74,
-        description="Expansion start index (within prediction window [30:75])"
+        ..., ge=30, le=74, description="Expansion start index (within prediction window [30:75])"
     )
     expansion_end: int = Field(
-        ...,
-        ge=30,
-        le=74,
-        description="Expansion end index (within prediction window [30:75])"
+        ..., ge=30, le=74, description="Expansion end index (within prediction window [30:75])"
     )
-    confidence: Optional[float] = Field(
-        None,
-        ge=0.0,
-        le=1.0,
-        description="Label confidence score"
-    )
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Label confidence score")
 
-    @model_validator(mode='after')
-    def validate_expansion_indices(self) -> 'LabeledWindow':
+    @model_validator(mode="after")
+    def validate_expansion_indices(self) -> "LabeledWindow":
         """Ensure expansion_start <= expansion_end."""
         if self.expansion_start > self.expansion_end:
             raise ValueError(
@@ -186,6 +174,7 @@ class LabeledWindow(TimeSeriesWindow):
 # DATASET SCHEMAS
 # ============================================================================
 
+
 class UnlabeledDataset(BaseModel):
     """Collection of unlabeled time-series windows for pre-training."""
 
@@ -195,8 +184,8 @@ class UnlabeledDataset(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @model_validator(mode='after')
-    def validate_sample_count(self) -> 'UnlabeledDataset':
+    @model_validator(mode="after")
+    def validate_sample_count(self) -> "UnlabeledDataset":
         """Ensure total_samples matches windows length."""
         if len(self.windows) != self.total_samples:
             raise ValueError(
@@ -221,8 +210,8 @@ class LabeledDataset(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @model_validator(mode='after')
-    def validate_dataset_quality(self) -> 'LabeledDataset':
+    @model_validator(mode="after")
+    def validate_dataset_quality(self) -> "LabeledDataset":
         """Validate dataset meets quality requirements."""
         # Check sample count
         if len(self.windows) != self.total_samples:
@@ -274,6 +263,7 @@ class LabeledDataset(BaseModel):
 # DATA QUALITY METRICS
 # ============================================================================
 
+
 class DataQualityReport(BaseModel):
     """Data quality assessment report."""
 
@@ -308,8 +298,8 @@ class DataQualityReport(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    @model_validator(mode='after')
-    def compute_quality_score(self) -> 'DataQualityReport':
+    @model_validator(mode="after")
+    def compute_quality_score(self) -> "DataQualityReport":
         """Compute overall quality score based on metrics."""
         score = 100.0
 
@@ -335,6 +325,7 @@ class DataQualityReport(BaseModel):
 # ============================================================================
 # DATA LINEAGE
 # ============================================================================
+
 
 class DataLineage(BaseModel):
     """Track data transformation lineage."""
@@ -363,6 +354,7 @@ class DataLineage(BaseModel):
 # ============================================================================
 # DATA VERSIONING
 # ============================================================================
+
 
 class DataVersion(BaseModel):
     """Data version metadata for DVC integration."""
@@ -394,15 +386,13 @@ class DataVersion(BaseModel):
     tags: List[str] = Field(default_factory=list)
     notes: Optional[str] = Field(None)
 
-    @model_validator(mode='after')
-    def validate_versioning(self) -> 'DataVersion':
+    @model_validator(mode="after")
+    def validate_versioning(self) -> "DataVersion":
         """Validate version semantics."""
         # Ensure version follows semver
-        parts = self.version_id.lstrip('v').split('.')
+        parts = self.version_id.lstrip("v").split(".")
         if len(parts) != 3:
-            raise ValueError(
-                f"Version must follow semver format (v1.0.0), got {self.version_id}"
-            )
+            raise ValueError(f"Version must follow semver format (v1.0.0), got {self.version_id}")
 
         try:
             major, minor, patch = map(int, parts)

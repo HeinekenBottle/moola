@@ -103,10 +103,7 @@ class TimeSeriesAugmenter:
             # Interpolate each feature dimension
             for d in range(D):
                 f = interpolate.interp1d(
-                    orig_steps,
-                    x[i, :, d],
-                    kind='cubic',
-                    fill_value='extrapolate'
+                    orig_steps, x[i, :, d], kind="cubic", fill_value="extrapolate"
                 )
                 x_warped[i, :, d] = f(warp)
 
@@ -134,9 +131,7 @@ class TimeSeriesAugmenter:
         return x + noise
 
     def volatility_scale(
-        self,
-        x: np.ndarray,
-        scale_range: Tuple[float, float] = (0.85, 1.15)
+        self, x: np.ndarray, scale_range: Tuple[float, float] = (0.85, 1.15)
     ) -> np.ndarray:
         """Scale high-low spreads to simulate different volatility regimes.
 
@@ -172,13 +167,11 @@ class TimeSeriesAugmenter:
             # Ensure OHLC constraints still hold
             # High must be >= Open and Close
             x_scaled[i, :, 1] = np.maximum(
-                x_scaled[i, :, 1],
-                np.maximum(x_scaled[i, :, 0], x_scaled[i, :, 3])
+                x_scaled[i, :, 1], np.maximum(x_scaled[i, :, 0], x_scaled[i, :, 3])
             )
             # Low must be <= Open and Close
             x_scaled[i, :, 2] = np.minimum(
-                x_scaled[i, :, 2],
-                np.minimum(x_scaled[i, :, 0], x_scaled[i, :, 3])
+                x_scaled[i, :, 2], np.minimum(x_scaled[i, :, 0], x_scaled[i, :, 3])
             )
 
         return x_scaled
@@ -199,11 +192,7 @@ class TimeSeriesAugmenter:
         """
         return x[:, shift:, :]
 
-    def apply_augmentation(
-        self,
-        x: np.ndarray,
-        deterministic: bool = False
-    ) -> np.ndarray:
+    def apply_augmentation(self, x: np.ndarray, deterministic: bool = False) -> np.ndarray:
         """Apply random combination of augmentations.
 
         Each augmentation is applied with its configured probability.
@@ -233,11 +222,7 @@ class TimeSeriesAugmenter:
 
         return x_aug
 
-    def augment_dataset(
-        self,
-        X: np.ndarray,
-        num_augmentations: int = 4
-    ) -> np.ndarray:
+    def augment_dataset(self, X: np.ndarray, num_augmentations: int = 4) -> np.ndarray:
         """Generate augmented dataset for pre-training.
 
         Creates multiple augmented versions of each sample to expand
@@ -279,9 +264,7 @@ class TimeSeriesAugmenter:
 
 
 def generate_unlabeled_samples(
-    X_labeled: np.ndarray,
-    target_count: int = 5000,
-    augmenter: TimeSeriesAugmenter = None
+    X_labeled: np.ndarray, target_count: int = 5000, augmenter: TimeSeriesAugmenter = None
 ) -> np.ndarray:
     """Generate unlabeled samples from labeled data using augmentation.
 

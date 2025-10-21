@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Tuple
 @dataclass
 class TrainingMetrics:
     """Training metrics extracted from logs."""
+
     epoch: int
     train_loss: float
     train_accuracy: float
@@ -35,6 +36,7 @@ class TrainingMetrics:
 @dataclass
 class DetectedError:
     """Detected training error."""
+
     error_type: str
     severity: str  # "warning", "error", "critical"
     message: str
@@ -367,9 +369,9 @@ def monitor_training_with_error_detection(
     )
 
     # Monitor output
-    for line in iter(process.stdout.readline, ''):
+    for line in iter(process.stdout.readline, ""):
         if line:
-            print(line, end='')
+            print(line, end="")
             monitor.process_line(line)
 
     # Wait for completion

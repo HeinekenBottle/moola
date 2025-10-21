@@ -91,7 +91,9 @@ def cutmix(
 
         # Create mixed input by replacing temporal region
         mixed_x = x.clone()
-        mixed_x[:, cut_start:cut_start + cut_len, :] = x[index, cut_start:cut_start + cut_len, :]
+        mixed_x[:, cut_start : cut_start + cut_len, :] = x[
+            index, cut_start : cut_start + cut_len, :
+        ]
 
         # Adjust lambda to actual proportion
         lam = 1 - (cut_len / seq_len)
@@ -105,7 +107,7 @@ def cutmix(
 
         # Create mixed input by replacing feature region
         mixed_x = x.clone()
-        mixed_x[:, cut_start:cut_start + cut_len] = x[index, cut_start:cut_start + cut_len]
+        mixed_x[:, cut_start : cut_start + cut_len] = x[index, cut_start : cut_start + cut_len]
 
         # Adjust lambda to actual proportion
         lam = 1 - (cut_len / feature_dim)

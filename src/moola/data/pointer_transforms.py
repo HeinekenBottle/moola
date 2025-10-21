@@ -31,9 +31,7 @@ import numpy as np
 import torch
 
 
-def start_end_to_center_length(
-    start: torch.Tensor, end: torch.Tensor, seq_len: int = 104
-) -> tuple:
+def start_end_to_center_length(start: torch.Tensor, end: torch.Tensor, seq_len: int = 104) -> tuple:
     """Convert start-end pointer representation to center-length.
 
     Maps from absolute indices to normalized center-length representation:

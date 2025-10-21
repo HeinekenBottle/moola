@@ -16,26 +16,27 @@ Key Features:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, Any, Sequence
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
 import numpy as np
 import pandas as pd
 from loguru import logger
 
+from ..features.price_action_features import (
+    engineer_multiscale_features,
+    extract_hopsketch_features,
+)
+from ..features.relative_transform import RelativeFeatureTransform
 from ..features.small_dataset_features import (
     SmallDatasetFeatureEngineer,
     create_small_dataset_feature_engineer,
-    extract_optimized_features
+    extract_optimized_features,
 )
-from ..features.price_action_features import (
-    engineer_multiscale_features,
-    extract_hopsketch_features
-)
-from ..features.relative_transform import RelativeFeatureTransform
 from ..utils.validation.pseudo_sample_generation import (
+    PatternBasedSynthesisGenerator,
     PseudoSampleGenerationPipeline,
     TemporalAugmentationGenerator,
-    PatternBasedSynthesisGenerator
 )
 
 
@@ -46,7 +47,7 @@ class FeatureConfig:
     # Raw OHLC features
     use_raw_ohlc: bool = True  # Always include raw OHLC (105×4)
     raw_ohlc_scaling: bool = False  # Keep raw OHLC unnormalized for LSTM models
-    
+
     # 11D Relative Features
     use_relative_features: bool = False  # Enable 11D relative features
     relative_features_eps: float = 1e-8  # Numerical stability constant
@@ -103,7 +104,7 @@ class DualInputDataProcessor:
             self.small_dataset_engineer = create_small_dataset_feature_engineer(
                 max_features_per_category=self.config.small_dataset_max_features // 5,
                 robust_scaling=self.config.small_dataset_scaling,
-                feature_selection=True
+                feature_selection=True,
             )
 
     def _setup_augmentation_pipeline(self):
@@ -111,31 +112,28 @@ class DualInputDataProcessor:
         if self.config.enable_augmentation:
             # Configure strategy weights for safe methods only
             if self.config.use_safe_strategies_only:
-                strategy_weights = {
-                    'temporal_augmentation': 0.6,
-                    'pattern_synthesis': 0.4
-                }
+                strategy_weights = {"temporal_augmentation": 0.6, "pattern_synthesis": 0.4}
             else:
                 strategy_weights = {
-                    'temporal_augmentation': 0.25,
-                    'pattern_synthesis': 0.25,
-                    'statistical_simulation': 0.2,
-                    'market_condition': 0.3
+                    "temporal_augmentation": 0.25,
+                    "pattern_synthesis": 0.25,
+                    "statistical_simulation": 0.2,
+                    "market_condition": 0.3,
                 }
 
             self.augmentation_pipeline = PseudoSampleGenerationPipeline(
                 seed=self.config.augmentation_seed,
                 strategy_weights=strategy_weights,
-                validation_threshold=self.config.quality_threshold
+                validation_threshold=self.config.quality_threshold,
             )
-            logger.info(f"Augmentation pipeline initialized with safe strategies only: {self.config.use_safe_strategies_only}")
+            logger.info(
+                f"Augmentation pipeline initialized with safe strategies only: {self.config.use_safe_strategies_only}"
+            )
         else:
             self.augmentation_pipeline = None
 
     def process_training_data(
-        self,
-        df: pd.DataFrame,
-        enable_engineered_features: bool = True
+        self, df: pd.DataFrame, enable_engineered_features: bool = True
     ) -> Dict[str, Any]:
         """Process training data with dual-input support.
 
@@ -170,16 +168,17 @@ class DualInputDataProcessor:
         # Apply augmentation if enabled
         if self.config.enable_augmentation and self.augmentation_pipeline is not None:
             X_ohlc, y, augmentation_metadata = self._apply_augmentation(
-                X_ohlc, np.asarray(y), 
+                X_ohlc,
+                np.asarray(y),
                 np.asarray(expansion_start) if expansion_start is not None else None,
-                np.asarray(expansion_end) if expansion_end is not None else None
+                np.asarray(expansion_end) if expansion_end is not None else None,
             )
         else:
             augmentation_metadata = {}
 
         # Get feature dimension for model compatibility
         _, _, ohlc_dim = X_ohlc.shape
-        
+
         result = {
             "X_ohlc": X_ohlc,
             "y": y,
@@ -191,17 +190,17 @@ class DualInputDataProcessor:
                 "ohlc_shape": X_ohlc.shape,
                 "ohlc_dim": ohlc_dim,
                 "use_engineered_features": enable_engineered_features,
-                "augmentation_metadata": augmentation_metadata
-            }
+                "augmentation_metadata": augmentation_metadata,
+            },
         }
 
         # Extract engineered features if enabled
         if enable_engineered_features:
             X_engineered, feature_names = self._extract_engineered_features(
-                X_ohlc, 
+                X_ohlc,
                 np.asarray(expansion_start) if expansion_start is not None else None,
                 np.asarray(expansion_end) if expansion_end is not None else None,
-                np.asarray(y) if y is not None else None
+                np.asarray(y) if y is not None else None,
             )
             result["X_engineered"] = X_engineered
             result["feature_names"] = feature_names
@@ -237,7 +236,9 @@ class DualInputDataProcessor:
             end = row["expansion_end"]
 
             if not (0 <= start <= end < 105):
-                logger.warning(f"Invalid expansion indices for sample {i}: start={start}, end={end}")
+                logger.warning(
+                    f"Invalid expansion indices for sample {i}: start={start}, end={end}"
+                )
 
             pattern_length = end - start + 1
             if pattern_length < self.config.min_pattern_length:
@@ -265,7 +266,7 @@ class DualInputDataProcessor:
         X_ohlc: np.ndarray,
         expansion_start: Optional[Union[np.ndarray, Sequence]],
         expansion_end: Optional[Union[np.ndarray, Sequence]],
-        y: Optional[Union[np.ndarray, Sequence]] = None
+        y: Optional[Union[np.ndarray, Sequence]] = None,
     ) -> Tuple[np.ndarray, List[str]]:
         """Extract engineered features from OHLC data.
 
@@ -294,8 +295,11 @@ class DualInputDataProcessor:
         if self.config.use_small_dataset_features:
             logger.info("Extracting small dataset optimized features...")
             small_features, small_names = extract_optimized_features(
-                X_ohlc, expansion_start, expansion_end, y,
-                max_total_features=self.config.small_dataset_max_features
+                X_ohlc,
+                expansion_start,
+                expansion_end,
+                y,
+                max_total_features=self.config.small_dataset_max_features,
             )
             all_features.append(small_features)
             all_feature_names.extend(small_names)
@@ -340,7 +344,9 @@ class DualInputDataProcessor:
 
         # Limit features if necessary
         if X_engineered.shape[1] > self.config.max_total_engineered_features:
-            logger.info(f"Limiting features from {X_engineered.shape[1]} to {self.config.max_total_engineered_features}")
+            logger.info(
+                f"Limiting features from {X_engineered.shape[1]} to {self.config.max_total_engineered_features}"
+            )
             X_engineered, all_feature_names = self._select_top_features(
                 X_engineered, all_feature_names, y, self.config.max_total_engineered_features
             )
@@ -350,10 +356,7 @@ class DualInputDataProcessor:
 
         # Cache results
         if self.config.cache_features:
-            self.feature_cache[cache_key] = {
-                "features": X_engineered,
-                "names": all_feature_names
-            }
+            self.feature_cache[cache_key] = {"features": X_engineered, "names": all_feature_names}
 
         return X_engineered, all_feature_names
 
@@ -361,7 +364,7 @@ class DualInputDataProcessor:
         self,
         shape: Tuple[int, ...],
         expansion_start: Optional[Union[np.ndarray, Sequence]],
-        expansion_end: Optional[Union[np.ndarray, Sequence]]
+        expansion_end: Optional[Union[np.ndarray, Sequence]],
     ) -> str:
         """Generate cache key for feature extraction."""
         key_parts = [f"shape_{shape}"]
@@ -378,7 +381,7 @@ class DualInputDataProcessor:
         features: np.ndarray,
         feature_names: List[str],
         y: Optional[np.ndarray],
-        n_features: int
+        n_features: int,
     ) -> Tuple[np.ndarray, List[str]]:
         """Select top N features using variance or mutual information."""
         if features.shape[1] <= n_features:
@@ -388,6 +391,7 @@ class DualInputDataProcessor:
             # Use mutual information if labels are available
             try:
                 from sklearn.feature_selection import mutual_info_classif
+
                 mi_scores = mutual_info_classif(features, y, random_state=42)
                 top_indices = np.argsort(mi_scores)[-n_features:]
                 logger.info(f"Selected top {n_features} features by mutual information")
@@ -429,7 +433,7 @@ class DualInputDataProcessor:
         X_ohlc: np.ndarray,
         y: np.ndarray,
         expansion_start: Optional[np.ndarray],
-        expansion_end: Optional[np.ndarray]
+        expansion_end: Optional[np.ndarray],
     ) -> Tuple[np.ndarray, np.ndarray, Dict]:
         """Apply pseudo-sample augmentation to training data.
 
@@ -446,24 +450,24 @@ class DualInputDataProcessor:
 
         # Calculate number of synthetic samples to generate
         target_synthetic = min(
-            int(n_original * self.config.augmentation_ratio),
-            self.config.max_synthetic_samples
+            int(n_original * self.config.augmentation_ratio), self.config.max_synthetic_samples
         )
 
         # Start with conservative approach for Week 1 (50 samples max)
         max_week1_samples = min(50, target_synthetic)
         n_synthetic = max_week1_samples
 
-        logger.info(f"Augmentation enabled: generating {n_synthetic} synthetic samples "
-                   f"(ratio: {self.config.augmentation_ratio:.1f}, max: {self.config.max_synthetic_samples})")
+        logger.info(
+            f"Augmentation enabled: generating {n_synthetic} synthetic samples "
+            f"(ratio: {self.config.augmentation_ratio:.1f}, max: {self.config.max_synthetic_samples})"
+        )
 
         # Generate pseudo-samples
         try:
-            X_synthetic, y_synthetic, generation_metadata = self.augmentation_pipeline.generate_samples(
-                data=X_ohlc,
-                labels=y,
-                n_samples=n_synthetic,
-                quality_check=True
+            X_synthetic, y_synthetic, generation_metadata = (
+                self.augmentation_pipeline.generate_samples(
+                    data=X_ohlc, labels=y, n_samples=n_synthetic, quality_check=True
+                )
             )
 
             # Validate OHLC integrity
@@ -490,7 +494,9 @@ class DualInputDataProcessor:
                     X_synthetic, expansion_start, expansion_end
                 )
 
-                expansion_start = np.concatenate([expansion_start, synthetic_expansion_start], axis=0)
+                expansion_start = np.concatenate(
+                    [expansion_start, synthetic_expansion_start], axis=0
+                )
                 expansion_end = np.concatenate([expansion_end, synthetic_expansion_end], axis=0)
 
             # Log augmentation results
@@ -501,11 +507,17 @@ class DualInputDataProcessor:
                 "n_total": len(X_augmented),
                 "synthetic_ratio": len(X_synthetic) / n_original,
                 "generation_metadata": generation_metadata,
-                "ohlc_integrity_rate": 1.0 - (ohlc_violations / (len(X_synthetic) * X_synthetic.shape[1])) if len(X_synthetic) > 0 else 0.0
+                "ohlc_integrity_rate": (
+                    1.0 - (ohlc_violations / (len(X_synthetic) * X_synthetic.shape[1]))
+                    if len(X_synthetic) > 0
+                    else 0.0
+                ),
             }
 
-            logger.info(f"Augmentation complete: {n_original} → {len(X_augmented)} total samples "
-                       f"(synthetic ratio: {augmentation_metadata['synthetic_ratio']:.2f})")
+            logger.info(
+                f"Augmentation complete: {n_original} → {len(X_augmented)} total samples "
+                f"(synthetic ratio: {augmentation_metadata['synthetic_ratio']:.2f})"
+            )
 
             return X_augmented, y_augmented, augmentation_metadata
 
@@ -528,7 +540,13 @@ class DualInputDataProcessor:
             for t in range(sample.shape[0]):
                 o, h, l, c = sample[t]
                 # Check OHLC relationships: O <= H >= L <= C, and H >= L
-                if not (o <= h + 1e-8 and l <= h + 1e-8 and o >= l - 1e-8 and c >= l - 1e-8 and h >= l - 1e-8):
+                if not (
+                    o <= h + 1e-8
+                    and l <= h + 1e-8
+                    and o >= l - 1e-8
+                    and c >= l - 1e-8
+                    and h >= l - 1e-8
+                ):
                     violations += 1
         return violations
 
@@ -546,17 +564,20 @@ class DualInputDataProcessor:
             sample_valid = True
             for t in range(sample.shape[0]):
                 o, h, l, c = sample[t]
-                if not (o <= h + 1e-8 and l <= h + 1e-8 and o >= l - 1e-8 and c >= l - 1e-8 and h >= l - 1e-8):
+                if not (
+                    o <= h + 1e-8
+                    and l <= h + 1e-8
+                    and o >= l - 1e-8
+                    and c >= l - 1e-8
+                    and h >= l - 1e-8
+                ):
                     sample_valid = False
                     break
             valid_mask.append(sample_valid)
         return np.array(valid_mask)
 
     def _generate_synthetic_expansion_indices(
-        self,
-        X_synthetic: np.ndarray,
-        original_start: np.ndarray,
-        original_end: np.ndarray
+        self, X_synthetic: np.ndarray, original_start: np.ndarray, original_end: np.ndarray
     ) -> np.ndarray:
         """Generate reasonable expansion indices for synthetic samples.
 
@@ -577,7 +598,8 @@ class DualInputDataProcessor:
         # Generate synthetic indices with some randomness but within reasonable bounds
         synthetic_start = np.clip(
             np.random.normal(start_mean, start_std, n_synthetic),
-            5, 45  # Reasonable bounds for 105-timestep sequences
+            5,
+            45,  # Reasonable bounds for 105-timestep sequences
         ).astype(int)
 
         return synthetic_start
@@ -594,7 +616,7 @@ class DualInputDataProcessor:
             "min": float(np.min(X_engineered)),
             "max": float(np.max(X_engineered)),
             "nan_count": int(np.isnan(X_engineered).sum()),
-            "inf_count": int(np.isinf(X_engineered).sum())
+            "inf_count": int(np.isinf(X_engineered).sum()),
         }
 
 
@@ -607,7 +629,7 @@ def create_dual_input_processor(
     max_synthetic_samples: int = 210,
     augmentation_seed: int = 1337,
     quality_threshold: float = 0.7,
-    use_safe_strategies_only: bool = True
+    use_safe_strategies_only: bool = True,
 ) -> DualInputDataProcessor:
     """Create a dual-input data processor with sensible defaults.
 
@@ -640,16 +662,14 @@ def create_dual_input_processor(
         max_synthetic_samples=max_synthetic_samples,
         augmentation_seed=augmentation_seed,
         quality_threshold=quality_threshold,
-        use_safe_strategies_only=use_safe_strategies_only
+        use_safe_strategies_only=use_safe_strategies_only,
     )
 
     return DualInputDataProcessor(config)
 
 
 def prepare_model_inputs(
-    processed_data: Dict[str, Any],
-    model_type: str = "lstm",
-    use_engineered_features: bool = True
+    processed_data: Dict[str, Any], model_type: str = "lstm", use_engineered_features: bool = True
 ) -> Dict[str, Any]:
     """Prepare model inputs based on model type and available features.
 
@@ -670,30 +690,26 @@ def prepare_model_inputs(
             "X": X_ohlc,  # [N, 105, 4]
             "y": processed_data["y"],
             "expansion_start": processed_data["expansion_start"],
-            "expansion_end": processed_data["expansion_end"]
+            "expansion_end": processed_data["expansion_end"],
         }
 
         # Some models can also use engineered features as additional context
         if use_engineered_features and X_engineered is not None:
             # Could be used as additional input channels or attention context
             inputs["X_engineered"] = X_engineered
-            logger.info(f"Model {model_type} has engineered features available: {X_engineered.shape}")
+            logger.info(
+                f"Model {model_type} has engineered features available: {X_engineered.shape}"
+            )
 
     elif model_type in ["xgboost", "rf", "logreg"]:
         # Tree-based models use engineered features or flattened OHLC
         if use_engineered_features and X_engineered is not None:
-            inputs = {
-                "X": X_engineered,  # [N, F]
-                "y": processed_data["y"]
-            }
+            inputs = {"X": X_engineered, "y": processed_data["y"]}  # [N, F]
             logger.info(f"Model {model_type} using engineered features: {X_engineered.shape}")
         else:
             # Flatten OHLC for tree-based models
             X_flat = X_ohlc.reshape(X_ohlc.shape[0], -1)  # [N, 420]
-            inputs = {
-                "X": X_flat,
-                "y": processed_data["y"]
-            }
+            inputs = {"X": X_flat, "y": processed_data["y"]}
             logger.info(f"Model {model_type} using flattened OHLC: {X_flat.shape}")
 
     else:
@@ -702,7 +718,7 @@ def prepare_model_inputs(
             "X": X_ohlc,
             "y": processed_data["y"],
             "expansion_start": processed_data["expansion_start"],
-            "expansion_end": processed_data["expansion_end"]
+            "expansion_end": processed_data["expansion_end"],
         }
 
     return inputs

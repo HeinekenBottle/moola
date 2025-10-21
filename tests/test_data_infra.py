@@ -48,14 +48,8 @@ class TestSchemas:
 
     def test_timeseries_window_valid(self):
         """Test valid time-series window."""
-        features = [
-            [100 + i, 105 + i, 95 + i, 102 + i]
-            for i in range(105)
-        ]
-        window = TimeSeriesWindow(
-            window_id="test_0",
-            features=features
-        )
+        features = [[100 + i, 105 + i, 95 + i, 102 + i] for i in range(105)]
+        window = TimeSeriesWindow(window_id="test_0", features=features)
         assert len(window.features) == 105
         assert all(len(bar) == 4 for bar in window.features)
 
@@ -71,9 +65,7 @@ class TestSchemas:
 
     def test_timeseries_window_invalid_ohlc(self):
         """Test OHLC validation in window."""
-        features = [
-            [100, 95, 100, 98]  # high < low - INVALID
-        ] + [[100, 105, 95, 102]] * 104
+        features = [[100, 95, 100, 98]] + [[100, 105, 95, 102]] * 104  # high < low - INVALID
 
         with pytest.raises(ValueError, match="high.*< low"):
             TimeSeriesWindow(window_id="test_0", features=features)
@@ -86,7 +78,7 @@ class TestSchemas:
             features=features,
             label=PatternLabel.CONSOLIDATION,
             expansion_start=35,
-            expansion_end=60
+            expansion_end=60,
         )
         assert window.expansion_start <= window.expansion_end
 
@@ -101,7 +93,7 @@ class TestSchemas:
                 features=features,
                 label=PatternLabel.CONSOLIDATION,
                 expansion_start=60,
-                expansion_end=35
+                expansion_end=35,
             )
 
         # Out of range
@@ -111,23 +103,17 @@ class TestSchemas:
                 features=features,
                 label=PatternLabel.CONSOLIDATION,
                 expansion_start=20,  # < 30
-                expansion_end=50
+                expansion_end=50,
             )
 
     def test_unlabeled_dataset(self):
         """Test unlabeled dataset validation."""
         windows = [
-            TimeSeriesWindow(
-                window_id=f"window_{i}",
-                features=[[100, 105, 95, 102]] * 105
-            )
+            TimeSeriesWindow(window_id=f"window_{i}", features=[[100, 105, 95, 102]] * 105)
             for i in range(10)
         ]
 
-        dataset = UnlabeledDataset(
-            windows=windows,
-            total_samples=10
-        )
+        dataset = UnlabeledDataset(windows=windows, total_samples=10)
 
         assert len(dataset.windows) == dataset.total_samples
 
@@ -138,10 +124,7 @@ class TestSchemas:
     def test_unlabeled_dataset_count_mismatch(self):
         """Test dataset with mismatched sample count."""
         windows = [
-            TimeSeriesWindow(
-                window_id=f"window_{i}",
-                features=[[100, 105, 95, 102]] * 105
-            )
+            TimeSeriesWindow(window_id=f"window_{i}", features=[[100, 105, 95, 102]] * 105)
             for i in range(10)
         ]
 
@@ -156,7 +139,7 @@ class TestSchemas:
                 features=[[100, 105, 95, 102]] * 105,
                 label=PatternLabel.CONSOLIDATION if i < 5 else PatternLabel.RETRACEMENT,
                 expansion_start=35,
-                expansion_end=60
+                expansion_end=60,
             )
             for i in range(10)
         ]
@@ -164,7 +147,7 @@ class TestSchemas:
         dataset = LabeledDataset(
             windows=windows,
             total_samples=10,
-            label_distribution={"consolidation": 5, "retracement": 5}
+            label_distribution={"consolidation": 5, "retracement": 5},
         )
 
         # Test conversion
@@ -180,7 +163,7 @@ class TestSchemas:
                 features=[[100, 105, 95, 102]] * 105,
                 label=PatternLabel.CONSOLIDATION if i < 90 else PatternLabel.RETRACEMENT,
                 expansion_start=35,
-                expansion_end=60
+                expansion_end=60,
             )
             for i in range(100)
         ]
@@ -189,7 +172,7 @@ class TestSchemas:
             LabeledDataset(
                 windows=windows,
                 total_samples=100,
-                label_distribution={"consolidation": 90, "retracement": 10}
+                label_distribution={"consolidation": 90, "retracement": 10},
             )
 
 
@@ -200,14 +183,10 @@ class TestValidators:
         """Test validation with valid data."""
         # Create valid OHLC data
         features = [
-            np.array([[100 + i, 105 + i, 95 + i, 102 + i] for _ in range(105)])
-            for i in range(100)
+            np.array([[100 + i, 105 + i, 95 + i, 102 + i] for _ in range(105)]) for i in range(100)
         ]
 
-        df = pd.DataFrame({
-            'window_id': [f'window_{i}' for i in range(100)],
-            'features': features
-        })
+        df = pd.DataFrame({"window_id": [f"window_{i}" for i in range(100)], "features": features})
 
         validator = TimeSeriesQualityValidator()
         report = validator.validate_dataset(df, "test_dataset")
@@ -218,10 +197,12 @@ class TestValidators:
 
     def test_quality_validator_missing_data(self):
         """Test detection of missing values."""
-        df = pd.DataFrame({
-            'window_id': [f'window_{i}' for i in range(10)],
-            'features': [None] * 5 + [np.array([[100, 105, 95, 102]] * 105)] * 5
-        })
+        df = pd.DataFrame(
+            {
+                "window_id": [f"window_{i}" for i in range(10)],
+                "features": [None] * 5 + [np.array([[100, 105, 95, 102]] * 105)] * 5,
+            }
+        )
 
         validator = TimeSeriesQualityValidator(
             thresholds=QualityThresholds(max_missing_percent=40.0)
@@ -238,10 +219,7 @@ class TestValidators:
 
         features = [normal] * 98 + [jump] * 2
 
-        df = pd.DataFrame({
-            'window_id': [f'window_{i}' for i in range(100)],
-            'features': features
-        })
+        df = pd.DataFrame({"window_id": [f"window_{i}" for i in range(100)], "features": features})
 
         validator = TimeSeriesQualityValidator(
             thresholds=QualityThresholds(max_price_jump_percent=200.0)
@@ -264,8 +242,8 @@ class TestLineageTracking:
             input_path = tmpdir / "input.parquet"
             output_path = tmpdir / "output.parquet"
 
-            pd.DataFrame({'a': [1, 2, 3]}).to_parquet(input_path)
-            pd.DataFrame({'b': [4, 5]}).to_parquet(output_path)
+            pd.DataFrame({"a": [1, 2, 3]}).to_parquet(input_path)
+            pd.DataFrame({"b": [4, 5]}).to_parquet(output_path)
 
             # Track transformation
             tracker = LineageTracker(lineage_dir=tmpdir / "lineage")
@@ -276,7 +254,7 @@ class TestLineageTracking:
                 output_path=output_path,
                 rows_in=3,
                 rows_out=2,
-                params={"test_param": "value"}
+                params={"test_param": "value"},
             )
 
             assert lineage.dataset_id == "test_dataset"
@@ -302,7 +280,7 @@ class TestLineageTracking:
                 output_path=None,
                 rows_in=100,
                 rows_out=50,
-                parent_datasets=["dataset_a"]
+                parent_datasets=["dataset_a"],
             )
 
             tracker.log_transformation(
@@ -312,7 +290,7 @@ class TestLineageTracking:
                 output_path=None,
                 rows_in=50,
                 rows_out=25,
-                parent_datasets=["dataset_b"]
+                parent_datasets=["dataset_b"],
             )
 
             # Check ancestry
@@ -336,19 +314,18 @@ class TestVersionControl:
 
             # Create test dataset
             data_path = tmpdir / "train.parquet"
-            df = pd.DataFrame({
-                'window_id': ['w0', 'w1', 'w2'],
-                'features': [np.array([[100, 105, 95, 102]] * 105)] * 3
-            })
+            df = pd.DataFrame(
+                {
+                    "window_id": ["w0", "w1", "w2"],
+                    "features": [np.array([[100, 105, 95, 102]] * 105)] * 3,
+                }
+            )
             df.to_parquet(data_path)
 
             # Create version
             vc = DataVersionControl(versions_dir=tmpdir / "versions")
             version = vc.create_version(
-                dataset_name="train",
-                file_path=data_path,
-                version_id="v1.0.0",
-                notes="Test version"
+                dataset_name="train", file_path=data_path, version_id="v1.0.0", notes="Test version"
             )
 
             assert version.version_id == "v1.0.0"
@@ -365,7 +342,7 @@ class TestVersionControl:
             tmpdir = Path(tmpdir)
 
             data_path = tmpdir / "test.parquet"
-            pd.DataFrame({'a': [1]}).to_parquet(data_path)
+            pd.DataFrame({"a": [1]}).to_parquet(data_path)
 
             vc = DataVersionControl(versions_dir=tmpdir / "versions")
 
@@ -374,7 +351,7 @@ class TestVersionControl:
                 vc.create_version(
                     dataset_name="test",
                     file_path=data_path,
-                    version_id="1.0"  # Missing patch version
+                    version_id="1.0",  # Missing patch version
                 )
 
 

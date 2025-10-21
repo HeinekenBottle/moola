@@ -41,13 +41,13 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.model_selection import train_test_split
 
 from ..config.feature_aware_config import (
-    FeatureAwarePretrainingConfig,
     EnhancedSimpleLSTMConfig,
+    FeatureAwarePretrainingConfig,
     FeatureEngineeringConfig,
     get_environment_config,
     get_gpu_optimized_config,
-    validate_feature_aware_config,
     validate_enhanced_lstm_config,
+    validate_feature_aware_config,
 )
 from ..features.feature_engineering import AdvancedFeatureEngineer, FeatureConfig
 from ..models.enhanced_simple_lstm import EnhancedSimpleLSTMModel
@@ -62,10 +62,10 @@ def prepare_feature_aware_data(
     feature_config: Optional[FeatureEngineeringConfig] = None,
     split_ratio: float = 0.8,
     seed: int = 1337,
-    unlabeled_only: bool = False
+    unlabeled_only: bool = False,
 ) -> Union[
     Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]],  # Labeled: (ohlc, features, labels)
-    Tuple[np.ndarray, np.ndarray]  # Unlabeled: (ohlc, features)
+    Tuple[np.ndarray, np.ndarray],  # Unlabeled: (ohlc, features)
 ]:
     """Prepare feature-aware data for pre-training and/or fine-tuning.
 
@@ -132,9 +132,7 @@ def prepare_feature_aware_data(
 
 
 def create_feature_aware_pretrainer(
-    config: FeatureAwarePretrainingConfig,
-    ohlc_dim: int = 4,
-    feature_dim: Optional[int] = None
+    config: FeatureAwarePretrainingConfig, ohlc_dim: int = 4, feature_dim: Optional[int] = None
 ) -> FeatureAwareMaskedLSTMPretrainer:
     """Create feature-aware pre-trainer with configuration.
 
@@ -151,19 +149,19 @@ def create_feature_aware_pretrainer(
 
     # Get environment settings
     env_config = get_environment_config()
-    gpu_config = get_gpu_optimized_config(env_config['gpu_memory_gb'])
+    gpu_config = get_gpu_optimized_config(env_config["gpu_memory_gb"])
 
     # Override batch size if needed for GPU memory constraints
-    if config.batch_size > gpu_config['batch_size']:
+    if config.batch_size > gpu_config["batch_size"]:
         logger.warning(
             f"Reducing batch size from {config.batch_size} to {gpu_config['batch_size']} "
             f"for GPU memory constraints"
         )
-        config.batch_size = gpu_config['batch_size']
+        config.batch_size = gpu_config["batch_size"]
 
     # Update config with environment settings
-    config.device = env_config['recommended_device']
-    config.num_workers = gpu_config['num_workers']
+    config.device = env_config["recommended_device"]
+    config.num_workers = gpu_config["num_workers"]
 
     logger.info(f"Creating feature-aware pre-trainer:")
     logger.info(f"  Device: {config.device}")
@@ -188,7 +186,7 @@ def create_feature_aware_pretrainer(
         learning_rate=config.learning_rate,
         batch_size=config.batch_size,
         device=config.device,
-        seed=config.seed
+        seed=config.seed,
     )
 
     return pretrainer
@@ -199,7 +197,7 @@ def run_feature_aware_pretraining(
     X_features: np.ndarray,
     config: Optional[FeatureAwarePretrainingConfig] = None,
     save_dir: Optional[Path] = None,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> Path:
     """Run complete feature-aware pre-training pipeline.
 
@@ -244,40 +242,40 @@ def run_feature_aware_pretraining(
         val_split=config.val_split,
         patience=config.early_stopping_patience,
         save_path=encoder_path if config.save_encoder else None,
-        verbose=verbose
+        verbose=verbose,
     )
 
     training_time = time.time() - start_time
 
     # Save training history
     history_path = save_dir / f"training_history_{config.feature_fusion}.json"
-    with open(history_path, 'w') as f:
+    with open(history_path, "w") as f:
         json.dump(history, f, indent=2)
 
     # Save configuration
     config_path = save_dir / f"config_{config.feature_fusion}.json"
-    with open(config_path, 'w') as f:
+    with open(config_path, "w") as f:
         # Convert dataclass to dict for JSON serialization
         config_dict = {
-            'ohlc_dim': config.ohlc_dim,
-            'feature_dim': config.feature_dim,
-            'hidden_dim': config.hidden_dim,
-            'num_layers': config.num_layers,
-            'dropout': config.dropout,
-            'feature_fusion': config.feature_fusion,
-            'mask_ratio': config.mask_ratio,
-            'mask_strategy': config.mask_strategy,
-            'patch_size': config.patch_size,
-            'loss_weights': config.loss_weights,
-            'learning_rate': config.learning_rate,
-            'batch_size': config.batch_size,
-            'n_epochs': config.n_epochs,
-            'early_stopping_patience': config.early_stopping_patience,
-            'val_split': config.val_split,
-            'device': config.device,
-            'seed': config.seed,
-            'use_amp': config.use_amp,
-            'num_workers': config.num_workers,
+            "ohlc_dim": config.ohlc_dim,
+            "feature_dim": config.feature_dim,
+            "hidden_dim": config.hidden_dim,
+            "num_layers": config.num_layers,
+            "dropout": config.dropout,
+            "feature_fusion": config.feature_fusion,
+            "mask_ratio": config.mask_ratio,
+            "mask_strategy": config.mask_strategy,
+            "patch_size": config.patch_size,
+            "loss_weights": config.loss_weights,
+            "learning_rate": config.learning_rate,
+            "batch_size": config.batch_size,
+            "n_epochs": config.n_epochs,
+            "early_stopping_patience": config.early_stopping_patience,
+            "val_split": config.val_split,
+            "device": config.device,
+            "seed": config.seed,
+            "use_amp": config.use_amp,
+            "num_workers": config.num_workers,
         }
         json.dump(config_dict, f, indent=2)
 
@@ -299,7 +297,7 @@ def evaluate_transfer_learning(
     y_val: np.ndarray,
     encoder_path: Path,
     lstm_config: Optional[EnhancedSimpleLSTMConfig] = None,
-    modes: List[str] = ["ohlc_only", "feature_aware", "pretrained_ohlc", "pretrained_features"]
+    modes: List[str] = ["ohlc_only", "feature_aware", "pretrained_ohlc", "pretrained_features"],
 ) -> Dict[str, Dict]:
     """Evaluate transfer learning performance across different modes.
 
@@ -382,10 +380,11 @@ def evaluate_transfer_learning(
         # Train model
         start_time = time.time()
         model.fit(
-            X_train, y_train,
+            X_train,
+            y_train,
             pretrained_encoder_path=encoder_path_mode,
             freeze_encoder=lstm_config.freeze_encoder_initially,
-            unfreeze_encoder_after=lstm_config.unfreeze_encoder_after
+            unfreeze_encoder_after=lstm_config.unfreeze_encoder_after,
         )
         training_time = time.time() - start_time
 
@@ -397,12 +396,12 @@ def evaluate_transfer_learning(
         report = classification_report(y_val, y_pred, output_dict=True)
 
         results[mode] = {
-            'accuracy': accuracy,
-            'classification_report': report,
-            'training_time': training_time,
-            'input_shape': X_train.shape,
-            'model_type': mode,
-            'used_pretrained': encoder_path_mode is not None,
+            "accuracy": accuracy,
+            "classification_report": report,
+            "training_time": training_time,
+            "input_shape": X_train.shape,
+            "model_type": mode,
+            "used_pretrained": encoder_path_mode is not None,
         }
 
         logger.info(f"Mode: {mode}")
@@ -430,7 +429,7 @@ def analyze_encoder_importance(
     encoder_path: Path,
     X_ohlc_sample: np.ndarray,
     X_features_sample: np.ndarray,
-    device: str = "cuda"
+    device: str = "cuda",
 ) -> Dict[str, np.ndarray]:
     """Analyze feature importance in pre-trained encoder.
 
@@ -447,19 +446,22 @@ def analyze_encoder_importance(
 
     # Load encoder
     checkpoint = torch.load(encoder_path, map_location=device)
-    hyperparams = checkpoint['hyperparams']
+    hyperparams = checkpoint["hyperparams"]
 
     # Create model for analysis
-    from ..models.feature_aware_bilstm_masked_autoencoder import FeatureAwareBiLSTMMaskedAutoencoder
+    from ..models.feature_aware_bilstm_masked_autoencoder import (
+        FeatureAwareBiLSTMMaskedAutoencoder,
+    )
+
     model = FeatureAwareBiLSTMMaskedAutoencoder(
-        ohlc_dim=hyperparams['ohlc_dim'],
-        feature_dim=hyperparams['feature_dim'],
-        hidden_dim=hyperparams['hidden_dim'],
-        num_layers=hyperparams['num_layers'],
-        feature_fusion=hyperparams['feature_fusion']
+        ohlc_dim=hyperparams["ohlc_dim"],
+        feature_dim=hyperparams["feature_dim"],
+        hidden_dim=hyperparams["hidden_dim"],
+        num_layers=hyperparams["num_layers"],
+        feature_fusion=hyperparams["feature_fusion"],
     ).to(device)
 
-    model.load_state_dict(checkpoint['encoder_state_dict'], strict=False)
+    model.load_state_dict(checkpoint["encoder_state_dict"], strict=False)
     model.eval()
 
     # Convert to tensors
@@ -483,7 +485,7 @@ def analyze_encoder_importance(
         baseline_ohlc, baseline_features = model(ohlc_masked, features_masked)
 
         # Ablate OHLC features one by one
-        for i in range(hyperparams['ohlc_dim']):
+        for i in range(hyperparams["ohlc_dim"]):
             ohlc_ablated = ohlc_tensor.clone()
             ohlc_ablated[..., i] = model.ohlc_mask_token[..., i]
 
@@ -494,7 +496,7 @@ def analyze_encoder_importance(
             ohlc_importance.append(ohlc_change)
 
         # Ablate engineered features (sample a few if too many)
-        feature_indices = range(min(10, hyperparams['feature_dim']))  # Sample up to 10 features
+        feature_indices = range(min(10, hyperparams["feature_dim"]))  # Sample up to 10 features
 
         for i in feature_indices:
             features_ablated = features_tensor.clone()
@@ -511,17 +513,14 @@ def analyze_encoder_importance(
     logger.info(f"  Engineered features analyzed: {len(feature_importance)}")
 
     return {
-        'ohlc_importance': np.array(ohlc_importance),
-        'feature_importance': np.array(feature_importance),
-        'feature_indices': list(feature_indices),
-        'ohlc_feature_names': ['open', 'high', 'low', 'close'],
+        "ohlc_importance": np.array(ohlc_importance),
+        "feature_importance": np.array(feature_importance),
+        "feature_indices": list(feature_indices),
+        "ohlc_feature_names": ["open", "high", "low", "close"],
     }
 
 
-def create_experiment_report(
-    results: Dict[str, Dict],
-    save_path: Optional[Path] = None
-) -> str:
+def create_experiment_report(results: Dict[str, Dict], save_path: Optional[Path] = None) -> str:
     """Create comprehensive experiment report.
 
     Args:
@@ -540,37 +539,36 @@ def create_experiment_report(
     ]
 
     # Summary table
-    report_lines.extend([
-        f"{'Mode':<20} {'Accuracy':<10} {'Time (s)':<10} {'Type':<10}",
-        "-" * 60,
-    ])
+    report_lines.extend(
+        [
+            f"{'Mode':<20} {'Accuracy':<10} {'Time (s)':<10} {'Type':<10}",
+            "-" * 60,
+        ]
+    )
 
     for mode, result in results.items():
-        model_type = "Pre-trained" if result['used_pretrained'] else "From scratch"
+        model_type = "Pre-trained" if result["used_pretrained"] else "From scratch"
         report_lines.append(
             f"{mode:<20} {result['accuracy']:<10.4f} {result['training_time']:<10.1f} {model_type:<10}"
         )
 
     # Detailed analysis
-    report_lines.extend([
-        "",
-        "DETAILED RESULTS",
-        "-" * 30,
-        ""
-    ])
+    report_lines.extend(["", "DETAILED RESULTS", "-" * 30, ""])
 
     for mode, result in results.items():
-        report_lines.extend([
-            f"Mode: {mode}",
-            f"  Accuracy: {result['accuracy']:.4f}",
-            f"  Training time: {result['training_time']:.1f} seconds",
-            f"  Input shape: {result['input_shape']}",
-            f"  Pre-trained: {result['used_pretrained']}",
-            f"  Classification report:",
-        ])
+        report_lines.extend(
+            [
+                f"Mode: {mode}",
+                f"  Accuracy: {result['accuracy']:.4f}",
+                f"  Training time: {result['training_time']:.1f} seconds",
+                f"  Input shape: {result['input_shape']}",
+                f"  Pre-trained: {result['used_pretrained']}",
+                f"  Classification report:",
+            ]
+        )
 
         # Add classification report details
-        for class_name, metrics in result['classification_report'].items():
+        for class_name, metrics in result["classification_report"].items():
             if isinstance(metrics, dict):
                 report_lines.append(f"    {class_name}:")
                 for metric_name, value in metrics.items():
@@ -582,24 +580,28 @@ def create_experiment_report(
         report_lines.append("")
 
     # Best performing model
-    best_mode = max(results.keys(), key=lambda k: results[k]['accuracy'])
-    report_lines.extend([
-        "BEST PERFORMING MODEL",
-        "-" * 30,
-        f"Mode: {best_mode}",
-        f"Accuracy: {results[best_mode]['accuracy']:.4f}",
-        f"Training time: {results[best_mode]['training_time']:.1f}s",
-        "",
-    ])
+    best_mode = max(results.keys(), key=lambda k: results[k]["accuracy"])
+    report_lines.extend(
+        [
+            "BEST PERFORMING MODEL",
+            "-" * 30,
+            f"Mode: {best_mode}",
+            f"Accuracy: {results[best_mode]['accuracy']:.4f}",
+            f"Training time: {results[best_mode]['training_time']:.1f}s",
+            "",
+        ]
+    )
 
     # Recommendations
-    report_lines.extend([
-        "RECOMMENDATIONS",
-        "-" * 30,
-    ])
+    report_lines.extend(
+        [
+            "RECOMMENDATIONS",
+            "-" * 30,
+        ]
+    )
 
-    if results['pretrained_features']['accuracy'] > results['ohlc_only']['accuracy']:
-        improvement = results['pretrained_features']['accuracy'] - results['ohlc_only']['accuracy']
+    if results["pretrained_features"]["accuracy"] > results["ohlc_only"]["accuracy"]:
+        improvement = results["pretrained_features"]["accuracy"] - results["ohlc_only"]["accuracy"]
         report_lines.append(
             f"✅ Feature-aware pre-training improves accuracy by {improvement:.2%} "
             f"({improvement*100:.1f} percentage points)"
@@ -607,10 +609,10 @@ def create_experiment_report(
     else:
         report_lines.append("⚠️  Feature-aware pre-training does not improve accuracy")
 
-    if results['pretrained_features']['accuracy'] > results['feature_aware']['accuracy']:
+    if results["pretrained_features"]["accuracy"] > results["feature_aware"]["accuracy"]:
         report_lines.append("✅ Transfer learning provides benefits over from-scratch training")
 
-    if results['pretrained_ohlc']['accuracy'] > results['ohlc_only']['accuracy']:
+    if results["pretrained_ohlc"]["accuracy"] > results["ohlc_only"]["accuracy"]:
         report_lines.append("✅ Even OHLC-only transfer learning is beneficial")
 
     report = "\n".join(report_lines)
@@ -618,7 +620,7 @@ def create_experiment_report(
     # Save report if path provided
     if save_path:
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(save_path, 'w') as f:
+        with open(save_path, "w") as f:
             f.write(report)
         logger.info(f"Experiment report saved: {save_path}")
 

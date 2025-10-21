@@ -13,8 +13,9 @@ Usage:
     >>> print(f"Accuracy: {result['mean']:.3f} [{result['ci_lower']:.3f}, {result['ci_upper']:.3f}]")
 """
 
+from typing import Callable, Dict, Tuple
+
 import numpy as np
-from typing import Dict, Callable, Tuple
 
 
 def bootstrap_resample(
@@ -175,7 +176,9 @@ def bootstrap_pointer_metrics(
         >>> results = bootstrap_pointer_metrics(pred_start, pred_end, true_start, true_end)
         >>> print(f"Start MAE: {results['start_mae']['mean']:.2f}")
     """
-    from moola.utils.metrics.pointer_regression import compute_pointer_regression_metrics
+    from moola.utils.metrics.pointer_regression import (
+        compute_pointer_regression_metrics,
+    )
 
     n_samples = len(pred_start)
     np.random.seed(42)
@@ -251,7 +254,7 @@ def bootstrap_calibration_metrics(
         >>> results = bootstrap_calibration_metrics(probs, labels, n_resamples=100)
         >>> print(f"ECE: {results['ece']['mean']:.4f} ± {results['ece']['std']:.4f}")
     """
-    from moola.utils.metrics.calibration import compute_smooth_ece, compute_brier_score
+    from moola.utils.metrics.calibration import compute_brier_score, compute_smooth_ece
 
     n_samples = len(probs)
     np.random.seed(42)

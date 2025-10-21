@@ -58,7 +58,13 @@ class RFModel(BaseModel):
             **self.kwargs,
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "RFModel":
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        expansion_start: np.ndarray = None,
+        expansion_end: np.ndarray = None,
+    ) -> "RFModel":
         """Train random forest model.
 
         Args:
@@ -77,7 +83,9 @@ class RFModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:  # [N, T, F] format
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = engineer_classical_features(
+                X, expansion_start=expansion_start, expansion_end=expansion_end
+            )
         else:
             X_engineered = X
 
@@ -85,7 +93,9 @@ class RFModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
+    def predict(
+        self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
+    ) -> np.ndarray:
         """Predict class labels.
 
         Args:
@@ -105,13 +115,17 @@ class RFModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = engineer_classical_features(
+                X, expansion_start=expansion_start, expansion_end=expansion_end
+            )
         else:
             X_engineered = X
 
         return self.model.predict(X_engineered)
 
-    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
+    def predict_proba(
+        self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
+    ) -> np.ndarray:
         """Predict class probabilities.
 
         Args:
@@ -131,7 +145,9 @@ class RFModel(BaseModel):
             X = X.reshape(-1, 105, 4)
 
         if X.ndim == 3:
-            X_engineered = engineer_classical_features(X, expansion_start=expansion_start, expansion_end=expansion_end)
+            X_engineered = engineer_classical_features(
+                X, expansion_start=expansion_start, expansion_end=expansion_end
+            )
         else:
             X_engineered = X
 

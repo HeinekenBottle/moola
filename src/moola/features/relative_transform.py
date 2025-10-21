@@ -4,7 +4,6 @@ Converts absolute OHLC data to scale-invariant relative features for improved
 model generalization across different price ranges and market conditions.
 """
 
-
 import numpy as np
 from loguru import logger
 

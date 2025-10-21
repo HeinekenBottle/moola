@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from moola.cli import doctor, train, evaluate
+from moola.cli import doctor, evaluate, train
 from moola.models import get_model, list_models
 from moola.utils.seeds import set_seed
 
@@ -30,9 +30,9 @@ class TestBackwardCompatibility:
                 print(f"✅ {model_name} interface maintained")
 
                 # Test that models still have required methods
-                assert hasattr(model, 'fit'), f"{model_name} missing fit method"
-                assert hasattr(model, 'predict'), f"{model_name} missing predict method"
-                assert hasattr(model, 'predict_proba'), f"{model_name} missing predict_proba method"
+                assert hasattr(model, "fit"), f"{model_name} missing fit method"
+                assert hasattr(model, "predict"), f"{model_name} missing predict method"
+                assert hasattr(model, "predict_proba"), f"{model_name} missing predict_proba method"
 
             except Exception as e:
                 print(f"❌ {model_name} interface broken: {e}")
@@ -70,14 +70,16 @@ class TestBackwardCompatibility:
     def test_data_format_compatibility(self):
         """Test compatibility with existing data formats."""
         # Test old format (flat feature columns)
-        old_format_data = pd.DataFrame({
-            'window_id': range(10),
-            'label': ['class_A'] * 5 + ['class_B'] * 5,
-            'feature_0': np.random.randn(10, 105).flatten(),
-            'feature_1': np.random.randn(10, 105).flatten(),
-            'feature_2': np.random.randn(10, 105).flatten(),
-            'feature_3': np.random.randn(10, 105).flatten(),
-        })
+        old_format_data = pd.DataFrame(
+            {
+                "window_id": range(10),
+                "label": ["class_A"] * 5 + ["class_B"] * 5,
+                "feature_0": np.random.randn(10, 105).flatten(),
+                "feature_1": np.random.randn(10, 105).flatten(),
+                "feature_2": np.random.randn(10, 105).flatten(),
+                "feature_3": np.random.randn(10, 105).flatten(),
+            }
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             old_data_path = Path(temp_dir) / "old_format.parquet"
@@ -91,11 +93,13 @@ class TestBackwardCompatibility:
                 print(f"⚠️  Old format handling failed: {e}")
 
         # Test new format (features column)
-        new_format_data = pd.DataFrame({
-            'window_id': range(10),
-            'label': ['class_A'] * 5 + ['class_B'] * 5,
-            'features': [np.random.randn(105, 4).tolist() for _ in range(10)],
-        })
+        new_format_data = pd.DataFrame(
+            {
+                "window_id": range(10),
+                "label": ["class_A"] * 5 + ["class_B"] * 5,
+                "features": [np.random.randn(105, 4).tolist() for _ in range(10)],
+            }
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             new_data_path = Path(temp_dir) / "new_format.parquet"
@@ -185,7 +189,9 @@ class TestBackwardCompatibility:
             model.predict(np.random.randn(5, 100, 4))  # Wrong dimensions
 
         with pytest.raises(ValueError):
-            model.fit(np.random.randn(5, 105, 4), np.random.choice(["class_A", "class_B"], 5))  # Not fitted
+            model.fit(
+                np.random.randn(5, 105, 4), np.random.choice(["class_A", "class_B"], 5)
+            )  # Not fitted
 
         # Test that FileNotFoundError is raised for missing models
         with pytest.raises(FileNotFoundError):
@@ -227,9 +233,9 @@ class TestBackwardCompatibility:
         paths = resolve_paths()
 
         # Verify that standard artifact paths exist
-        assert hasattr(paths, 'artifacts'), "Artifacts path missing"
-        assert hasattr(paths, 'data'), "Data path missing"
-        assert hasattr(paths, 'logs'), "Logs path missing"
+        assert hasattr(paths, "artifacts"), "Artifacts path missing"
+        assert hasattr(paths, "data"), "Data path missing"
+        assert hasattr(paths, "logs"), "Logs path missing"
 
         # Verify model artifact structure
         model_dir = paths.artifacts / "models"
@@ -243,8 +249,8 @@ class TestBackwardCompatibility:
 
         try:
             cfg = _load_cfg(Path("configs"))
-            assert hasattr(cfg, 'seed'), "Seed config missing"
-            assert hasattr(cfg, 'cv_folds'), "CV folds config missing"
+            assert hasattr(cfg, "seed"), "Seed config missing"
+            assert hasattr(cfg, "cv_folds"), "CV folds config missing"
 
             print("✅ Configuration compatibility maintained")
         except Exception as e:

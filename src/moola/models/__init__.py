@@ -2,29 +2,39 @@
 
 Provides centralized model instantiation via get_model() function.
 All models implement the BaseModel interface.
+
+Includes Stones collection with codename system:
+- Jade: moola-lstm-m-v1.0 // codename: Jade
+- Sapphire: moola-lstm-s-fr-v1.0 // codename: Sapphire
+- Opal: moola-preenc-ad-m-v1.0 // codename: Opal
 """
 
 from typing import Type
 
 from .base import BaseModel
-from .cnn_transformer import CnnTransformerModel
 from .enhanced_simple_lstm import EnhancedSimpleLSTMModel
+from .jade import JadeModel
 from .logreg import LogRegModel
+from .registry import (
+    registry,
+    get_model as get_model_by_id,
+    get_jade,
+    get_sapphire,
+    get_opal,
+    list_available_models,
+    get_stones_collection,
+)
 from .rf import RFModel
-from .relative_transform_lstm import RelativeTransformLSTMModel
-from .rwkv_ts import RWKVTSModel
 from .simple_lstm import SimpleLSTMModel
 from .stack import StackModel
 from .xgb import XGBModel
 
-# Model registry mapping names to classes
+# Model registry mapping names to classes (Stones-only)
 _MODEL_REGISTRY: dict[str, Type[BaseModel]] = {
     # Deep learning models (production)
-    "enhanced_simple_lstm": EnhancedSimpleLSTMModel,  # PRIMARY: BiLSTM + attention with pretrained support
+    "jade": JadeModel,  # PRODUCTION: Jade architecture with Stones non-negotiables
+    "enhanced_simple_lstm": EnhancedSimpleLSTMModel,  # LEGACY: BiLSTM + attention with pretrained support
     "simple_lstm": SimpleLSTMModel,  # BASELINE: Lightweight for smoke tests
-    "relative_transform_lstm": RelativeTransformLSTMModel,  # RELATIVE: 11-dim RelativeTransform features
-    "cnn_transformer": CnnTransformerModel,  # EXPERIMENTAL: Multi-task CNN-Transformer
-    "rwkv_ts": RWKVTSModel,  # EXPERIMENTAL: RWKV for time series
     # Classical ML models (for stacking)
     "logreg": LogRegModel,
     "rf": RFModel,
@@ -37,10 +47,11 @@ def get_model(name: str, **kwargs) -> BaseModel:
     """Get model instance by name.
 
     Args:
-        name: Model name (enhanced_simple_lstm, simple_lstm, cnn_transformer, rwkv_ts, logreg, rf, xgb, stack)
+        name: Model name (jade, enhanced_simple_lstm, simple_lstm, cnn_transformer, rwkv_ts, logreg, rf, xgb, stack)
         **kwargs: Model-specific hyperparameters (seed, max_iter, device, etc.)
                  For enhanced_simple_lstm: load_pretrained_encoder (Path) loads encoder after init
                  For cnn_transformer: load_pretrained_encoder (Path) loads encoder after init
+                 For jade: predict_pointers (bool) enables multi-task learning
 
     Returns:
         Instantiated model implementing BaseModel interface
@@ -49,8 +60,8 @@ def get_model(name: str, **kwargs) -> BaseModel:
         ValueError: If model name not found in registry
 
     Examples:
-        >>> model = get_model("enhanced_simple_lstm", seed=1337, device="cuda")
-        >>> model.fit(X_train, y_train)
+        >>> model = get_model("jade", seed=1337, device="cuda", predict_pointers=True)
+        >>> model.fit(X_train, y_train, expansion_start=starts, expansion_end=ends)
         >>> predictions = model.predict(X_test)
 
         >>> # Load pre-trained encoder for enhanced_simple_lstm
@@ -63,19 +74,21 @@ def get_model(name: str, **kwargs) -> BaseModel:
 
     model_class = _MODEL_REGISTRY[name]
 
-    # Extract load_pretrained_encoder parameter (only for cnn_transformer)
+    # Extract load_pretrained_encoder parameter (for models that support it)
     load_pretrained_encoder = kwargs.pop("load_pretrained_encoder", None)
 
     # Instantiate model
     model = model_class(**kwargs)
 
-    # Load pre-trained encoder if specified (only for cnn_transformer)
-    if load_pretrained_encoder and name == "cnn_transformer":
+    # Load pre-trained encoder if specified (for models that support it)
+    if load_pretrained_encoder and hasattr(model_class, "load_pretrained_encoder"):
         from pathlib import Path
+
         encoder_path = Path(load_pretrained_encoder)
         # Note: load_pretrained_encoder will be called during fit() after model is built
         # Store the path for later use in fit()
-        model._pretrained_encoder_path = encoder_path
+        if hasattr(model, "_pretrained_encoder_path"):
+            model._pretrained_encoder_path = encoder_path
 
     return model
 
@@ -91,10 +104,9 @@ def list_models() -> list[str]:
 
 __all__ = [
     "BaseModel",
+    "JadeModel",
     "EnhancedSimpleLSTMModel",
     "SimpleLSTMModel",
-    "CnnTransformerModel",
-    "RWKVTSModel",
     "LogRegModel",
     "RFModel",
     "XGBModel",
@@ -102,6 +114,12 @@ __all__ = [
     "get_model",
     "list_models",
     "_MODEL_REGISTRY",  # For testing and introspection
+    # Registry functions
+    "get_jade",
+    "get_sapphire",
+    "get_opal",
+    "list_available_models",
+    "get_stones_collection",
 ]
 
 # Alias for backward compatibility and testing

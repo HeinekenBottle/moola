@@ -14,9 +14,10 @@ Reference:
     - Phase 2 Emergency Fixes Documentation
 """
 
+from typing import Tuple
+
 import numpy as np
 import torch
-from typing import Tuple
 from scipy.interpolate import CubicSpline
 
 
@@ -70,12 +71,7 @@ def scaling(x: torch.Tensor, sigma: float = 0.1) -> torch.Tensor:
     # Sample scaling factors from N(1, sigma^2)
     # Shape: [batch, 1, 1] to scale each sample independently
     batch_size = x.shape[0]
-    scale_factors = torch.normal(
-        mean=1.0,
-        std=sigma,
-        size=(batch_size, 1, 1),
-        device=x.device
-    )
+    scale_factors = torch.normal(mean=1.0, std=sigma, size=(batch_size, 1, 1), device=x.device)
 
     return x * scale_factors
 
@@ -123,10 +119,7 @@ def permutation(x: torch.Tensor, max_segments: int = 5, seg_mode: str = "equal")
 
 
 def magnitude_warp(
-    x: torch.Tensor,
-    sigma: float = 0.2,
-    n_knots: int = 4,
-    prob: float = 0.5
+    x: torch.Tensor, sigma: float = 0.2, n_knots: int = 4, prob: float = 0.5
 ) -> torch.Tensor:
     """Apply smooth magnitude scaling via cubic spline warping.
 
@@ -176,10 +169,7 @@ def magnitude_warp(
         # Interpolate to full sequence using linear interpolation
         # (PyTorch doesn't have cubic spline, acceptable approximation)
         warp_curve = torch.nn.functional.interpolate(
-            knots.unsqueeze(0).unsqueeze(0),
-            size=seq_len,
-            mode='linear',
-            align_corners=True
+            knots.unsqueeze(0).unsqueeze(0), size=seq_len, mode="linear", align_corners=True
         ).squeeze()  # [seq_len]
 
         # Apply warp curve to all features at each timestep
@@ -194,11 +184,7 @@ def magnitude_warp(
     return result
 
 
-def magnitude_warp_scipy(
-    x: np.ndarray,
-    sigma: float = 0.2,
-    n_knots: int = 4
-) -> np.ndarray:
+def magnitude_warp_scipy(x: np.ndarray, sigma: float = 0.2, n_knots: int = 4) -> np.ndarray:
     """SciPy version with true cubic spline (for preprocessing).
 
     Use this version for data preprocessing pipeline to get true
@@ -260,12 +246,7 @@ def time_warp(x: torch.Tensor, sigma: float = 0.2, knot: int = 4) -> torch.Tenso
     orig_steps = torch.arange(seq_len, dtype=torch.float32, device=device)
 
     # Create random warping at knot points
-    random_warps = torch.normal(
-        mean=1.0,
-        std=sigma,
-        size=(batch_size, knot + 2),
-        device=device
-    )
+    random_warps = torch.normal(mean=1.0, std=sigma, size=(batch_size, knot + 2), device=device)
 
     # Linear interpolation for each sample
     x_warped = torch.zeros_like(x)
@@ -277,27 +258,28 @@ def time_warp(x: torch.Tensor, sigma: float = 0.2, knot: int = 4) -> torch.Tenso
         # Apply warping factors cumulatively
         warped_knots = knot_positions.clone()
         for k in range(1, knot + 2):
-            warped_knots[k] = warped_knots[k-1] + (knot_positions[k] - knot_positions[k-1]) * random_warps[i, k]
+            warped_knots[k] = (
+                warped_knots[k - 1]
+                + (knot_positions[k] - knot_positions[k - 1]) * random_warps[i, k]
+            )
 
         # Normalize to original time range
         warped_knots = warped_knots * (seq_len - 1) / warped_knots[-1]
 
         # Interpolate warped time indices for all timesteps
         warped_time_np = np.interp(
-            orig_steps.cpu().numpy(),
-            knot_positions.cpu().numpy(),
-            warped_knots.cpu().numpy()
+            orig_steps.cpu().numpy(), knot_positions.cpu().numpy(), warped_knots.cpu().numpy()
         )
         warped_time = torch.from_numpy(np.asarray(warped_time_np, dtype=np.float32)).to(device)
 
         # Now interpolate features from original to warped time
         for j in range(n_features):
             feature_interp_np = np.interp(
-                warped_time.cpu().numpy(),
-                orig_steps.cpu().numpy(),
-                x[i, :, j].cpu().numpy()
+                warped_time.cpu().numpy(), orig_steps.cpu().numpy(), x[i, :, j].cpu().numpy()
             )
-            x_warped[i, :, j] = torch.from_numpy(np.asarray(feature_interp_np, dtype=np.float32)).to(device)
+            x_warped[i, :, j] = torch.from_numpy(
+                np.asarray(feature_interp_np, dtype=np.float32)
+            ).to(device)
 
     return x_warped
 
@@ -333,9 +315,7 @@ def rotation(x: torch.Tensor) -> torch.Tensor:
 
 
 def validate_jitter_preserves_patterns(
-    x: torch.Tensor,
-    sigma: float = 0.03,
-    n_samples: int = 10
+    x: torch.Tensor, sigma: float = 0.03, n_samples: int = 10
 ) -> dict:
     """Validate that jittered samples maintain correlation with original.
 
@@ -362,12 +342,12 @@ def validate_jitter_preserves_patterns(
 
     avg_corr = np.mean(correlations)
     return {
-        'avg_correlation': avg_corr,
-        'min_correlation': np.min(correlations),
-        'max_correlation': np.max(correlations),
-        'passes_threshold': avg_corr > 0.95,
-        'sigma': sigma,
-        'n_samples': n_samples
+        "avg_correlation": avg_corr,
+        "min_correlation": np.min(correlations),
+        "max_correlation": np.max(correlations),
+        "passes_threshold": avg_corr > 0.95,
+        "sigma": sigma,
+        "n_samples": n_samples,
     }
 
 
@@ -377,7 +357,7 @@ def augment_temporal_sequence(
     warp_sigma: float = 0.2,
     warp_knots: int = 4,
     jitter_prob: float = 0.8,
-    warp_prob: float = 0.5
+    warp_prob: float = 0.5,
 ) -> torch.Tensor:
     """Apply combined temporal augmentation (jitter + magnitude warp).
 
@@ -503,7 +483,7 @@ class TemporalAugmentation:
                 x_aug,
                 sigma=self.magnitude_warp_sigma,
                 n_knots=self.magnitude_warp_knots,
-                prob=1.0  # Already passed probability check
+                prob=1.0,  # Already passed probability check
             )
 
         # PHASE 2: Temporal jittering (localized noise)

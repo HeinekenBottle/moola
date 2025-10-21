@@ -38,7 +38,7 @@ class TestDataPipelineIntegration:
         rows = []
         for i in range(N):
             engineer = AdvancedFeatureEngineer(FeatureConfig())
-            X_engineered = engineer.transform(X_ohlc[i:i+1])
+            X_engineered = engineer.transform(X_ohlc[i : i + 1])
 
             row_data = {
                 "window_id": i,
@@ -90,7 +90,9 @@ class TestDataPipelineIntegration:
             # Each time step should have 4+ features
             for t, time_step in enumerate(features):
                 assert isinstance(time_step, list), f"Time step {t} at index {idx} not a list"
-                assert len(time_step) >= 4, f"Time step {t} at index {idx} has insufficient features"
+                assert (
+                    len(time_step) >= 4
+                ), f"Time step {t} at index {idx} has insufficient features"
 
     def test_model_training_integration(self, test_data):
         """Test model training with engineered features."""
@@ -138,11 +140,7 @@ class TestDataPipelineIntegration:
         y_indices = np.array([label_to_idx[label] for label in y])
 
         # Test mixup/cutmix augmentation
-        X_aug, y_a, y_b, lam = mixup_cutmix(
-            X, y_indices,
-            mixup_alpha=0.4,
-            cutmix_prob=0.5
-        )
+        X_aug, y_a, y_b, lam = mixup_cutmix(X, y_indices, mixup_alpha=0.4, cutmix_prob=0.5)
 
         # Validate augmentation
         assert X_aug.shape == X.shape
@@ -152,6 +150,7 @@ class TestDataPipelineIntegration:
 
         # Test temporal augmentation
         from moola.utils.temporal_augmentation import TemporalAugmentation
+
         temporal_aug = TemporalAugmentation(
             jitter_prob=0.5,
             jitter_sigma=0.05,
@@ -159,7 +158,7 @@ class TestDataPipelineIntegration:
             scaling_sigma=0.1,
             permutation_prob=0.0,
             time_warp_prob=0.0,
-            rotation_prob=0.0
+            rotation_prob=0.0,
         )
 
         X_temp_aug = temporal_aug.apply_augmentation(X_aug)
@@ -188,8 +187,12 @@ class TestDataPipelineIntegration:
             train_classes = np.unique(y_train)
             val_classes = np.unique(y_val)
 
-            assert len(train_classes) == 2, f"Fold {fold_idx}: Training has only {len(train_classes)} classes"
-            assert len(val_classes) == 2, f"Fold {fold_idx}: Validation has only {len(val_classes)} classes"
+            assert (
+                len(train_classes) == 2
+            ), f"Fold {fold_idx}: Training has only {len(train_classes)} classes"
+            assert (
+                len(val_classes) == 2
+            ), f"Fold {fold_idx}: Validation has only {len(val_classes)} classes"
 
     def test_memory_efficiency(self, test_data):
         """Test memory efficiency with small datasets."""

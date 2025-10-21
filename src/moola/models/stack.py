@@ -20,7 +20,14 @@ class StackModel(BaseModel):
     to class imbalance and improved performance on small datasets.
     """
 
-    def __init__(self, seed: int = 1337, n_estimators: int = 1000, max_depth: int = 12, device: str = "cpu", **kwargs):
+    def __init__(
+        self,
+        seed: int = 1337,
+        n_estimators: int = 1000,
+        max_depth: int = 12,
+        device: str = "cpu",
+        **kwargs,
+    ):
         """Initialize stacking meta-learner.
 
         Args:

@@ -120,11 +120,11 @@ class RunPodOrchestrator:
                 stderr_lines = []
 
                 # Read stdout
-                for line in iter(process.stdout.readline, ''):
+                for line in iter(process.stdout.readline, ""):
                     if line:
                         stdout_lines.append(line)
                         if self.verbose:
-                            print(line, end='')
+                            print(line, end="")
 
                 # Wait for completion
                 return_code = process.wait(timeout=timeout)
@@ -134,10 +134,10 @@ class RunPodOrchestrator:
                 if stderr:
                     stderr_lines.append(stderr)
                     if self.verbose:
-                        print(stderr, end='')
+                        print(stderr, end="")
 
-                stdout = ''.join(stdout_lines)
-                stderr = ''.join(stderr_lines)
+                stdout = "".join(stdout_lines)
+                stderr = "".join(stderr_lines)
 
                 return return_code, stdout, stderr
             else:
@@ -417,7 +417,7 @@ class RunPodOrchestrator:
 
         for name, cmd in checks.items():
             return_code = self.execute_command(cmd, stream_output=False, timeout=30)
-            results[name] = (return_code == 0)
+            results[name] = return_code == 0
 
             status = "✓" if return_code == 0 else "✗"
             print(f"  {status} {name}")
@@ -779,7 +779,7 @@ print(f"[PRE-TRAINING] Complete! Best val loss: {{min(history[\\"val_loss\\"]):.
             timeout=10,
         )
 
-        is_pretraining = (ps_check == 0)
+        is_pretraining = ps_check == 0
 
         # Get GPU stats
         gpu_cmd = "nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits"
@@ -791,7 +791,7 @@ print(f"[PRE-TRAINING] Complete! Best val loss: {{min(history[\\"val_loss\\"]):.
 
         gpu_stats = {"utilization": 0, "memory_used": 0, "memory_total": 24000, "temperature": 0}
         if exit_code == 0:
-            parts = gpu_output.strip().split(',')
+            parts = gpu_output.strip().split(",")
             if len(parts) == 4:
                 gpu_stats = {
                     "utilization": int(parts[0].strip()),
@@ -814,7 +814,9 @@ print(f"[PRE-TRAINING] Complete! Best val loss: {{min(history[\\"val_loss\\"]):.
 
         print(f"\n[GPU]")
         print(f"  Utilization: {gpu_stats['utilization']}%")
-        print(f"  VRAM: {gpu_stats['memory_used']}/{gpu_stats['memory_total']} MB ({gpu_stats['memory_used']/gpu_stats['memory_total']*100:.1f}%)")
+        print(
+            f"  VRAM: {gpu_stats['memory_used']}/{gpu_stats['memory_total']} MB ({gpu_stats['memory_used']/gpu_stats['memory_total']*100:.1f}%)"
+        )
         print(f"  Temperature: {gpu_stats['temperature']}°C")
 
         return status

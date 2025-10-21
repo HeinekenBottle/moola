@@ -1,4 +1,5 @@
 """Data loading utilities with validation."""
+
 import pandas as pd
 
 
@@ -16,9 +17,11 @@ def validate_expansions(df):
         Cleaned DataFrame with valid expansion indices
     """
     valid = (
-        (df['expansion_start'] < df['expansion_end']) &
-        (df['expansion_start'] >= 30) & (df['expansion_start'] <= 74) &
-        (df['expansion_end'] >= 30) & (df['expansion_end'] <= 74)
+        (df["expansion_start"] < df["expansion_end"])
+        & (df["expansion_start"] >= 30)
+        & (df["expansion_start"] <= 74)
+        & (df["expansion_end"] >= 30)
+        & (df["expansion_end"] <= 74)
     )
 
     n_invalid = (~valid).sum()

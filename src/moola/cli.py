@@ -428,7 +428,10 @@ def train(
     import numpy as np
     import pandas as pd
 
-    from .data.dual_input_pipeline import create_dual_input_processor, prepare_model_inputs
+    from .data.dual_input_pipeline import (
+        create_dual_input_processor,
+        prepare_model_inputs,
+    )
     from .data.splits import assert_no_random, assert_temporal, load_split
     from .models import get_model
     from .utils.seeds import print_gpu_info
@@ -716,7 +719,9 @@ def train(
         log.info("=" * 60)
 
         from moola.data.pointer_transforms import numpy_center_length_to_start_end
-        from moola.utils.metrics.pointer_regression import compute_pointer_regression_metrics
+        from moola.utils.metrics.pointer_regression import (
+            compute_pointer_regression_metrics,
+        )
 
         # Get pointer predictions on validation set
         try:
@@ -857,7 +862,10 @@ def train(
 
         import torch
 
-        from moola.utils.uncertainty.mc_dropout import get_uncertainty_threshold, mc_dropout_predict
+        from moola.utils.uncertainty.mc_dropout import (
+            get_uncertainty_threshold,
+            mc_dropout_predict,
+        )
 
         # Prepare validation data as tensor
         X_test_tensor = torch.FloatTensor(X_test).to(model_instance.device)
@@ -1071,7 +1079,9 @@ def train(
                 val_outputs = model_instance.predict_with_pointers(X_test)
                 pointer_preds = val_outputs["pointers"]
 
-                from moola.data.pointer_transforms import numpy_center_length_to_start_end
+                from moola.data.pointer_transforms import (
+                    numpy_center_length_to_start_end,
+                )
 
                 pred_start, pred_end = numpy_center_length_to_start_end(
                     pointer_preds[:, 0], pointer_preds[:, 1], seq_len=104
@@ -1288,7 +1298,10 @@ def evaluate(
         recall_score,
     )
 
-    from .data.dual_input_pipeline import create_dual_input_processor, prepare_model_inputs
+    from .data.dual_input_pipeline import (
+        create_dual_input_processor,
+        prepare_model_inputs,
+    )
     from .data.splits import assert_temporal, load_split
     from .models import get_model
 

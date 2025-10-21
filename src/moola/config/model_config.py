@@ -84,13 +84,13 @@ MODEL_ARCHITECTURES = {
 # ============================================================================
 
 MODEL_DEVICE_COMPATIBILITY = {
-    "cnn_transformer": ["cpu", "cuda"],     # GPU-recommended but works on CPU
+    "cnn_transformer": ["cpu", "cuda"],  # GPU-recommended but works on CPU
     "rwkv_ts": ["cpu", "cuda"],
     "simple_lstm": ["cpu", "cuda"],
-    "logreg": ["cpu"],                      # No GPU benefit
-    "rf": ["cpu"],                          # sklearn does not support GPU
-    "xgb": ["cpu"],                         # XGBoost GPU support is optional
-    "stack": ["cpu"],                       # Meta-learner always CPU
+    "logreg": ["cpu"],  # No GPU benefit
+    "rf": ["cpu"],  # sklearn does not support GPU
+    "xgb": ["cpu"],  # XGBoost GPU support is optional
+    "stack": ["cpu"],  # Meta-learner always CPU
 }
 
 
@@ -199,6 +199,7 @@ OUTPUT_SPECS = {
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
 
 def get_model_spec(model_name: str) -> dict:
     """Get architecture specification for a model.

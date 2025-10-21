@@ -1,0 +1,20 @@
+# Sapphire Model Configuration
+# moola-preenc-fr-s-v1.0 // codename: Sapphire
+# Pre-trained encoder with frozen weights
+
+model:
+  name: sapphire
+  base: jade  # Inherits from Jade
+  
+  # Transfer learning
+  pretrained_encoder_path: artifacts/encoders/pretrained/bilstm_mae_11d_v1.pt
+  freeze_encoder: true
+  
+  # Lightweight head (encoder frozen)
+  architecture:
+    hidden_size: 128
+    num_layers: 2
+    dense_dropout: 0.5
+
+# Inherits augmentation, uncertainty, gates from Jade
+

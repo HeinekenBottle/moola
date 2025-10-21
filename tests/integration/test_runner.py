@@ -10,7 +10,7 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 import pytest
 from loguru import logger
@@ -39,7 +39,7 @@ class IntegrationTestRunner:
                 "test_model_architecture.py",
                 "test_pretraining_integration.py",
                 "test_backward_compatibility.py",
-            ]
+            ],
         }
 
     def run_all_tests(self) -> Dict[str, Any]:
@@ -78,10 +78,7 @@ class IntegrationTestRunner:
 
         with ProcessPoolExecutor(max_workers=self.config["max_workers"]) as executor:
             # Submit all test tasks
-            future_to_suite = {
-                executor.submit(suite): suite.__name__
-                for suite in test_suites
-            }
+            future_to_suite = {executor.submit(suite): suite.__name__ for suite in test_suites}
 
             # Collect results as they complete
             for future in as_completed(future_to_suite):
@@ -145,10 +142,7 @@ class IntegrationTestRunner:
             cmd = [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"]
 
             process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.config["timeout_seconds"]
+                cmd, capture_output=True, text=True, timeout=self.config["timeout_seconds"]
             )
 
             # Parse results
@@ -189,10 +183,7 @@ class IntegrationTestRunner:
             cmd = [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"]
 
             process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.config["timeout_seconds"]
+                cmd, capture_output=True, text=True, timeout=self.config["timeout_seconds"]
             )
 
             result["exit_code"] = process.returncode
@@ -229,10 +220,7 @@ class IntegrationTestRunner:
             cmd = [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"]
 
             process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.config["timeout_seconds"]
+                cmd, capture_output=True, text=True, timeout=self.config["timeout_seconds"]
             )
 
             result["exit_code"] = process.returncode
@@ -269,10 +257,7 @@ class IntegrationTestRunner:
             cmd = [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"]
 
             process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.config["timeout_seconds"]
+                cmd, capture_output=True, text=True, timeout=self.config["timeout_seconds"]
             )
 
             result["exit_code"] = process.returncode
@@ -296,6 +281,7 @@ class IntegrationTestRunner:
 
         try:
             from .validation_utils import main as validation_main
+
             validation_results = validation_main()
 
             result = {
@@ -320,8 +306,9 @@ class IntegrationTestRunner:
 
         # Calculate overall success rate
         total_suites = len(suite_results)
-        successful_suites = sum(1 for result in suite_results.values()
-                               if result.get("success", False))
+        successful_suites = sum(
+            1 for result in suite_results.values() if result.get("success", False)
+        )
         success_rate = successful_suites / total_suites if total_suites > 0 else 0
 
         # Generate summary
@@ -366,15 +353,19 @@ class IntegrationTestRunner:
                 if result.get("error"):
                     error_msg = result["error"].lower()
                     if "critical" in error_msg or "fail" in error_msg:
-                        analysis["critical_failures"].append({
-                            "suite": suite_name,
-                            "error": result["error"],
-                        })
+                        analysis["critical_failures"].append(
+                            {
+                                "suite": suite_name,
+                                "error": result["error"],
+                            }
+                        )
                     else:
-                        analysis["warnings"].append({
-                            "suite": suite_name,
-                            "error": result["error"],
-                        })
+                        analysis["warnings"].append(
+                            {
+                                "suite": suite_name,
+                                "error": result["error"],
+                            }
+                        )
                 else:
                     analysis["improvement_areas"].append(suite_name)
 

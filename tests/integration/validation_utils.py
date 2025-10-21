@@ -7,7 +7,7 @@ and performance regression detection.
 import json
 import time
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -21,8 +21,9 @@ class PerformanceBenchmark:
     def __init__(self):
         self.benchmark_results = []
 
-    def benchmark_model_training(self, model_name: str, X: np.ndarray, y: np.ndarray,
-                               n_epochs: int = 5) -> Dict[str, Any]:
+    def benchmark_model_training(
+        self, model_name: str, X: np.ndarray, y: np.ndarray, n_epochs: int = 5
+    ) -> Dict[str, Any]:
         """Benchmark model training performance."""
         from moola.models import get_model
 
@@ -70,7 +71,9 @@ class PerformanceBenchmark:
         self.benchmark_results.append(result)
         return result
 
-    def benchmark_feature_engineering(self, X_ohlc: np.ndarray, iterations: int = 10) -> Dict[str, Any]:
+    def benchmark_feature_engineering(
+        self, X_ohlc: np.ndarray, iterations: int = 10
+    ) -> Dict[str, Any]:
         """Benchmark feature engineering performance."""
         from moola.features import AdvancedFeatureEngineer, FeatureConfig
 
@@ -131,9 +134,9 @@ class ArchitectureValidator:
     def __init__(self):
         self.validation_results = {}
 
-    def validate_parameter_count(self, model: torch.nn.Module,
-                                expected_range: Tuple[int, int],
-                                model_name: str) -> Dict[str, Any]:
+    def validate_parameter_count(
+        self, model: torch.nn.Module, expected_range: Tuple[int, int], model_name: str
+    ) -> Dict[str, Any]:
         """Validate model parameter count meets expectations."""
         param_count = sum(p.numel() for p in model.parameters())
 
@@ -148,9 +151,9 @@ class ArchitectureValidator:
         self.validation_results[f"param_count_{model_name}"] = result
         return result
 
-    def validate_gradient_flow(self, model: torch.nn.Module,
-                             X: torch.Tensor, y: torch.Tensor,
-                             threshold: float = 1e-8) -> Dict[str, Any]:
+    def validate_gradient_flow(
+        self, model: torch.nn.Module, X: torch.Tensor, y: torch.Tensor, threshold: float = 1e-8
+    ) -> Dict[str, Any]:
         """Validate gradient flow through model architecture."""
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -187,9 +190,9 @@ class ArchitectureValidator:
         self.validation_results["gradient_flow"] = result
         return result
 
-    def validate_model_consistency(self, model1: torch.nn.Module,
-                                 model2: torch.nn.Module,
-                                 X_test: torch.Tensor) -> Dict[str, Any]:
+    def validate_model_consistency(
+        self, model1: torch.nn.Module, model2: torch.nn.Module, X_test: torch.Tensor
+    ) -> Dict[str, Any]:
         """Validate model consistency between two instances."""
         model1.eval()
         model2.eval()
@@ -210,8 +213,9 @@ class ArchitectureValidator:
         self.validation_results["model_consistency"] = result
         return result
 
-    def validate_data_compatibility(self, model: torch.nn.Module,
-                                   test_inputs: List[np.ndarray]) -> Dict[str, Any]:
+    def validate_data_compatibility(
+        self, model: torch.nn.Module, test_inputs: List[np.ndarray]
+    ) -> Dict[str, Any]:
         """Validate model compatibility with different data configurations."""
         results = []
 
@@ -284,13 +288,15 @@ class PerformanceRegressionDetector:
             time_change = (current_time - baseline_time) / baseline_time
 
             if time_change > 0.2:  # 20% increase
-                regressions.append({
-                    "metric": "training_time",
-                    "baseline": baseline_time,
-                    "current": current_time,
-                    "change_percent": time_change * 100,
-                    "severity": "high" if time_change > 0.5 else "medium",
-                })
+                regressions.append(
+                    {
+                        "metric": "training_time",
+                        "baseline": baseline_time,
+                        "current": current_time,
+                        "change_percent": time_change * 100,
+                        "severity": "high" if time_change > 0.5 else "medium",
+                    }
+                )
 
         # Compare memory usage
         if "memory_used_gb" in current_results and "memory_used_gb" in self.baseline_data:
@@ -299,13 +305,15 @@ class PerformanceRegressionDetector:
             memory_change = (current_memory - baseline_memory) / baseline_memory
 
             if memory_change > 0.3:  # 30% increase
-                warnings.append({
-                    "metric": "memory_usage",
-                    "baseline": baseline_memory,
-                    "current": current_memory,
-                    "change_percent": memory_change * 100,
-                    "severity": "medium" if memory_change > 0.5 else "low",
-                })
+                warnings.append(
+                    {
+                        "metric": "memory_usage",
+                        "baseline": baseline_memory,
+                        "current": current_memory,
+                        "change_percent": memory_change * 100,
+                        "severity": "medium" if memory_change > 0.5 else "low",
+                    }
+                )
 
         # Compare accuracy
         if "accuracy" in current_results and "accuracy" in self.baseline_data:
@@ -314,13 +322,15 @@ class PerformanceRegressionDetector:
             acc_change = current_acc - baseline_acc
 
             if acc_change < -0.05:  # 5% decrease
-                regressions.append({
-                    "metric": "accuracy",
-                    "baseline": baseline_acc,
-                    "current": current_acc,
-                    "change_percent": acc_change * 100,
-                    "severity": "high",
-                })
+                regressions.append(
+                    {
+                        "metric": "accuracy",
+                        "baseline": baseline_acc,
+                        "current": current_acc,
+                        "change_percent": acc_change * 100,
+                        "severity": "high",
+                    }
+                )
 
         return {
             "regressions": regressions,
@@ -339,7 +349,9 @@ class PerformanceRegressionDetector:
 class SmallDatasetValidator:
     """Validate model performance with small datasets (production constraints)."""
 
-    def validate_small_dataset_training(self, model_name: str, n_samples: int = 98) -> Dict[str, Any]:
+    def validate_small_dataset_training(
+        self, model_name: str, n_samples: int = 98
+    ) -> Dict[str, Any]:
         """Validate training with small dataset size."""
         from moola.models import get_model
 
@@ -357,12 +369,12 @@ class SmallDatasetValidator:
         accuracy = (predictions == y).mean()
 
         # Check for overfitting
-        train_predictions = model.predict(X[:n_samples//2])
-        val_predictions = model.predict(X[n_samples//2:])
-        train_acc = (train_predictions == y[:n_samples//2]).mean()
-        val_acc = (val_predictions == y[n_samples//2:])
+        train_predictions = model.predict(X[: n_samples // 2])
+        val_predictions = model.predict(X[n_samples // 2 :])
+        train_acc = (train_predictions == y[: n_samples // 2]).mean()
+        val_acc = val_predictions == y[n_samples // 2 :]
 
-        overfitting_ratio = train_acc / val_acc if val_acc > 0 else float('inf')
+        overfitting_ratio = train_acc / val_acc if val_acc > 0 else float("inf")
 
         result = {
             "n_samples": n_samples,
@@ -392,6 +404,7 @@ class SmallDatasetValidator:
 
             # Train and evaluate
             from moola.models import get_model
+
             model = get_model(model_name, device="cpu", n_epochs=5)
             model.fit(X, y)
 
@@ -402,12 +415,14 @@ class SmallDatasetValidator:
             class_predictions = pd.Series(predictions).value_counts()
             pred_ratio = class_predictions.min() / class_predictions.max()
 
-            results.append({
-                "imbalance_ratio": ratio,
-                "accuracy": accuracy,
-                "prediction_balance": pred_ratio,
-                "robust": accuracy > 0.5 and pred_ratio > 0.3,
-            })
+            results.append(
+                {
+                    "imbalance_ratio": ratio,
+                    "accuracy": accuracy,
+                    "prediction_balance": pred_ratio,
+                    "robust": accuracy > 0.5 and pred_ratio > 0.3,
+                }
+            )
 
         all_robust = all(r["robust"] for r in results)
         avg_accuracy = np.mean([r["accuracy"] for r in results])
@@ -423,9 +438,11 @@ class ValidationReporter:
     """Generate comprehensive validation reports."""
 
     @staticmethod
-    def generate_comprehensive_report(validation_results: Dict[str, Any],
-                                   benchmark_results: Dict[str, Any],
-                                   regression_results: Dict[str, Any]) -> str:
+    def generate_comprehensive_report(
+        validation_results: Dict[str, Any],
+        benchmark_results: Dict[str, Any],
+        regression_results: Dict[str, Any],
+    ) -> str:
         """Generate comprehensive validation report."""
         report = []
 
@@ -460,7 +477,9 @@ class ValidationReporter:
             report.append("⚠️  REGRESSIONS DETECTED:")
             for regression in regression_results["regressions"]:
                 severity = regression["severity"].upper()
-                report.append(f"  {severity}: {regression['metric']} - {regression['change_percent']:.1f}% change")
+                report.append(
+                    f"  {severity}: {regression['metric']} - {regression['change_percent']:.1f}% change"
+                )
         else:
             report.append("✅ No performance regressions detected")
 
@@ -501,11 +520,10 @@ def main():
 
     # Run validations
     from moola.models import get_model
+
     model = get_model("simple_lstm", device="cpu")
 
-    param_validation = validator.validate_parameter_count(
-        model.model, (40000, 60000), "SimpleLSTM"
-    )
+    param_validation = validator.validate_parameter_count(model.model, (40000, 60000), "SimpleLSTM")
 
     # Create test tensors for gradient flow
     X_tensor = torch.FloatTensor(X[:10])
@@ -513,7 +531,9 @@ def main():
     gradient_validation = validator.validate_gradient_flow(model.model, X_tensor, y_tensor)
 
     # Test small dataset validation
-    small_dataset_validation = small_dataset_validator.validate_small_dataset_training("simple_lstm")
+    small_dataset_validation = small_dataset_validator.validate_small_dataset_training(
+        "simple_lstm"
+    )
 
     # Combine results
     all_results = {
@@ -526,7 +546,7 @@ def main():
             "parameter_count": param_validation,
             "gradient_flow": gradient_validation,
             "small_dataset": small_dataset_validation,
-        }
+        },
     }
 
     # Check for regressions
@@ -534,9 +554,7 @@ def main():
 
     # Generate report
     report = ValidationReporter.generate_comprehensive_report(
-        all_results["validation"],
-        all_results["benchmarking"],
-        regression_results
+        all_results["validation"], all_results["benchmarking"], regression_results
     )
 
     # Save results

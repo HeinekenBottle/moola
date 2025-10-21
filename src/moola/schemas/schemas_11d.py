@@ -12,11 +12,12 @@ from typing import Any, Dict, List, Literal, Optional, Union
 import numpy as np
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .schemas import PatternLabel, DataStage, DataFormat
+from .schemas import DataFormat, DataStage, PatternLabel
 
 
 class FeatureDimension(str, Enum):
     """Supported feature dimensions."""
+
     OHLC_4D = "ohlc_4d"
     RELATIVE_11D = "relative_11d"
     DUAL_INPUT = "dual_input"
@@ -24,24 +25,24 @@ class FeatureDimension(str, Enum):
 
 class EnhancedOHLCBar(BaseModel):
     """Enhanced OHLC bar with optional 11D relative features."""
-    
+
     # Core OHLC data (4D)
     open: float = Field(..., ge=0.001, description="Opening price")
     high: float = Field(..., ge=0.001, description="Highest price")
     low: float = Field(..., ge=0.001, description="Lowest price")
     close: float = Field(..., ge=0.001, description="Closing price")
     timestamp: Optional[datetime] = Field(None, description="Bar timestamp")
-    
+
     # Optional 11D relative features
     relative_features: Optional[List[float]] = Field(
-        None, 
-        min_length=11, 
+        None,
+        min_length=11,
         max_length=11,
-        description="11 relative features: [4 log_returns, 3 candle_ratios, 4 z_scores]"
+        description="11 relative features: [4 log_returns, 3 candle_ratios, 4 z_scores]",
     )
 
-    @model_validator(mode='after')
-    def validate_ohlc_logic(self) -> 'EnhancedOHLCBar':
+    @model_validator(mode="after")
+    def validate_ohlc_logic(self) -> "EnhancedOHLCBar":
         """Validate OHLC logical constraints."""
         if self.high < self.low:
             raise ValueError(f"High ({self.high}) cannot be less than Low ({self.low})")
@@ -67,13 +68,13 @@ class EnhancedOHLCBar(BaseModel):
     def to_ohlc_array(self) -> np.ndarray:
         """Convert to OHLC numpy array [open, high, low, close]."""
         return np.array([self.open, self.high, self.low, self.close], dtype=np.float32)
-    
+
     def to_relative_array(self) -> Optional[np.ndarray]:
         """Convert to relative features numpy array [11]."""
         if self.relative_features is None:
             return None
         return np.array(self.relative_features, dtype=np.float32)
-    
+
     def to_enhanced_array(self) -> np.ndarray:
         """Convert to enhanced array [15] = [4 OHLC + 11 relative]."""
         ohlc = self.to_ohlc_array()
@@ -87,31 +88,31 @@ class EnhancedOHLCBar(BaseModel):
 
 class EnhancedTimeSeriesWindow(BaseModel):
     """Enhanced 105-timestep window with 4D OHLC and optional 11D relative features."""
-    
+
     window_id: str = Field(..., description="Unique window identifier")
     feature_dimension: FeatureDimension = Field(..., description="Feature dimension type")
-    
+
     # Core OHLC data (always present)
     ohlc_features: List[List[float]] = Field(
         ...,
         min_length=105,
         max_length=105,
-        description="105 OHLC bars, each [open, high, low, close]"
+        description="105 OHLC bars, each [open, high, low, close]",
     )
-    
+
     # Optional 11D relative features
     relative_features: Optional[List[List[float]]] = Field(
         None,
         min_length=105,
         max_length=105,
-        description="105 timesteps of 11 relative features each"
+        description="105 timesteps of 11 relative features each",
     )
-    
+
     symbol: Optional[str] = Field(None, description="Trading symbol")
     start_timestamp: Optional[datetime] = Field(None, description="Window start time")
     end_timestamp: Optional[datetime] = Field(None, description="Window end time")
 
-    @field_validator('ohlc_features')
+    @field_validator("ohlc_features")
     @classmethod
     def validate_ohlc_shape(cls, v: List[List[float]]) -> List[List[float]]:
         """Validate each timestep has exactly 4 OHLC features."""
@@ -120,9 +121,7 @@ class EnhancedTimeSeriesWindow(BaseModel):
 
         for i, bar in enumerate(v):
             if len(bar) != 4:
-                raise ValueError(
-                    f"Timestep {i} has {len(bar)} OHLC features, expected 4 (OHLC)"
-                )
+                raise ValueError(f"Timestep {i} has {len(bar)} OHLC features, expected 4 (OHLC)")
 
             # Validate OHLC constraints
             open_p, high, low, close = bar
@@ -135,34 +134,38 @@ class EnhancedTimeSeriesWindow(BaseModel):
 
         return v
 
-    @field_validator('relative_features')
+    @field_validator("relative_features")
     @classmethod
     def validate_relative_shape(cls, v: Optional[List[List[float]]]) -> Optional[List[List[float]]]:
         """Validate relative features have exactly 11 dimensions."""
         if v is None:
             return None
-            
+
         if len(v) != 105:
             raise ValueError(f"Expected 105 timesteps, got {len(v)}")
 
         for i, features in enumerate(v):
             if len(features) != 11:
-                raise ValueError(
-                    f"Timestep {i} has {len(features)} relative features, expected 11"
-                )
+                raise ValueError(f"Timestep {i} has {len(features)} relative features, expected 11")
 
         return v
 
-    @model_validator(mode='after')
-    def validate_feature_consistency(self) -> 'EnhancedTimeSeriesWindow':
+    @model_validator(mode="after")
+    def validate_feature_consistency(self) -> "EnhancedTimeSeriesWindow":
         """Ensure feature dimensions are consistent."""
-        if self.feature_dimension == FeatureDimension.RELATIVE_11D and self.relative_features is None:
+        if (
+            self.feature_dimension == FeatureDimension.RELATIVE_11D
+            and self.relative_features is None
+        ):
             raise ValueError("11D features specified but relative_features data is missing")
-        
-        if self.feature_dimension == FeatureDimension.OHLC_4D and self.relative_features is not None:
+
+        if (
+            self.feature_dimension == FeatureDimension.OHLC_4D
+            and self.relative_features is not None
+        ):
             # Allow 11D data even when marked as 4D (backward compatibility)
             self.feature_dimension = FeatureDimension.DUAL_INPUT
-            
+
         return self
 
     def to_ohlc_numpy(self) -> np.ndarray:
@@ -179,7 +182,7 @@ class EnhancedTimeSeriesWindow(BaseModel):
         """Convert to enhanced numpy array [105, 15] = [4 OHLC + 11 relative]."""
         ohlc = self.to_ohlc_numpy()
         relative = self.to_relative_numpy()
-        
+
         if relative is not None:
             return np.concatenate([ohlc, relative], axis=1)
         else:
@@ -188,12 +191,13 @@ class EnhancedTimeSeriesWindow(BaseModel):
             return np.concatenate([ohlc, padding], axis=1)
 
     @classmethod
-    def from_ohlc_numpy(cls, arr: np.ndarray, window_id: str, 
-                        relative_arr: Optional[np.ndarray] = None) -> 'EnhancedTimeSeriesWindow':
+    def from_ohlc_numpy(
+        cls, arr: np.ndarray, window_id: str, relative_arr: Optional[np.ndarray] = None
+    ) -> "EnhancedTimeSeriesWindow":
         """Create from numpy arrays."""
         if arr.shape != (105, 4):
             raise ValueError(f"Expected OHLC shape (105, 4), got {arr.shape}")
-        
+
         # Determine feature dimension
         if relative_arr is not None:
             if relative_arr.shape != (105, 11):
@@ -203,7 +207,7 @@ class EnhancedTimeSeriesWindow(BaseModel):
         else:
             feature_dim = FeatureDimension.OHLC_4D
             relative_features = None
-            
+
         return cls(
             window_id=window_id,
             feature_dimension=feature_dim,
@@ -211,35 +215,24 @@ class EnhancedTimeSeriesWindow(BaseModel):
             relative_features=relative_features,
             symbol=None,
             start_timestamp=None,
-            end_timestamp=None
+            end_timestamp=None,
         )
 
 
 class EnhancedLabeledWindow(EnhancedTimeSeriesWindow):
     """Enhanced time-series window with pattern label and expansion indices."""
-    
+
     label: PatternLabel = Field(..., description="Pattern classification label")
     expansion_start: int = Field(
-        ...,
-        ge=30,
-        le=74,
-        description="Expansion start index (within prediction window [30:75])"
+        ..., ge=30, le=74, description="Expansion start index (within prediction window [30:75])"
     )
     expansion_end: int = Field(
-        ...,
-        ge=30,
-        le=74,
-        description="Expansion end index (within prediction window [30:75])"
+        ..., ge=30, le=74, description="Expansion end index (within prediction window [30:75])"
     )
-    confidence: Optional[float] = Field(
-        None,
-        ge=0.0,
-        le=1.0,
-        description="Label confidence score"
-    )
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Label confidence score")
 
-    @model_validator(mode='after')
-    def validate_expansion_indices(self) -> 'EnhancedLabeledWindow':
+    @model_validator(mode="after")
+    def validate_expansion_indices(self) -> "EnhancedLabeledWindow":
         """Ensure expansion_start <= expansion_end."""
         if self.expansion_start > self.expansion_end:
             raise ValueError(
@@ -251,7 +244,7 @@ class EnhancedLabeledWindow(EnhancedTimeSeriesWindow):
 
 class EnhancedUnlabeledDataset(BaseModel):
     """Enhanced dataset with support for 11D features."""
-    
+
     windows: List[EnhancedTimeSeriesWindow] = Field(..., min_length=1)
     total_samples: int = Field(..., gt=0)
     feature_dimension: FeatureDimension = Field(...)
@@ -259,8 +252,8 @@ class EnhancedUnlabeledDataset(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @model_validator(mode='after')
-    def validate_sample_count(self) -> 'EnhancedUnlabeledDataset':
+    @model_validator(mode="after")
+    def validate_sample_count(self) -> "EnhancedUnlabeledDataset":
         """Ensure total_samples matches windows length."""
         if len(self.windows) != self.total_samples:
             raise ValueError(
@@ -283,11 +276,12 @@ class EnhancedUnlabeledDataset(BaseModel):
             else:
                 # Generate relative features on-the-fly if not present
                 from moola.features.relative_transform import RelativeFeatureTransform
+
                 transformer = RelativeFeatureTransform()
                 ohlc = w.to_ohlc_numpy().reshape(1, 105, 4)
                 rel = transformer.transform(ohlc).squeeze(0)
                 relative_arrays.append(rel)
-        
+
         return np.array(relative_arrays, dtype=np.float32) if relative_arrays else None
 
     def to_enhanced_numpy(self) -> np.ndarray:
@@ -297,7 +291,7 @@ class EnhancedUnlabeledDataset(BaseModel):
 
 class EnhancedLabeledDataset(BaseModel):
     """Enhanced labeled dataset with support for 11D features."""
-    
+
     windows: List[EnhancedLabeledWindow] = Field(..., min_length=2)
     total_samples: int = Field(..., gt=0)
     label_distribution: Dict[str, int] = Field(...)
@@ -307,8 +301,8 @@ class EnhancedLabeledDataset(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @model_validator(mode='after')
-    def validate_dataset_quality(self) -> 'EnhancedLabeledDataset':
+    @model_validator(mode="after")
+    def validate_dataset_quality(self) -> "EnhancedLabeledDataset":
         """Validate dataset meets quality requirements."""
         # Check sample count
         if len(self.windows) != self.total_samples:
@@ -365,11 +359,12 @@ class EnhancedLabeledDataset(BaseModel):
             else:
                 # Generate relative features on-the-fly
                 from moola.features.relative_transform import RelativeFeatureTransform
+
                 transformer = RelativeFeatureTransform()
                 ohlc = w.to_ohlc_numpy().reshape(1, 105, 4)
                 rel = transformer.transform(ohlc).squeeze(0)
                 X_relative.append(rel)
-        
+
         if X_relative:
             X = np.array(X_relative, dtype=np.float32)
             y = np.array([w.label.value for w in self.windows], dtype=object)
@@ -387,7 +382,7 @@ class EnhancedLabeledDataset(BaseModel):
 __all__ = [
     "FeatureDimension",
     "EnhancedOHLCBar",
-    "EnhancedTimeSeriesWindow", 
+    "EnhancedTimeSeriesWindow",
     "EnhancedLabeledWindow",
     "EnhancedUnlabeledDataset",
     "EnhancedLabeledDataset",

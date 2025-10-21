@@ -15,20 +15,22 @@ Key principles for small dataset feature engineering:
 5. Avoid overfitting through feature selection and regularization
 """
 
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
-from enum import Enum
+from loguru import logger
 from scipy import stats
 from scipy.signal import find_peaks
-from sklearn.preprocessing import RobustScaler
 from sklearn.feature_selection import mutual_info_classif
-from loguru import logger
+from sklearn.preprocessing import RobustScaler
 
 
 class FeatureCategory(str, Enum):
     """Categories of optimized features for small datasets."""
+
     PATTERN_MORPHOLOGY = "pattern_morphology"  # Shape and structure of patterns
     RELATIVE_DYNAMICS = "relative_dynamics"  # Pattern vs context relationships
     MARKET_MICROSTRUCTURE = "market_microstructure"  # Price action features
@@ -92,7 +94,7 @@ class SmallDatasetFeatureEngineer:
         X: np.ndarray,
         expansion_start: Optional[np.ndarray] = None,
         expansion_end: Optional[np.ndarray] = None,
-        y: Optional[np.ndarray] = None
+        y: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Extract optimized features for small dataset pattern recognition.
 
@@ -168,10 +170,7 @@ class SmallDatasetFeatureEngineer:
         return feature_matrix
 
     def _extract_pattern_morphology_features(
-        self,
-        X: np.ndarray,
-        expansion_start: np.ndarray,
-        expansion_end: np.ndarray
+        self, X: np.ndarray, expansion_start: np.ndarray, expansion_end: np.ndarray
     ) -> np.ndarray:
         """Extract features describing the shape and structure of patterns."""
         N = X.shape[0]
@@ -182,7 +181,7 @@ class SmallDatasetFeatureEngineer:
             end = int(expansion_end[i])
 
             # Extract pattern region
-            pattern = X[i, start:end+1, :]
+            pattern = X[i, start : end + 1, :]
             o, h, l, c = pattern[:, 0], pattern[:, 1], pattern[:, 2], pattern[:, 3]
 
             sample_features = []
@@ -200,14 +199,12 @@ class SmallDatasetFeatureEngineer:
                     box_counts = []
                     for scale in scales:
                         n_boxes = int(np.ceil(len(norm_prices) / scale))
-                        unique_boxes = len(set(
-                            int(p * n_boxes) for p in norm_prices
-                        ))
+                        unique_boxes = len(set(int(p * n_boxes) for p in norm_prices))
                         box_counts.append(unique_boxes)
 
                     # Estimate fractal dimension
                     if len(box_counts) >= 2 and len(scales) >= 2:
-                        log_scales = np.log(scales[:len(box_counts)])
+                        log_scales = np.log(scales[: len(box_counts)])
                         log_counts = np.log(box_counts)
                         if len(log_scales) > 1:
                             fractal_dim = -np.polyfit(log_scales, log_counts, 1)[0]
@@ -231,8 +228,12 @@ class SmallDatasetFeatureEngineer:
                 # Pad shorter half
                 min_len = min(len(left_half), len(right_half))
                 if min_len > 0:
-                    left_norm = (left_half[:min_len] - left_half[:min_len].mean()) / (left_half[:min_len].std() + 1e-8)
-                    right_norm = (right_half[:min_len] - right_half[:min_len].mean()) / (right_half[:min_len].std() + 1e-8)
+                    left_norm = (left_half[:min_len] - left_half[:min_len].mean()) / (
+                        left_half[:min_len].std() + 1e-8
+                    )
+                    right_norm = (right_half[:min_len] - right_half[:min_len].mean()) / (
+                        right_half[:min_len].std() + 1e-8
+                    )
                     symmetry = 1 - np.mean(np.abs(left_norm - right_norm)) / 2
                     sample_features.append(np.clip(symmetry, 0, 1))
                 else:
@@ -282,15 +283,14 @@ class SmallDatasetFeatureEngineer:
             features_array = features_array[:, top_indices]
             self.feature_names.extend([f"pattern_morphology_{i}" for i in top_indices])
         else:
-            self.feature_names.extend([f"pattern_morphology_{i}" for i in range(features_array.shape[1])])
+            self.feature_names.extend(
+                [f"pattern_morphology_{i}" for i in range(features_array.shape[1])]
+            )
 
         return features_array
 
     def _extract_relative_dynamics_features(
-        self,
-        X: np.ndarray,
-        expansion_start: np.ndarray,
-        expansion_end: np.ndarray
+        self, X: np.ndarray, expansion_start: np.ndarray, expansion_end: np.ndarray
     ) -> np.ndarray:
         """Extract features describing pattern dynamics relative to context."""
         N = X.shape[0]
@@ -304,9 +304,9 @@ class SmallDatasetFeatureEngineer:
             left_context_start = max(0, start - self.config.context_window_size)
             left_context = X[i, left_context_start:start, :]
             right_context_end = min(105, end + self.config.context_window_size + 1)
-            right_context = X[i, end+1:right_context_end, :]
+            right_context = X[i, end + 1 : right_context_end, :]
 
-            pattern = X[i, start:end+1, :]
+            pattern = X[i, start : end + 1, :]
 
             sample_features = []
 
@@ -321,7 +321,9 @@ class SmallDatasetFeatureEngineer:
 
             # 2. Momentum continuity
             if len(left_context) > 0 and len(pattern) > 0:
-                left_momentum = (left_context[-1, 3] - left_context[0, 3]) / (left_context[0, 3] + 1e-8)
+                left_momentum = (left_context[-1, 3] - left_context[0, 3]) / (
+                    left_context[0, 3] + 1e-8
+                )
                 pattern_momentum = (pattern[-1, 3] - pattern[0, 3]) / (pattern[0, 3] + 1e-8)
                 momentum_change = pattern_momentum - left_momentum
                 sample_features.append(momentum_change)
@@ -374,15 +376,14 @@ class SmallDatasetFeatureEngineer:
             features_array = features_array[:, top_indices]
             self.feature_names.extend([f"relative_dynamics_{i}" for i in top_indices])
         else:
-            self.feature_names.extend([f"relative_dynamics_{i}" for i in range(features_array.shape[1])])
+            self.feature_names.extend(
+                [f"relative_dynamics_{i}" for i in range(features_array.shape[1])]
+            )
 
         return features_array
 
     def _extract_market_microstructure_features(
-        self,
-        X: np.ndarray,
-        expansion_start: np.ndarray,
-        expansion_end: np.ndarray
+        self, X: np.ndarray, expansion_start: np.ndarray, expansion_end: np.ndarray
     ) -> np.ndarray:
         """Extract market microstructure features from OHLC data."""
         N = X.shape[0]
@@ -391,7 +392,7 @@ class SmallDatasetFeatureEngineer:
         for i in range(N):
             start = int(expansion_start[i])
             end = int(expansion_end[i])
-            pattern = X[i, start:end+1, :]
+            pattern = X[i, start : end + 1, :]
             o, h, l, c = pattern[:, 0], pattern[:, 1], pattern[:, 2], pattern[:, 3]
 
             sample_features = []
@@ -449,15 +450,14 @@ class SmallDatasetFeatureEngineer:
             features_array = features_array[:, top_indices]
             self.feature_names.extend([f"microstructure_{i}" for i in top_indices])
         else:
-            self.feature_names.extend([f"microstructure_{i}" for i in range(features_array.shape[1])])
+            self.feature_names.extend(
+                [f"microstructure_{i}" for i in range(features_array.shape[1])]
+            )
 
         return features_array
 
     def _extract_geometric_invariant_features(
-        self,
-        X: np.ndarray,
-        expansion_start: np.ndarray,
-        expansion_end: np.ndarray
+        self, X: np.ndarray, expansion_start: np.ndarray, expansion_end: np.ndarray
     ) -> np.ndarray:
         """Extract scale-invariant geometric features."""
         N = X.shape[0]
@@ -466,7 +466,7 @@ class SmallDatasetFeatureEngineer:
         for i in range(N):
             start = int(expansion_start[i])
             end = int(expansion_end[i])
-            pattern = X[i, start:end+1, :]
+            pattern = X[i, start : end + 1, :]
             o, h, l, c = pattern[:, 0], pattern[:, 1], pattern[:, 2], pattern[:, 3]
 
             sample_features = []
@@ -490,10 +490,10 @@ class SmallDatasetFeatureEngineer:
                 log_ranges = []
                 log_scales = []
 
-                for scale in [2, 4, max(1, len(c)//2)]:
+                for scale in [2, 4, max(1, len(c) // 2)]:
                     if scale < len(c):
                         # Rescaled range analysis
-                        scaled_data = c[:len(c)//scale * scale].reshape(-1, scale)
+                        scaled_data = c[: len(c) // scale * scale].reshape(-1, scale)
                         ranges = scaled_data.max(axis=1) - scaled_data.min(axis=1)
                         mean_range = np.mean(ranges)
 
@@ -552,15 +552,14 @@ class SmallDatasetFeatureEngineer:
             features_array = features_array[:, top_indices]
             self.feature_names.extend([f"geometric_invariant_{i}" for i in top_indices])
         else:
-            self.feature_names.extend([f"geometric_invariant_{i}" for i in range(features_array.shape[1])])
+            self.feature_names.extend(
+                [f"geometric_invariant_{i}" for i in range(features_array.shape[1])]
+            )
 
         return features_array
 
     def _extract_temporal_signature_features(
-        self,
-        X: np.ndarray,
-        expansion_start: np.ndarray,
-        expansion_end: np.ndarray
+        self, X: np.ndarray, expansion_start: np.ndarray, expansion_end: np.ndarray
     ) -> np.ndarray:
         """Extract temporal signature features."""
         N = X.shape[0]
@@ -569,15 +568,23 @@ class SmallDatasetFeatureEngineer:
         for i in range(N):
             start = int(expansion_start[i])
             end = int(expansion_end[i])
-            pattern = X[i, start:end+1, :]
+            pattern = X[i, start : end + 1, :]
             c = pattern[:, 3]
 
             sample_features = []
 
             # 1. Autocorrelation at different lags
             if len(c) > 10:
-                autocorr_1 = np.corrcoef(c[:-1], c[1:])[0, 1] if not np.isnan(np.corrcoef(c[:-1], c[1:])[0, 1]) else 0
-                autocorr_5 = np.corrcoef(c[:-5], c[5:])[0, 1] if len(c) > 5 and not np.isnan(np.corrcoef(c[:-5], c[5:])[0, 1]) else 0
+                autocorr_1 = (
+                    np.corrcoef(c[:-1], c[1:])[0, 1]
+                    if not np.isnan(np.corrcoef(c[:-1], c[1:])[0, 1])
+                    else 0
+                )
+                autocorr_5 = (
+                    np.corrcoef(c[:-5], c[5:])[0, 1]
+                    if len(c) > 5 and not np.isnan(np.corrcoef(c[:-5], c[5:])[0, 1])
+                    else 0
+                )
                 sample_features.extend([autocorr_1, autocorr_5])
             else:
                 sample_features.extend([0.0, 0.0])
@@ -592,8 +599,9 @@ class SmallDatasetFeatureEngineer:
                 else:
                     pacf_2 = 0.0
 
-                sample_features.extend([pacf_1 if not np.isnan(pacf_1) else 0,
-                                       pacf_2 if not np.isnan(pacf_2) else 0])
+                sample_features.extend(
+                    [pacf_1 if not np.isnan(pacf_1) else 0, pacf_2 if not np.isnan(pacf_2) else 0]
+                )
             else:
                 sample_features.extend([0.0, 0.0])
 
@@ -604,8 +612,8 @@ class SmallDatasetFeatureEngineer:
                 power_spectrum = np.abs(fft_vals) ** 2
 
                 # Dominant frequency strength
-                dominant_power = np.max(power_spectrum[1:len(power_spectrum)//2])
-                total_power = np.sum(power_spectrum[1:len(power_spectrum)//2])
+                dominant_power = np.max(power_spectrum[1 : len(power_spectrum) // 2])
+                total_power = np.sum(power_spectrum[1 : len(power_spectrum) // 2])
 
                 if total_power > 0:
                     periodicity = dominant_power / total_power
@@ -627,7 +635,9 @@ class SmallDatasetFeatureEngineer:
             features_array = features_array[:, top_indices]
             self.feature_names.extend([f"temporal_signature_{i}" for i in top_indices])
         else:
-            self.feature_names.extend([f"temporal_signature_{i}" for i in range(features_array.shape[1])])
+            self.feature_names.extend(
+                [f"temporal_signature_{i}" for i in range(features_array.shape[1])]
+            )
 
         return features_array
 
@@ -646,6 +656,7 @@ class SmallDatasetFeatureEngineer:
         if self.config.apply_smoothing and self.config.smoothing_window > 1:
             # Apply smoothing across samples (assuming similar samples are nearby)
             from scipy.ndimage import uniform_filter1d
+
             features = uniform_filter1d(features, size=self.config.smoothing_window, axis=0)
 
         # Apply robust scaling if enabled
@@ -671,7 +682,9 @@ class SmallDatasetFeatureEngineer:
             # Store feature importance
             self.feature_importance = dict(zip(selected_names, mi_scores[selected_mask]))
 
-            logger.info(f"Feature selection: {features.shape[1]} -> {selected_features.shape[1]} features")
+            logger.info(
+                f"Feature selection: {features.shape[1]} -> {selected_features.shape[1]} features"
+            )
 
             return selected_features
 
@@ -689,9 +702,7 @@ class SmallDatasetFeatureEngineer:
 
 
 def create_small_dataset_feature_engineer(
-    max_features_per_category: int = 5,
-    robust_scaling: bool = True,
-    feature_selection: bool = True
+    max_features_per_category: int = 5, robust_scaling: bool = True, feature_selection: bool = True
 ) -> SmallDatasetFeatureEngineer:
     """Create a feature engineer optimized for small datasets.
 
@@ -706,7 +717,7 @@ def create_small_dataset_feature_engineer(
     config = SmallDatasetFeatureConfig(
         max_features_per_category=max_features_per_category,
         robust_scaling=robust_scaling,
-        feature_selection_threshold=0.1 if feature_selection else 0.0
+        feature_selection_threshold=0.1 if feature_selection else 0.0,
     )
 
     return SmallDatasetFeatureEngineer(config)
@@ -717,7 +728,7 @@ def extract_optimized_features(
     expansion_start: Optional[np.ndarray] = None,
     expansion_end: Optional[np.ndarray] = None,
     y: Optional[np.ndarray] = None,
-    max_total_features: int = 25
+    max_total_features: int = 25,
 ) -> Tuple[np.ndarray, List[str]]:
     """Convenience function for optimized feature extraction.
 
@@ -735,7 +746,7 @@ def extract_optimized_features(
     engineer = create_small_dataset_feature_engineer(
         max_features_per_category=max_total_features // 5,  # Distribute across 5 categories
         robust_scaling=True,
-        feature_selection=True
+        feature_selection=True,
     )
 
     # Extract features

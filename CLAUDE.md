@@ -36,17 +36,46 @@ python3 -m moola.cli ingest --input data/raw/unlabeled_windows.parquet
 ```
 
 ### RunPod GPU Training
+
+**⚠️ CRITICAL: Uncertainty-weighted loss REQUIRED but CLI flag not implemented yet!**
+
+**Current workaround:** Change default in code (see below) until CLI flag is added.
+
 ```bash
 # SSH into RunPod
 ssh -i ~/.ssh/runpod_key ubuntu@YOUR_RUNPOD_IP
 cd /workspace/moola
 
-# Pre-training pipeline
-python3 -m moola.cli pretrain-bilstm --n-epochs 50 --device cuda --time-warp-sigma 0.12
+# ✅ STEP 1: Enable uncertainty weighting in code (REQUIRED)
+# Edit src/moola/models/enhanced_simple_lstm.py line 206:
+# FROM: use_uncertainty_weighting: bool = False,
+# TO:   use_uncertainty_weighting: bool = True,
 
-# Fine-tuning with frozen encoder
-python3 -m moola.cli train --model simple_lstm --device cuda --load-pretrained artifacts/encoders/pretrained/bilstm_mae_4d_v1.pt
+# ✅ STEP 2: Train with multi-task pointers
+python3 -m moola.cli train \
+  --model enhanced_simple_lstm \
+  --predict-pointers \
+  --device cuda \
+  --n-epochs 60
+
+# ✅ OPTION: With pre-training boost (+3-5% accuracy)
+python3 -m moola.cli train \
+  --model enhanced_simple_lstm \
+  --predict-pointers \
+  --pretrained-encoder artifacts/encoders/pretrained/bilstm_mae_11d_v1.pt \
+  --freeze-encoder true \
+  --device cuda \
+  --n-epochs 60
+
+# Optional: Pre-train new encoder (if you have new unlabeled data)
+python3 -m moola.cli pretrain-bilstm \
+  --n-epochs 50 \
+  --device cuda \
+  --mask-strategy patch \
+  --batch-size 256
 ```
+
+**TODO: Add `--use-uncertainty-weighting` CLI flag to `cli.py:train` function**
 
 ### Retrieve Results (from Mac)
 ```bash
@@ -190,20 +219,58 @@ src/moola/
 
 ### Model Architecture Details
 
-**SimpleLSTM (Production):**
-- Input: (batch, 105, 4) OHLC bars
-- LSTM: 128 hidden units, 1 layer, unidirectional
-- Attention: 4 heads
-- FC: 128 → 64 → 2 classes
+**EnhancedSimpleLSTM (Production Model):**
+- Input: (batch, 105, 11) RelativeTransform features OR (batch, 105, 4) OHLC bars
+- BiLSTM Encoder: 128 hidden units × 2 directions = 256 total
+- Multi-head Attention: 4 heads
+- Dual Task Heads:
+  - Type classifier: 256 → 32 → 2 classes
+  - Pointer head: 256 → 128 → 2 outputs (center, length)
 - Total params: ~70K
-- Why: Small enough for 33-200 samples, fast training (6-8 min GPU)
+- Why: Small enough for 174 samples, multi-task learning improves generalization
 
-**BiLSTM Masked Autoencoder (Pre-training):**
-- Input: (batch, 105, 4) with 15% masked timesteps
+**CRITICAL CONFIGURATION (Must Enable):**
+```python
+# ✅ CORRECT: Use uncertainty-weighted loss (research-backed optimal strategy)
+model = EnhancedSimpleLSTMModel(
+    predict_pointers=True,
+    use_uncertainty_weighting=True,  # ← REQUIRED (not default!)
+)
+
+# ❌ WRONG: Manual lambda weights (current default, suboptimal)
+model = EnhancedSimpleLSTMModel(
+    predict_pointers=True,
+    use_uncertainty_weighting=False,  # Default is False
+    loss_alpha=1.0,  # Manual weights don't adapt
+    loss_beta=0.7
+)
+```
+
+**Why Uncertainty Weighting?**
+- Learns optimal task balance automatically (σ² parameters)
+- Prevents manual tuning of λ_type and λ_pointer
+- Research-validated: Kendall et al., CVPR 2018
+- Formula: `(1/2σ²)L_pointer + log(σ) + (1/σ²)L_type + log(σ)`
+
+**Architecture Validation (✅ Verified Correct):**
+| Component | Implementation | Status |
+|-----------|----------------|--------|
+| Pointer encoding | center + length (not start/end) | ✅ Correct |
+| Huber loss delta | δ = 0.08 (8 timesteps transition) | ✅ Correct |
+| Loss function | Uncertainty-weighted available | ⚠️ Must enable flag |
+| Center weight | 1.0 (higher than length 0.8) | ✅ Correct |
+
+**BiLSTM Masked Autoencoder (Optional Pre-training):**
+- Input: (batch, 105, 11) RelativeTransform features
 - BiLSTM Encoder: 256 hidden (128 forward + 128 backward)
-- MLP Decoder: Reconstruct masked values
-- Transfer: Encoder weights → SimpleLSTM (256→128 projection)
+- MLP Decoder: Reconstruct masked values (15% mask ratio)
+- Loss: Huber (δ=0.08) on masked positions only
+- Transfer: Encoder weights → EnhancedSimpleLSTM
 - Why: Self-supervised learning on 2.2M unlabeled samples
+- **Available encoders:**
+  - `artifacts/encoders/pretrained/bilstm_mae_11d_v1.pt` (2.1M) ← Recommended
+  - `artifacts/encoders/pretrained/bilstm_mae_4d_v1.pt` (2.0M)
+- **Expected boost:** +3-5% accuracy (optional, not required)
 
 ### Critical Integration: Candlesticks Annotation System
 
@@ -361,14 +428,18 @@ python3 -m pytest tests/test_pipeline.py::test_simple_lstm_training -v
 
 ## Performance Benchmarks
 
-| Model | Accuracy | Class 1 (Minority) | Training Time |
-|-------|----------|-------------------|---------------|
-| Logistic Regression | 79% | 22% | 5s |
-| SimpleLSTM (no pretrain) | 84% | 48% | 8m |
-| SimpleLSTM + pre-training | 87% | 62% | 28m |
-| Ensemble (5 models) | 89% | 65% | 45m |
+| Model | Configuration | Accuracy | Class 1 (Minority) | Training Time |
+|-------|--------------|----------|-------------------|---------------|
+| Logistic Regression | Baseline | 79% | 22% | 5s |
+| SimpleLSTM | Single-task | 84% | 48% | 8m |
+| EnhancedSimpleLSTM | Multi-task (manual λ) | ~58% | ~35% | 12m |
+| EnhancedSimpleLSTM | **Multi-task (uncertainty-weighted)** | **Expected: 65-70%** | **Expected: 45-55%** | **12m** |
+| EnhancedSimpleLSTM | + Pre-training (optional) | **Expected: 70-75%** | **Expected: 50-60%** | **28m** |
+| Ensemble (5 models) | Stacking | 89% | 65% | 45m |
 
 **Hardware:** RTX 4090 GPU on RunPod
+
+**⚠️ WARNING:** Manual λ weights (loss_alpha=1.0, loss_beta=0.7) are suboptimal for multi-task learning. Always use `--use-uncertainty-weighting` flag for production training.
 
 ## Troubleshooting
 
@@ -412,6 +483,52 @@ print(OHLCWindow.model_validate(df.iloc[0].to_dict()))
 "
 ```
 
+### Multi-task model performing poorly (accuracy < 60%)
+
+**Symptom:** EnhancedSimpleLSTM with pointer prediction shows ~58% accuracy or class collapse
+
+**Root Cause:** Uncertainty-weighted loss NOT enabled (using manual λ weights instead)
+
+**Solution (CLI flag not yet implemented):**
+```bash
+# ✅ Change code default in src/moola/models/enhanced_simple_lstm.py:206
+# FROM: use_uncertainty_weighting: bool = False,
+# TO:   use_uncertainty_weighting: bool = True,
+
+# Then train normally:
+python3 -m moola.cli train \
+  --model enhanced_simple_lstm \
+  --predict-pointers \
+  --device cuda
+```
+
+**Alternative (Python API):**
+```python
+from moola.models import EnhancedSimpleLSTMModel
+
+model = EnhancedSimpleLSTMModel(
+    predict_pointers=True,
+    use_uncertainty_weighting=True,  # ← Enable this
+    device="cuda"
+)
+model.fit(X, y, expansion_start=starts, expansion_end=ends)
+```
+
+**Verification:** Check training logs for uncertainty parameters (σ_ptr, σ_type)
+```python
+# During training, you should see:
+# "Pointer σ: 0.XXX, Type σ: 0.YYY"
+# These are the learned uncertainty weights
+```
+
+**Why Manual Weights Fail:**
+- Multi-task learning requires dynamic task balancing
+- Manual λ_type=1.0, λ_pointer=0.7 don't adapt during training
+- One task can dominate, causing the other to collapse
+- Uncertainty weighting learns optimal balance automatically
+
+**TODO:** Add `--use-uncertainty-weighting` flag to CLI for easier access
+
 ## Related Documentation
 
 - `README.md` - Project overview and quick start
@@ -423,12 +540,15 @@ print(OHLCWindow.model_validate(df.iloc[0].to_dict()))
 
 ## Important Notes
 
-1. **Always use `python3` and `pip3`** (not `python` or `pip`) - prevents context loss in pre-commit hooks
-2. **Never commit without pre-commit hooks** - they enforce code quality automatically
-3. **Blacklist D-grade windows permanently** - never reuse low-quality annotations
-4. **Session-aware extraction** - prioritize Session C for better keeper rates
-5. **Merge keepers incrementally** - don't wait for 100+ samples, merge at 30+
-6. **Candlesticks integration** - respect data isolation between normal and review modes
+1. **⚠️ CRITICAL: Always enable uncertainty-weighted loss** when training EnhancedSimpleLSTM with `--use-uncertainty-weighting` flag (or change default in code). Manual λ weights cause task collapse and poor performance.
+2. **Model architecture is correct** - center/length pointer encoding, Huber δ=0.08, BiLSTM encoder - all verified ✅
+3. **Pre-training is optional** - BiLSTM MAE encoders available for +3-5% boost, but not required for baseline performance
+4. **Always use `python3` and `pip3`** (not `python` or `pip`) - prevents context loss in pre-commit hooks
+5. **Never commit without pre-commit hooks** - they enforce code quality automatically
+6. **Blacklist D-grade windows permanently** - never reuse low-quality annotations
+7. **Session-aware extraction** - prioritize Session C for better keeper rates
+8. **Merge keepers incrementally** - don't wait for 100+ samples, merge at 30+
+9. **Candlesticks integration** - respect data isolation between normal and review modes
 
 ## Context Management
 

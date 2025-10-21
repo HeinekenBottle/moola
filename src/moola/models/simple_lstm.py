@@ -40,6 +40,7 @@ import torch.nn.functional as F
 from loguru import logger
 from sklearn.model_selection import train_test_split
 
+from ..features.small_dataset_features import create_small_dataset_feature_engineer
 from ..utils.augmentation import mixup_criterion, mixup_cutmix
 from ..utils.data_validation import DataValidator
 from ..utils.early_stopping import EarlyStopping
@@ -48,7 +49,6 @@ from ..utils.model_diagnostics import ModelDiagnostics
 from ..utils.seeds import get_device, set_seed
 from ..utils.temporal_augmentation import TemporalAugmentation
 from ..utils.training_utils import TrainingSetup
-from ..features.small_dataset_features import create_small_dataset_feature_engineer
 from .base import BaseModel
 
 
@@ -58,7 +58,9 @@ class EnhancedDataset(torch.utils.data.Dataset):
     def __init__(self, ohlc_data, labels, engineered_data=None):
         self.ohlc_data = torch.FloatTensor(ohlc_data)
         self.labels = torch.LongTensor(labels)
-        self.engineered_data = torch.FloatTensor(engineered_data) if engineered_data is not None else None
+        self.engineered_data = (
+            torch.FloatTensor(engineered_data) if engineered_data is not None else None
+        )
 
     def __len__(self):
         return len(self.labels)
@@ -74,17 +76,10 @@ def enhanced_collate_fn(batch):
     """Custom collate function to handle dual inputs."""
     if len(batch[0]) == 3:  # Dual-input mode
         ohlc_batch, features_batch, labels_batch = zip(*batch)
-        return (
-            torch.stack(ohlc_batch),
-            torch.stack(features_batch),
-            torch.tensor(labels_batch)
-        )
+        return (torch.stack(ohlc_batch), torch.stack(features_batch), torch.tensor(labels_batch))
     else:  # OHLC-only mode
         ohlc_batch, labels_batch = zip(*batch)
-        return (
-            torch.stack(ohlc_batch),
-            torch.tensor(labels_batch)
-        )
+        return (torch.stack(ohlc_batch), torch.tensor(labels_batch))
 
 
 class SimpleLSTMModel(BaseModel):
@@ -99,7 +94,7 @@ class SimpleLSTMModel(BaseModel):
         hidden_size: int = 32,  # Reduced from 128 to achieve target parameter count (~17K)
         num_layers: int = 1,
         num_heads: int = 2,  # Optimized for efficiency while maintaining performance
-        dropout: float = 0.1,  # Reduced for small dataset
+        dropout: float = 0.5,  # Stones compliance: dense dropout 0.4-0.5
         n_epochs: int = 60,
         batch_size: int = 512,
         learning_rate: float = 5e-4,
@@ -194,13 +189,16 @@ class SimpleLSTMModel(BaseModel):
         # Initialize feature engineer for dual-input processing
         if self.use_engineered_features:
             self.feature_engineer = create_small_dataset_feature_engineer(
-                max_features_per_category=max_engineered_features // 5,  # Distribute across 5 categories
+                max_features_per_category=max_engineered_features
+                // 5,  # Distribute across 5 categories
                 robust_scaling=True,
-                feature_selection=True
+                feature_selection=True,
             )
             logger.info(f"Enhanced SimpleLSTM initialized with engineered features support")
             logger.info(f"  - OHLC encoder: BiLSTM({hidden_size}) -> {hidden_size * 2}")
-            logger.info(f"  - Feature encoder: up to {max_engineered_features} features -> {feature_encoder_hidden}")
+            logger.info(
+                f"  - Feature encoder: up to {max_engineered_features} features -> {feature_encoder_hidden}"
+            )
             logger.info(f"  - Target parameters: ~17K (95.8% reduction from 409K)")
         else:
             self.feature_engineer = None
@@ -275,7 +273,9 @@ class SimpleLSTMModel(BaseModel):
                 self.layer_norm = nn.LayerNorm(attention_dim)
 
                 # 5. Enhanced Classification Head with fusion support
-                fusion_dim = attention_dim + (feature_encoder_hidden if use_engineered_features else 0)
+                fusion_dim = attention_dim + (
+                    feature_encoder_hidden if use_engineered_features else 0
+                )
                 self.classifier = nn.Sequential(
                     nn.Linear(fusion_dim, classifier_hidden),
                     nn.ReLU(),
@@ -285,11 +285,17 @@ class SimpleLSTMModel(BaseModel):
 
             def _resize_feature_encoder(self, feature_dim: int) -> None:
                 """Dynamically resize feature encoder based on extracted feature dimension."""
-                if self.use_engineered_features and hasattr(self, 'feature_encoder') and self.feature_encoder is not None:
+                if (
+                    self.use_engineered_features
+                    and hasattr(self, "feature_encoder")
+                    and self.feature_encoder is not None
+                ):
                     # Replace the first linear layer with correct dimensions
                     old_layer = self.feature_encoder[0]
                     # Create new layer on same device as old layer
-                    new_layer = nn.Linear(feature_dim, old_layer.out_features).to(old_layer.weight.device)
+                    new_layer = nn.Linear(feature_dim, old_layer.out_features).to(
+                        old_layer.weight.device
+                    )
 
                     # Initialize with similar weights/biases if dimensions match
                     if old_layer.in_features == feature_dim:
@@ -298,15 +304,15 @@ class SimpleLSTMModel(BaseModel):
                             new_layer.bias.data.copy_(old_layer.bias.data)
                     else:
                         # Kaiming initialization for new dimensions
-                        nn.init.kaiming_uniform_(new_layer.weight, nonlinearity='relu')
+                        nn.init.kaiming_uniform_(new_layer.weight, nonlinearity="relu")
                         if new_layer.bias is not None:
                             nn.init.constant_(new_layer.bias, 0)
 
                     self.feature_encoder[0] = new_layer
 
-            def forward(self,
-                       x_ohlc: torch.Tensor,
-                       x_features: torch.Tensor = None) -> torch.Tensor:
+            def forward(
+                self, x_ohlc: torch.Tensor, x_features: torch.Tensor = None
+            ) -> torch.Tensor:
                 """Forward pass with dual-input support.
 
                 Args:
@@ -327,7 +333,9 @@ class SimpleLSTMModel(BaseModel):
                 projected = self.temporal_projection(last_timestep)  # [B, 1, attention_dim]
 
                 # 4. Self-attention (single timestep self-attention for efficiency)
-                attn_out, _ = self.attention(projected, projected, projected)  # [B, 1, attention_dim]
+                attn_out, _ = self.attention(
+                    projected, projected, projected
+                )  # [B, 1, attention_dim]
 
                 # 5. Residual connection + layer normalization
                 temporal_repr = self.layer_norm(projected + attn_out)  # [B, 1, attention_dim]
@@ -341,10 +349,14 @@ class SimpleLSTMModel(BaseModel):
                     self._resize_feature_encoder(x_features.shape[-1])
 
                     # Process engineered features
-                    encoded_features = self.feature_encoder(x_features)  # [B, feature_encoder_hidden]
+                    encoded_features = self.feature_encoder(
+                        x_features
+                    )  # [B, feature_encoder_hidden]
 
                     # 7. Feature Fusion: Concatenate temporal and feature representations
-                    fused_features = torch.cat([temporal_features, encoded_features], dim=-1)  # [B, fusion_dim]
+                    fused_features = torch.cat(
+                        [temporal_features, encoded_features], dim=-1
+                    )  # [B, fusion_dim]
                 else:
                     # OHLC-only mode
                     fused_features = temporal_features
@@ -414,7 +426,9 @@ class SimpleLSTMModel(BaseModel):
                 X, expansion_start, expansion_end, y=y_indices
             )
             logger.info(f"Extracted engineered features: {X_engineered.shape}")
-            logger.info(f"Enhanced architecture will process OHLC: {X.shape} + Features: {X_engineered.shape}")
+            logger.info(
+                f"Enhanced architecture will process OHLC: {X.shape} + Features: {X_engineered.shape}"
+            )
 
         logger.info(
             "Using Focal Loss (gamma=2.0) WITH class weights [1.0, 1.17] for class imbalance"
@@ -449,7 +463,10 @@ class SimpleLSTMModel(BaseModel):
             # Split engineered features if available
             if X_engineered is not None:
                 X_engineered_train, X_engineered_val = train_test_split(
-                    X_engineered, test_size=self.val_split, random_state=self.seed, stratify=y_indices
+                    X_engineered,
+                    test_size=self.val_split,
+                    random_state=self.seed,
+                    stratify=y_indices,
                 )
             else:
                 X_engineered_train, X_engineered_val = None, None
@@ -523,8 +540,10 @@ class SimpleLSTMModel(BaseModel):
 
                 for param_group in optimizer.param_groups:
                     param_group["lr"] *= MASKED_LSTM_UNFREEZE_LR_REDUCTION
-                logger.info(f"[TWO-PHASE] Reduced LR to {optimizer.param_groups[0]['lr']:.6f} "
-                           f"(multiplier: {MASKED_LSTM_UNFREEZE_LR_REDUCTION})")
+                logger.info(
+                    f"[TWO-PHASE] Reduced LR to {optimizer.param_groups[0]['lr']:.6f} "
+                    f"(multiplier: {MASKED_LSTM_UNFREEZE_LR_REDUCTION})"
+                )
 
             # Training phase
             self.model.train()
@@ -690,7 +709,9 @@ class SimpleLSTMModel(BaseModel):
 
         # Prepare tensors
         X_tensor = torch.FloatTensor(X).to(self.device)
-        X_engineered_tensor = torch.FloatTensor(X_engineered).to(self.device) if X_engineered is not None else None
+        X_engineered_tensor = (
+            torch.FloatTensor(X_engineered).to(self.device) if X_engineered is not None else None
+        )
 
         self.model.eval()
         with torch.no_grad():
@@ -728,7 +749,9 @@ class SimpleLSTMModel(BaseModel):
 
         # Prepare tensors
         X_tensor = torch.FloatTensor(X).to(self.device)
-        X_engineered_tensor = torch.FloatTensor(X_engineered).to(self.device) if X_engineered is not None else None
+        X_engineered_tensor = (
+            torch.FloatTensor(X_engineered).to(self.device) if X_engineered is not None else None
+        )
 
         self.model.eval()
         with torch.no_grad():
@@ -915,7 +938,9 @@ class SimpleLSTMModel(BaseModel):
             logger.info("Freezing OHLC encoder weights")
             for param in self.model.ohlc_encoder.parameters():
                 param.requires_grad = False
-            logger.info("OHLC encoder frozen. Only feature encoder and classifier will be trained initially.")
+            logger.info(
+                "OHLC encoder frozen. Only feature encoder and classifier will be trained initially."
+            )
         else:
             logger.info("OHLC encoder unfrozen. All parameters trainable.")
 

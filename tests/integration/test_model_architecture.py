@@ -49,10 +49,10 @@ class TestSimpleLSTMEnhancedArchitecture:
         model = get_model("simple_lstm", device="cpu")
 
         # Test model architecture structure
-        assert hasattr(model.model, 'lstm'), "LSTM layer missing"
-        assert hasattr(model.model, 'attention'), "Attention layer missing"
-        assert hasattr(model.model, 'ln'), "Layer normalization missing"
-        assert hasattr(model.model, 'classifier'), "Classifier layer missing"
+        assert hasattr(model.model, "lstm"), "LSTM layer missing"
+        assert hasattr(model.model, "attention"), "Attention layer missing"
+        assert hasattr(model.model, "ln"), "Layer normalization missing"
+        assert hasattr(model.model, "classifier"), "Classifier layer missing"
 
         # Test LSTM layer configuration
         lstm = model.model.lstm
@@ -103,11 +103,11 @@ class TestSimpleLSTMEnhancedArchitecture:
 
         # Test that model can handle pre-trained encoder loading
         # (This is a structural test - actual pre-trained file would be needed)
-        assert hasattr(model, 'load_pretrained_encoder'), "Pre-training loading missing"
-        assert hasattr(model, 'fit'), "Training method missing"
+        assert hasattr(model, "load_pretrained_encoder"), "Pre-training loading missing"
+        assert hasattr(model, "fit"), "Training method missing"
 
         # Test two-phase training parameters
-        assert hasattr(model, 'unfreeze_encoder_after'), "Two-phase control missing"
+        assert hasattr(model, "unfreeze_encoder_after"), "Two-phase control missing"
         assert model.early_stopping_patience > 0, "Early stopping not configured"
 
         print("✅ Pre-training integration validation passed")
@@ -117,10 +117,10 @@ class TestSimpleLSTMEnhancedArchitecture:
         model = get_model("simple_lstm", device="cpu")
 
         # Test that model supports augmentation parameters
-        assert hasattr(model, 'mixup_alpha'), "Mixup parameter missing"
-        assert hasattr(model, 'cutmix_prob'), "CutMix parameter missing"
-        assert hasattr(model, 'use_temporal_aug'), "Temporal augmentation flag missing"
-        assert hasattr(model, 'temporal_aug'), "Temporal augmentation missing"
+        assert hasattr(model, "mixup_alpha"), "Mixup parameter missing"
+        assert hasattr(model, "cutmix_prob"), "CutMix parameter missing"
+        assert hasattr(model, "use_temporal_aug"), "Temporal augmentation flag missing"
+        assert hasattr(model, "temporal_aug"), "Temporal augmentation missing"
 
         # Generate test data
         X = np.random.randn(10, 105, 4)
@@ -186,8 +186,14 @@ class TestSimpleLSTMEnhancedArchitecture:
         assert gradients_exist, "No gradients found - gradient flow issue"
 
         # Check specific layer gradients
-        lstm_grads = [p.grad.abs().mean().item() for p in model.model.lstm.parameters() if p.grad is not None]
-        attention_grads = [p.grad.abs().mean().item() for p in model.model.attention.parameters() if p.grad is not None]
+        lstm_grads = [
+            p.grad.abs().mean().item() for p in model.model.lstm.parameters() if p.grad is not None
+        ]
+        attention_grads = [
+            p.grad.abs().mean().item()
+            for p in model.model.attention.parameters()
+            if p.grad is not None
+        ]
 
         assert len(lstm_grads) > 0, "LSTM layer gradients missing"
         assert len(attention_grads) > 0, "Attention layer gradients missing"
@@ -202,9 +208,9 @@ class TestSimpleLSTMEnhancedArchitecture:
 
         # Test different input configurations
         test_cases = [
-            (5, 105, 4),   # Standard OHLC
+            (5, 105, 4),  # Standard OHLC
             (3, 105, 20),  # Engineered features
-            (10, 105, 30), # More features
+            (10, 105, 30),  # More features
         ]
 
         for batch_size, seq_len, feature_dim in test_cases:
@@ -226,7 +232,9 @@ class TestSimpleLSTMEnhancedArchitecture:
                 print(f"✅ Forward pass validation passed: {batch_size}x{seq_len}x{feature_dim}")
 
             except Exception as e:
-                print(f"❌ Forward pass validation failed: {batch_size}x{seq_len}x{feature_dim}: {e}")
+                print(
+                    f"❌ Forward pass validation failed: {batch_size}x{seq_len}x{feature_dim}: {e}"
+                )
                 raise e
 
     def test_model_save_load_consistency(self):
@@ -252,7 +260,9 @@ class TestSimpleLSTMEnhancedArchitecture:
             original_predictions = original_model.predict(X[:5])
             loaded_predictions = loaded_model.predict(X[:5])
 
-            assert np.array_equal(original_predictions, loaded_predictions), "Predictions differ after save/load"
+            assert np.array_equal(
+                original_predictions, loaded_predictions
+            ), "Predictions differ after save/load"
 
             print("✅ Model save/load consistency test passed")
 
@@ -266,7 +276,9 @@ class TestSimpleLSTMEnhancedArchitecture:
         model = get_model("simple_lstm", device="cpu")
 
         # Higher dropout for small datasets
-        assert model.dropout_rate > 0, f"Dropout should be > 0 for small datasets: {model.dropout_rate}"
+        assert (
+            model.dropout_rate > 0
+        ), f"Dropout should be > 0 for small datasets: {model.dropout_rate}"
 
         # Early stopping enabled
         assert model.early_stopping_patience > 0, "Early stopping should be enabled"
@@ -290,7 +302,7 @@ class TestSimpleLSTMEnhancedArchitecture:
         model = get_model("simple_lstm", device="cpu")
 
         # Check that model uses class weights
-        assert hasattr(model, 'fit'), "Model must have fit method"
+        assert hasattr(model, "fit"), "Model must have fit method"
 
         # Try training with imbalanced data
         try:

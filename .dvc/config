@@ -1,6 +1,0 @@
-[core]
-    remote = local
-    autostage = true
-
-[remote "local"]
-    url = /Users/jack/projects/moola/.dvc/cache

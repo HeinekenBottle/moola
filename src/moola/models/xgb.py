@@ -69,6 +69,7 @@ class XGBModel(BaseModel):
         if device == "cuda":
             try:
                 import torch
+
                 if torch.cuda.is_available():
                     self.tree_method = "gpu_hist"
                     # XGBoost uses 'cuda' for device parameter
@@ -102,7 +103,13 @@ class XGBModel(BaseModel):
             **self.kwargs,
         )
 
-    def fit(self, X: np.ndarray, y: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> "XGBModel":
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        expansion_start: np.ndarray = None,
+        expansion_end: np.ndarray = None,
+    ) -> "XGBModel":
         """Train XGBoost model with HopSketch 15-feature extraction.
 
         Args:
@@ -129,18 +136,22 @@ class XGBModel(BaseModel):
 
             # Aggregate across time dimension: [N, 60] features
             # 4 statistics (mean, std, min, max) × 15 features = 60 total
-            X_engineered = np.column_stack([
-                X_hopsketch.mean(axis=1),   # [N, 15] mean per feature
-                X_hopsketch.std(axis=1),    # [N, 15] std per feature
-                X_hopsketch.min(axis=1),    # [N, 15] min per feature
-                X_hopsketch.max(axis=1),    # [N, 15] max per feature
-            ])  # [N, 60] total
+            X_engineered = np.column_stack(
+                [
+                    X_hopsketch.mean(axis=1),  # [N, 15] mean per feature
+                    X_hopsketch.std(axis=1),  # [N, 15] std per feature
+                    X_hopsketch.min(axis=1),  # [N, 15] min per feature
+                    X_hopsketch.max(axis=1),  # [N, 15] max per feature
+                ]
+            )  # [N, 60] total
         else:
             X_engineered = X
 
         # Ensure X_engineered is numeric
         X_engineered = np.array(X_engineered, dtype=np.float64)
-        print(f"[HOPSKETCH] Aggregated features shape: {X_engineered.shape}, dtype: {X_engineered.dtype}")
+        print(
+            f"[HOPSKETCH] Aggregated features shape: {X_engineered.shape}, dtype: {X_engineered.dtype}"
+        )
 
         # Encode labels if they are strings
         y_encoded = self.label_encoder.fit_transform(y)
@@ -165,7 +176,9 @@ class XGBModel(BaseModel):
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
+    def predict(
+        self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
+    ) -> np.ndarray:
         """Predict class labels with HopSketch features.
 
         Args:
@@ -190,19 +203,23 @@ class XGBModel(BaseModel):
             X_hopsketch = X_hopsketch.reshape(-1, 105, 15)
 
             # Aggregate to [N, 60]
-            X_engineered = np.column_stack([
-                X_hopsketch.mean(axis=1),
-                X_hopsketch.std(axis=1),
-                X_hopsketch.min(axis=1),
-                X_hopsketch.max(axis=1),
-            ])
+            X_engineered = np.column_stack(
+                [
+                    X_hopsketch.mean(axis=1),
+                    X_hopsketch.std(axis=1),
+                    X_hopsketch.min(axis=1),
+                    X_hopsketch.max(axis=1),
+                ]
+            )
         else:
             X_engineered = X
 
         y_pred_encoded = self.model.predict(X_engineered)
         return self.label_encoder.inverse_transform(y_pred_encoded)
 
-    def predict_proba(self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None) -> np.ndarray:
+    def predict_proba(
+        self, X: np.ndarray, expansion_start: np.ndarray = None, expansion_end: np.ndarray = None
+    ) -> np.ndarray:
         """Predict class probabilities with HopSketch features.
 
         Args:
@@ -227,12 +244,14 @@ class XGBModel(BaseModel):
             X_hopsketch = X_hopsketch.reshape(-1, 105, 15)
 
             # Aggregate to [N, 60]
-            X_engineered = np.column_stack([
-                X_hopsketch.mean(axis=1),
-                X_hopsketch.std(axis=1),
-                X_hopsketch.min(axis=1),
-                X_hopsketch.max(axis=1),
-            ])
+            X_engineered = np.column_stack(
+                [
+                    X_hopsketch.mean(axis=1),
+                    X_hopsketch.std(axis=1),
+                    X_hopsketch.min(axis=1),
+                    X_hopsketch.max(axis=1),
+                ]
+            )
         else:
             X_engineered = X
 

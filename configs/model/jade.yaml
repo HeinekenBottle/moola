@@ -1,0 +1,69 @@
+# Jade Model Configuration
+# moola-lstm-m-v1.0 // codename: Jade
+# Production BiLSTM with uncertainty-weighted multi-task learning
+
+model:
+  name: jade
+  architecture:
+    hidden_size: 128
+    num_layers: 2
+    input_dropout: 0.25  # Stones: 0.2-0.3
+    recurrent_dropout: 0.65  # Stones: 0.6-0.7 (inter-layer)
+    dense_dropout: 0.5  # Stones: 0.4-0.5
+  
+  # Multi-task settings
+  predict_pointers: true
+  use_uncertainty_weighting: true  # REQUIRED: Kendall et al.
+  
+  # Pointer regression
+  pointer_encoding: center_length  # NOT start_end
+  huber_delta: 0.08  # 8 timesteps transition
+  
+  # Gradient and optimization
+  max_grad_norm: 2.0  # Stones: 1.5-2.0
+  learning_rate: 3e-4
+  weight_decay: 1e-5
+  
+  # Scheduler
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    factor: 0.5
+    patience: 10
+    min_lr: 1e-6
+  
+  # Early stopping
+  early_stopping:
+    patience: 20
+    monitor: val_loss
+    mode: min
+
+# Augmentation (Stones doctrine)
+augmentation:
+  jitter:
+    enabled: true
+    sigma: 0.03
+    prob: 0.8
+  magnitude_warp:
+    enabled: true
+    sigma: 0.2
+    knots: 4
+    prob: 0.5
+  multiplier: 3  # On-the-fly ×3
+
+# Uncertainty quantification
+uncertainty:
+  mc_dropout:
+    enabled: true
+    n_passes: 50  # Stones: 50-100
+    dropout_rate: 0.15
+  temperature_scaling:
+    enabled: true
+
+# Evaluation gates (Stones thresholds)
+gates:
+  hit_at_3: 0.60  # ≥60%
+  f1_macro: 0.50  # ≥0.50
+  ece: 0.10  # <0.10
+  joint_success: 0.40  # ≥40%
+

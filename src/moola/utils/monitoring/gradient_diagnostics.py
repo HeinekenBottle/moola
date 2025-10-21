@@ -4,11 +4,12 @@ This module provides utilities for monitoring gradient flow during training and 
 task collapse in multi-task learning scenarios where one task dominates and silences others.
 """
 
+from collections import defaultdict
+from typing import Dict, List, Tuple
+
 import numpy as np
 import torch
 import torch.nn as nn
-from collections import defaultdict
-from typing import Dict, List, Tuple
 
 
 def compute_gradient_statistics(model: nn.Module) -> Dict[str, float]:

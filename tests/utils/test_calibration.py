@@ -3,12 +3,13 @@
 Tests smooth ECE, Brier score, and reliability diagram generation.
 """
 
-import pytest
 import numpy as np
+import pytest
+
 from moola.utils.metrics.calibration import (
-    compute_smooth_ece,
     compute_brier_score,
     compute_calibration_metrics,
+    compute_smooth_ece,
     plot_reliability_diagram,
 )
 

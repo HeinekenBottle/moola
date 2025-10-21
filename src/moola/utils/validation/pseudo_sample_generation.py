@@ -18,19 +18,20 @@ References:
 - Augmentation for Time Series: Fawaz et al., "Data augmentation using time series generative adversarial networks"
 """
 
+import warnings
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from typing import Dict, List, Tuple, Optional, Union, Any
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
-import warnings
 from scipy import stats
 from scipy.interpolate import interp1d
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -39,9 +40,10 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 @dataclass
 class MarketRegime:
     """Market regime parameters for realistic simulation."""
+
     volatility_level: float  # Volatility multiplier (0.5-3.0)
-    trend_strength: float    # Trend bias (-1 to 1)
-    noise_ratio: float      # Signal-to-noise ratio (0.1-1.0)
+    trend_strength: float  # Trend bias (-1 to 1)
+    noise_ratio: float  # Signal-to-noise ratio (0.1-1.0)
     gap_probability: float  # Probability of gaps/jumps (0.01-0.2)
     mean_reversion_speed: float  # Speed of mean reversion (0.01-0.5)
 
@@ -60,8 +62,9 @@ class BasePseudoGenerator(ABC):
         torch.manual_seed(seed)
 
     @abstractmethod
-    def generate(self, data: np.ndarray, labels: np.ndarray,
-                n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+    def generate(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate pseudo-samples from original data.
 
         Args:
@@ -91,10 +94,13 @@ class BasePseudoGenerator(ABC):
 class TemporalAugmentationGenerator(BasePseudoGenerator):
     """Temporal augmentation preserving market microstructure and OHLC relationships."""
 
-    def __init__(self, seed: int = 1337,
-                 time_warp_std: float = 0.1,
-                 magnitude_warp_std: float = 0.1,
-                 permutation_segments: int = 4):
+    def __init__(
+        self,
+        seed: int = 1337,
+        time_warp_std: float = 0.1,
+        magnitude_warp_std: float = 0.1,
+        permutation_segments: int = 4,
+    ):
         """Initialize temporal augmentation generator.
 
         Args:
@@ -149,7 +155,7 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
 
         # Create smooth interpolation
         original_indices = np.linspace(0, 1, len(warp_points))
-        warp_path = interp1d(original_indices, warp_points, kind='cubic')
+        warp_path = interp1d(original_indices, warp_points, kind="cubic")
 
         # Generate warped indices
         new_indices = warp_path(np.linspace(0, 1, seq_len))
@@ -177,6 +183,7 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
         warp_curve = np.random.normal(1.0, self.magnitude_warp_std, size=seq_len)
         # Smooth the curve to avoid unrealistic jumps
         from scipy.ndimage import gaussian_filter1d
+
         warp_curve = gaussian_filter1d(warp_curve, sigma=2)
         warp_curve = np.clip(warp_curve, 0.7, 1.3)  # Reasonable magnitude bounds
 
@@ -202,7 +209,7 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
         window_start = np.random.randint(0, seq_len - window_size)
 
         warped = sequence.copy()
-        window = warped[window_start:window_start + window_size]
+        window = warped[window_start : window_start + window_size]
 
         # Apply compression or expansion
         warp_factor = np.random.choice([0.8, 1.2])
@@ -210,7 +217,7 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
             new_length = int(window_size * warp_factor)
             indices = np.linspace(0, window_size - 1, new_length)
             for i in range(4):
-                warped[window_start:window_start + new_length, i] = np.interp(
+                warped[window_start : window_start + new_length, i] = np.interp(
                     indices, np.arange(window_size), window[:, i]
                 )
         else:  # Expansion
@@ -218,14 +225,15 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
             if window_start + new_length <= seq_len:
                 indices = np.linspace(0, window_size - 1, new_length)
                 for i in range(4):
-                    warped[window_start:window_start + new_length, i] = np.interp(
+                    warped[window_start : window_start + new_length, i] = np.interp(
                         indices, np.arange(window_size), window[:, i]
                     )
 
         return self._validate_ohlc(warped)
 
-    def generate(self, data: np.ndarray, labels: np.ndarray,
-                n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+    def generate(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate temporally augmented pseudo-samples.
 
         Args:
@@ -246,14 +254,15 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
             label = labels[idx]
 
             # Apply random combination of augmentations
-            augmentation_type = np.random.choice(['time_warp', 'magnitude_warp',
-                                               'window_warping', 'combined'])
+            augmentation_type = np.random.choice(
+                ["time_warp", "magnitude_warp", "window_warping", "combined"]
+            )
 
-            if augmentation_type == 'time_warp':
+            if augmentation_type == "time_warp":
                 sample = self._time_warp(sample)
-            elif augmentation_type == 'magnitude_warp':
+            elif augmentation_type == "magnitude_warp":
                 sample = self._magnitude_warp(sample)
-            elif augmentation_type == 'window_warping':
+            elif augmentation_type == "window_warping":
                 sample = self._window_warping(sample)
             else:  # combined
                 sample = self._time_warp(sample)
@@ -277,22 +286,30 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
         metrics = {}
 
         # Statistical similarity
-        for i, component in enumerate(['open', 'high', 'low', 'close']):
+        for i, component in enumerate(["open", "high", "low", "close"]):
             orig_mean = np.mean(original[:, :, i])
             gen_mean = np.mean(generated[:, :, i])
             orig_std = np.std(original[:, :, i])
             gen_std = np.std(generated[:, :, i])
 
-            metrics[f'{component}_mean_ratio'] = gen_mean / (orig_mean + 1e-8)
-            metrics[f'{component}_std_ratio'] = gen_std / (orig_std + 1e-8)
+            metrics[f"{component}_mean_ratio"] = gen_mean / (orig_mean + 1e-8)
+            metrics[f"{component}_std_ratio"] = gen_std / (orig_std + 1e-8)
 
         # Temporal correlation preservation
-        orig_autocorr = [np.correlate(original[j, :, 3], original[j, :, 3], mode='full')[len(original[j, :, 3])//2]
-                        for j in range(min(10, len(original)))]
-        gen_autocorr = [np.correlate(generated[j, :, 3], generated[j, :, 3], mode='full')[len(generated[j, :, 3])//2]
-                       for j in range(min(10, len(generated)))]
+        orig_autocorr = [
+            np.correlate(original[j, :, 3], original[j, :, 3], mode="full")[
+                len(original[j, :, 3]) // 2
+            ]
+            for j in range(min(10, len(original)))
+        ]
+        gen_autocorr = [
+            np.correlate(generated[j, :, 3], generated[j, :, 3], mode="full")[
+                len(generated[j, :, 3]) // 2
+            ]
+            for j in range(min(10, len(generated)))
+        ]
 
-        metrics['autocorr_preservation'] = np.mean(gen_autocorr) / (np.mean(orig_autocorr) + 1e-8)
+        metrics["autocorr_preservation"] = np.mean(gen_autocorr) / (np.mean(orig_autocorr) + 1e-8)
 
         # OHLC relationship preservation
         ohlc_violations = 0
@@ -303,7 +320,7 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
                 if not (o <= h and l <= h and o >= l and c >= l and h >= l):
                     ohlc_violations += 1
 
-        metrics['ohlc_preservation_rate'] = 1.0 - (ohlc_violations / total_checks)
+        metrics["ohlc_preservation_rate"] = 1.0 - (ohlc_violations / total_checks)
 
         return metrics
 
@@ -311,10 +328,13 @@ class TemporalAugmentationGenerator(BasePseudoGenerator):
 class PatternBasedSynthesisGenerator(BasePseudoGenerator):
     """Pattern-based synthesis creating realistic variations of existing patterns."""
 
-    def __init__(self, seed: int = 1337,
-                 pattern_variation_strength: float = 0.15,
-                 noise_level: float = 0.02,
-                 preserve_trend: bool = True):
+    def __init__(
+        self,
+        seed: int = 1337,
+        pattern_variation_strength: float = 0.15,
+        noise_level: float = 0.02,
+        preserve_trend: bool = True,
+    ):
         """Initialize pattern-based synthesis generator.
 
         Args:
@@ -339,7 +359,7 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
         """
         components = {}
 
-        for i, name in enumerate(['open', 'high', 'low', 'close']):
+        for i, name in enumerate(["open", "high", "low", "close"]):
             series = sequence[:, i]
 
             # Extract trend using moving average
@@ -349,8 +369,8 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
             detrended = series - trend
 
             # Store components
-            components[f'{name}_trend'] = trend
-            components[f'{name}_detrended'] = detrended
+            components[f"{name}_trend"] = trend
+            components[f"{name}_detrended"] = detrended
 
         return components
 
@@ -370,25 +390,32 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
         components = self._extract_pattern_components(sequence)
 
         # Modify each component realistically
-        for i, name in enumerate(['open', 'high', 'low', 'close']):
-            trend = components[f'{name}_trend']
-            detrended = components[f'{name}_detrended']
+        for i, name in enumerate(["open", "high", "low", "close"]):
+            trend = components[f"{name}_trend"]
+            detrended = components[f"{name}_detrended"]
 
             if self.preserve_trend:
                 # Keep trend, modify pattern
                 # Apply smooth variations to detrended component
                 from scipy.ndimage import gaussian_filter1d
-                variation = np.random.normal(0, variation_strength * np.std(detrended), len(detrended))
+
+                variation = np.random.normal(
+                    0, variation_strength * np.std(detrended), len(detrended)
+                )
                 smooth_variation = gaussian_filter1d(variation, sigma=3)
 
                 new_detrended = detrended + smooth_variation
                 modified[:, i] = trend + new_detrended
             else:
                 # Modify both trend and pattern
-                trend_variation = np.random.normal(0, variation_strength * np.std(trend), len(trend))
+                trend_variation = np.random.normal(
+                    0, variation_strength * np.std(trend), len(trend)
+                )
                 smooth_trend_var = gaussian_filter1d(trend_variation, sigma=5)
 
-                pattern_variation = np.random.normal(0, variation_strength * np.std(detrended), len(detrended))
+                pattern_variation = np.random.normal(
+                    0, variation_strength * np.std(detrended), len(detrended)
+                )
                 smooth_pattern_var = gaussian_filter1d(pattern_variation, sigma=2)
 
                 modified[:, i] = trend + smooth_trend_var + detrended + smooth_pattern_var
@@ -400,8 +427,9 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
         # Ensure OHLC relationships
         return self._ensure_ohlc_relationships(modified)
 
-    def _pattern_morphing(self, seq1: np.ndarray, seq2: np.ndarray,
-                         morph_factor: float) -> np.ndarray:
+    def _pattern_morphing(
+        self, seq1: np.ndarray, seq2: np.ndarray, morph_factor: float
+    ) -> np.ndarray:
         """Morph between two patterns smoothly.
 
         Args:
@@ -459,8 +487,9 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
 
         return corrected
 
-    def generate(self, data: np.ndarray, labels: np.ndarray,
-                n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+    def generate(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate pattern-based pseudo-samples.
 
         Args:
@@ -475,9 +504,9 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
         generated_labels = []
 
         for _ in range(n_samples):
-            generation_method = np.random.choice(['single_modify', 'pattern_morph', 'hybrid'])
+            generation_method = np.random.choice(["single_modify", "pattern_morph", "hybrid"])
 
-            if generation_method == 'single_modify':
+            if generation_method == "single_modify":
                 # Modify single pattern
                 idx = np.random.randint(0, len(data))
                 sample = data[idx].copy()
@@ -489,7 +518,7 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
                 generated_data.append(modified)
                 generated_labels.append(label)
 
-            elif generation_method == 'pattern_morph':
+            elif generation_method == "pattern_morph":
                 # Morph between two patterns of same class
                 class_samples = np.where(labels == labels[np.random.randint(0, len(labels))])[0]
                 if len(class_samples) >= 2:
@@ -545,20 +574,20 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
         metrics = {}
 
         # Distribution similarity for each component
-        for i, component in enumerate(['open', 'high', 'low', 'close']):
+        for i, component in enumerate(["open", "high", "low", "close"]):
             orig_data = original[:, :, i].flatten()
             gen_data = generated[:, :, i].flatten()
 
             # Kolmogorov-Smirnov test for distribution similarity
             ks_statistic = stats.ks_2samp(orig_data, gen_data).statistic
-            metrics[f'{component}_ks_similarity'] = 1.0 - ks_statistic
+            metrics[f"{component}_ks_similarity"] = 1.0 - ks_statistic
 
             # Moments comparison
             orig_mean, orig_std = np.mean(orig_data), np.std(orig_data)
             gen_mean, gen_std = np.mean(gen_data), np.std(gen_data)
 
-            metrics[f'{component}_mean_error'] = abs(gen_mean - orig_mean) / (abs(orig_mean) + 1e-8)
-            metrics[f'{component}_std_error'] = abs(gen_std - orig_std) / (orig_std + 1e-8)
+            metrics[f"{component}_mean_error"] = abs(gen_mean - orig_mean) / (abs(orig_mean) + 1e-8)
+            metrics[f"{component}_std_error"] = abs(gen_std - orig_std) / (orig_std + 1e-8)
 
         # Pattern similarity using Dynamic Time Warping distance
         def dtw_distance(s1, s2):
@@ -569,8 +598,8 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
 
             for i in range(1, n + 1):
                 for j in range(1, m + 1):
-                    cost = abs(s1[i-1] - s2[j-1])
-                    dtw[i, j] = cost + min(dtw[i-1, j], dtw[i, j-1], dtw[i-1, j-1])
+                    cost = abs(s1[i - 1] - s2[j - 1])
+                    dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
 
             return dtw[n, m]
 
@@ -581,7 +610,7 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
             dist = dtw_distance(original[i, :, 3], generated[i, :, 3])
             dtw_distances.append(dist)
 
-        metrics['avg_dtw_similarity'] = 1.0 / (1.0 + np.mean(dtw_distances))
+        metrics["avg_dtw_similarity"] = 1.0 / (1.0 + np.mean(dtw_distances))
 
         # OHLC relationship preservation
         ohlc_violations = 0
@@ -592,7 +621,7 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
                 if not (o <= h and l <= h and o >= l and c >= l):
                     ohlc_violations += 1
 
-        metrics['ohlc_preservation_rate'] = 1.0 - (ohlc_violations / total_checks)
+        metrics["ohlc_preservation_rate"] = 1.0 - (ohlc_violations / total_checks)
 
         return metrics
 
@@ -600,10 +629,13 @@ class PatternBasedSynthesisGenerator(BasePseudoGenerator):
 class StatisticalSimulationGenerator(BasePseudoGenerator):
     """Statistical simulation generating samples matching real data distributions."""
 
-    def __init__(self, seed: int = 1337,
-                 use_gaussian_process: bool = True,
-                 n_regimes: int = 3,
-                 regime_detection_window: int = 20):
+    def __init__(
+        self,
+        seed: int = 1337,
+        use_gaussian_process: bool = True,
+        n_regimes: int = 3,
+        regime_detection_window: int = 20,
+    ):
         """Initialize statistical simulation generator.
 
         Args:
@@ -655,8 +687,9 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
 
         return regimes
 
-    def _estimate_regime_parameters(self, data: np.ndarray, labels: np.ndarray,
-                                  regime_samples: List[int]) -> MarketRegime:
+    def _estimate_regime_parameters(
+        self, data: np.ndarray, labels: np.ndarray, regime_samples: List[int]
+    ) -> MarketRegime:
         """Estimate parameters for a specific market regime.
 
         Args:
@@ -699,8 +732,11 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
         gap_probability = np.clip(gap_probability, 0.01, 0.2)
 
         # Calculate mean reversion speed
-        autocorr_1 = [np.corrcoef(sample[:-1, 3], sample[1:, 3])[0, 1]
-                     for sample in regime_data if len(sample) > 1]
+        autocorr_1 = [
+            np.corrcoef(sample[:-1, 3], sample[1:, 3])[0, 1]
+            for sample in regime_data
+            if len(sample) > 1
+        ]
         mean_reversion_speed = 1.0 - np.mean(np.abs(autocorr_1))
         mean_reversion_speed = np.clip(mean_reversion_speed, 0.01, 0.5)
 
@@ -709,12 +745,12 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
             trend_strength=trend_strength,
             noise_ratio=noise_ratio,
             gap_probability=gap_probability,
-            mean_reversion_speed=mean_reversion_speed
+            mean_reversion_speed=mean_reversion_speed,
         )
 
-    def _simulate_geometric_brownian_motion(self, n_steps: int,
-                                          regime: MarketRegime,
-                                          initial_price: float = 100.0) -> np.ndarray:
+    def _simulate_geometric_brownian_motion(
+        self, n_steps: int, regime: MarketRegime, initial_price: float = 100.0
+    ) -> np.ndarray:
         """Simulate price path using Geometric Brownian Motion with regime parameters.
 
         Args:
@@ -746,8 +782,9 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
             price_prev = prices[-1]
 
             # GBM formula: S_t = S_{t-1} * exp((drift - 0.5*vol^2)*dt + vol*sqrt(dt)*shock)
-            price_new = price_prev * np.exp((drift - 0.5 * volatility**2) * dt +
-                                          volatility * np.sqrt(dt) * shocks[i])
+            price_new = price_prev * np.exp(
+                (drift - 0.5 * volatility**2) * dt + volatility * np.sqrt(dt) * shocks[i]
+            )
             prices.append(price_new)
 
         return np.array(prices)
@@ -775,7 +812,7 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
                 open_price = close
             else:
                 gap = np.random.normal(0, daily_volatility * 0.5)
-                open_price = max(1e-6, prices[i-1] + gap)
+                open_price = max(1e-6, prices[i - 1] + gap)
 
             # High and low prices
             high_low_range = np.random.uniform(0.0005, 0.002) * close
@@ -803,8 +840,9 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
 
         return ohlc
 
-    def _simulate_with_gaussian_process(self, template_sample: np.ndarray,
-                                       regime: MarketRegime) -> np.ndarray:
+    def _simulate_with_gaussian_process(
+        self, template_sample: np.ndarray, regime: MarketRegime
+    ) -> np.ndarray:
         """Simulate using Gaussian Process for more realistic dynamics.
 
         Args:
@@ -820,9 +858,11 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
         close_prices = template_sample[:, 3]
 
         # Design kernel for financial time series
-        kernel = (RBF(length_scale=10.0) * regime.volatility_level +
-                 Matern(length_scale=5.0, nu=1.5) * 0.1 +
-                 WhiteKernel(noise_level=regime.noise_ratio * 0.01))
+        kernel = (
+            RBF(length_scale=10.0) * regime.volatility_level
+            + Matern(length_scale=5.0, nu=1.5) * 0.1
+            + WhiteKernel(noise_level=regime.noise_ratio * 0.01)
+        )
 
         # Fit GP to log returns
         log_returns = np.diff(np.log(close_prices))
@@ -844,8 +884,9 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
         sampled_returns += trend_component
 
         # Convert back to prices
-        simulated_log_prices = np.concatenate([[np.log(close_prices[0])],
-                                              np.log(close_prices[0]) + np.cumsum(sampled_returns)])
+        simulated_log_prices = np.concatenate(
+            [[np.log(close_prices[0])], np.log(close_prices[0]) + np.cumsum(sampled_returns)]
+        )
         simulated_prices = np.exp(simulated_log_prices)
 
         # Create OHLC from prices
@@ -869,8 +910,9 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
                 data, labels, sample_indices
             )
 
-    def generate(self, data: np.ndarray, labels: np.ndarray,
-                n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+    def generate(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate statistically simulated pseudo-samples.
 
         Args:
@@ -891,7 +933,7 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
         for _ in range(n_samples):
             # Select regime and class
             regime_id = np.random.choice(list(self.regimes.keys()))
-            class_label = np.random.choice(['consolidation', 'retracement'])
+            class_label = np.random.choice(["consolidation", "retracement"])
 
             # Get template samples from this class
             class_samples = np.where(labels == class_label)[0]
@@ -943,24 +985,28 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
 
         # Distribution similarity tests
         ks_stat = stats.ks_2samp(orig_returns, gen_returns).statistic
-        metrics['return_distribution_similarity'] = 1.0 - ks_stat
+        metrics["return_distribution_similarity"] = 1.0 - ks_stat
 
         # Volatility clustering comparison
         orig_abs_returns = np.abs(orig_returns)
         gen_abs_returns = np.abs(gen_returns)
 
-        orig_autocorr = np.correlate(orig_abs_returns, orig_abs_returns, mode='full')
-        orig_autocorr = orig_autocorr[len(orig_autocorr)//2] / orig_autocorr[len(orig_autocorr)//2]
+        orig_autocorr = np.correlate(orig_abs_returns, orig_abs_returns, mode="full")
+        orig_autocorr = (
+            orig_autocorr[len(orig_autocorr) // 2] / orig_autocorr[len(orig_autocorr) // 2]
+        )
 
-        gen_autocorr = np.correlate(gen_abs_returns, gen_abs_returns, mode='full')
-        gen_autocorr = gen_autocorr[len(gen_autocorr)//2] / gen_autocorr[len(gen_autocorr)//2]
+        gen_autocorr = np.correlate(gen_abs_returns, gen_abs_returns, mode="full")
+        gen_autocorr = gen_autocorr[len(gen_autocorr) // 2] / gen_autocorr[len(gen_autocorr) // 2]
 
-        metrics['volatility_clustering_similarity'] = 1.0 - abs(orig_autocorr - gen_autocorr)
+        metrics["volatility_clustering_similarity"] = 1.0 - abs(orig_autocorr - gen_autocorr)
 
         # Kurtosis comparison (important for financial returns)
         orig_kurtosis = stats.kurtosis(orig_returns)
         gen_kurtosis = stats.kurtosis(gen_returns)
-        metrics['kurtosis_similarity'] = 1.0 - abs(orig_kurtosis - gen_kurtosis) / (abs(orig_kurtosis) + 1.0)
+        metrics["kurtosis_similarity"] = 1.0 - abs(orig_kurtosis - gen_kurtosis) / (
+            abs(orig_kurtosis) + 1.0
+        )
 
         # Price level distribution
         orig_prices = original[:, :, 3].flatten()
@@ -969,8 +1015,12 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
         orig_price_mean, orig_price_std = np.mean(orig_prices), np.std(orig_prices)
         gen_price_mean, gen_price_std = np.mean(gen_prices), np.std(gen_prices)
 
-        metrics['price_level_similarity'] = 1.0 - abs(gen_price_mean - orig_price_mean) / (orig_price_mean + 1e-8)
-        metrics['price_volatility_similarity'] = 1.0 - abs(gen_price_std - orig_price_std) / (orig_price_std + 1e-8)
+        metrics["price_level_similarity"] = 1.0 - abs(gen_price_mean - orig_price_mean) / (
+            orig_price_mean + 1e-8
+        )
+        metrics["price_volatility_similarity"] = 1.0 - abs(gen_price_std - orig_price_std) / (
+            orig_price_std + 1e-8
+        )
 
         # OHLC relationship preservation
         ohlc_violations = 0
@@ -981,7 +1031,7 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
                 if not (o <= h and l <= h and o >= l and c >= l):
                     ohlc_violations += 1
 
-        metrics['ohlc_preservation_rate'] = 1.0 - (ohlc_violations / total_checks)
+        metrics["ohlc_preservation_rate"] = 1.0 - (ohlc_violations / total_checks)
 
         return metrics
 
@@ -989,10 +1039,13 @@ class StatisticalSimulationGenerator(BasePseudoGenerator):
 class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
     """Self-supervised pseudo-labeling using pre-trained encoder for confident predictions."""
 
-    def __init__(self, seed: int = 1337,
-                 confidence_threshold: float = 0.95,
-                 encoder_model: Optional[nn.Module] = None,
-                 feature_extractor: Optional[callable] = None):
+    def __init__(
+        self,
+        seed: int = 1337,
+        confidence_threshold: float = 0.95,
+        encoder_model: Optional[nn.Module] = None,
+        feature_extractor: Optional[callable] = None,
+    ):
         """Initialize self-supervised pseudo-labeling generator.
 
         Args:
@@ -1114,7 +1167,7 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
         # Get model predictions
         self.encoder_model.eval()
         with torch.no_grad():
-            if hasattr(self.encoder_model, 'predict_proba'):
+            if hasattr(self.encoder_model, "predict_proba"):
                 probabilities = self.encoder_model.predict_proba(features_tensor)
             else:
                 logits = self.encoder_model(features_tensor)
@@ -1130,8 +1183,9 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
 
         return predicted_labels, confidence_scores
 
-    def generate(self, data: np.ndarray, labels: np.ndarray,
-                n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+    def generate(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate pseudo-labeled samples using self-supervised learning.
 
         Args:
@@ -1163,8 +1217,10 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
             return confident_candidates[indices], confident_labels[indices]
         else:
             # Return all confident samples (may be fewer than requested)
-            print(f"Warning: Only generated {len(confident_candidates)} confident samples "
-                  f"out of {n_samples} requested")
+            print(
+                f"Warning: Only generated {len(confident_candidates)} confident samples "
+                f"out of {n_samples} requested"
+            )
             return confident_candidates, confident_labels
 
     def validate_quality(self, original: np.ndarray, generated: np.ndarray) -> Dict[str, float]:
@@ -1188,7 +1244,7 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
             gen_feat = gen_features[:, :, i].flatten()
 
             ks_stat = stats.ks_2samp(orig_feat, gen_feat).statistic
-            metrics[f'feature_{i}_similarity'] = 1.0 - ks_stat
+            metrics[f"feature_{i}_similarity"] = 1.0 - ks_stat
 
         # Return distribution comparison
         def calculate_returns(samples):
@@ -1202,7 +1258,7 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
         gen_returns = calculate_returns(generated)
 
         ks_stat = stats.ks_2samp(orig_returns, gen_returns).statistic
-        metrics['return_distribution_similarity'] = 1.0 - ks_stat
+        metrics["return_distribution_similarity"] = 1.0 - ks_stat
 
         # Pattern similarity using DTW
         def dtw_distance(s1, s2):
@@ -1212,8 +1268,8 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
 
             for i in range(1, n + 1):
                 for j in range(1, m + 1):
-                    cost = abs(s1[i-1] - s2[j-1])
-                    dtw[i, j] = cost + min(dtw[i-1, j], dtw[i, j-1], dtw[i-1, j-1])
+                    cost = abs(s1[i - 1] - s2[j - 1])
+                    dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
 
             return dtw[n, m]
 
@@ -1223,13 +1279,15 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
             dist = dtw_distance(original[i, :, 3], generated[i, :, 3])
             dtw_distances.append(dist)
 
-        metrics['avg_dtw_similarity'] = 1.0 / (1.0 + np.mean(dtw_distances))
+        metrics["avg_dtw_similarity"] = 1.0 / (1.0 + np.mean(dtw_distances))
 
         # Confidence score distribution
         if self.encoder_model is not None:
             _, confidence_scores = self._predict_with_confidence(generated)
-            metrics['avg_confidence_score'] = np.mean(confidence_scores)
-            metrics['high_confidence_ratio'] = np.mean(confidence_scores >= self.confidence_threshold)
+            metrics["avg_confidence_score"] = np.mean(confidence_scores)
+            metrics["high_confidence_ratio"] = np.mean(
+                confidence_scores >= self.confidence_threshold
+            )
 
         return metrics
 
@@ -1237,8 +1295,7 @@ class SelfSupervisedPseudoLabelingGenerator(BasePseudoGenerator):
 class MarketConditionSimulationGenerator(BasePseudoGenerator):
     """Market condition simulation across different volatility and trend regimes."""
 
-    def __init__(self, seed: int = 1337,
-                 regime_config: Optional[Dict[str, MarketRegime]] = None):
+    def __init__(self, seed: int = 1337, regime_config: Optional[Dict[str, MarketRegime]] = None):
         """Initialize market condition simulation generator.
 
         Args:
@@ -1256,47 +1313,50 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
             Dictionary of default regimes
         """
         return {
-            'low_volatility': MarketRegime(
+            "low_volatility": MarketRegime(
                 volatility_level=0.5,
                 trend_strength=0.1,
                 noise_ratio=0.8,
                 gap_probability=0.01,
-                mean_reversion_speed=0.3
+                mean_reversion_speed=0.3,
             ),
-            'normal_market': MarketRegime(
+            "normal_market": MarketRegime(
                 volatility_level=1.0,
                 trend_strength=0.0,
                 noise_ratio=0.5,
                 gap_probability=0.05,
-                mean_reversion_speed=0.1
+                mean_reversion_speed=0.1,
             ),
-            'high_volatility': MarketRegime(
+            "high_volatility": MarketRegime(
                 volatility_level=2.0,
                 trend_strength=-0.2,
                 noise_ratio=0.3,
                 gap_probability=0.15,
-                mean_reversion_speed=0.05
+                mean_reversion_speed=0.05,
             ),
-            'strong_trend_up': MarketRegime(
+            "strong_trend_up": MarketRegime(
                 volatility_level=1.2,
                 trend_strength=0.8,
                 noise_ratio=0.4,
                 gap_probability=0.08,
-                mean_reversion_speed=0.02
+                mean_reversion_speed=0.02,
             ),
-            'strong_trend_down': MarketRegime(
+            "strong_trend_down": MarketRegime(
                 volatility_level=1.5,
                 trend_strength=-0.8,
                 noise_ratio=0.4,
                 gap_probability=0.12,
-                mean_reversion_speed=0.02
-            )
+                mean_reversion_speed=0.02,
+            ),
         }
 
-    def _simulate_regime_specific_path(self, regime: MarketRegime,
-                                     seq_len: int,
-                                     initial_price: float = 100.0,
-                                     pattern_type: str = 'random') -> np.ndarray:
+    def _simulate_regime_specific_path(
+        self,
+        regime: MarketRegime,
+        seq_len: int,
+        initial_price: float = 100.0,
+        pattern_type: str = "random",
+    ) -> np.ndarray:
         """Simulate price path specific to market regime.
 
         Args:
@@ -1308,17 +1368,18 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
         Returns:
             Simulated OHLC data [T, 4]
         """
-        if pattern_type == 'trend_following':
+        if pattern_type == "trend_following":
             return self._simulate_trend_following(regime, seq_len, initial_price)
-        elif pattern_type == 'mean_reverting':
+        elif pattern_type == "mean_reverting":
             return self._simulate_mean_reverting(regime, seq_len, initial_price)
-        elif pattern_type == 'breakout':
+        elif pattern_type == "breakout":
             return self._simulate_breakout(regime, seq_len, initial_price)
         else:  # random walk with regime characteristics
             return self._simulate_regime_random_walk(regime, seq_len, initial_price)
 
-    def _simulate_trend_following(self, regime: MarketRegime, seq_len: int,
-                                initial_price: float) -> np.ndarray:
+    def _simulate_trend_following(
+        self, regime: MarketRegime, seq_len: int, initial_price: float
+    ) -> np.ndarray:
         """Simulate trend-following price action.
 
         Args:
@@ -1356,8 +1417,9 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
         return self._create_ohlc_from_prices(np.array(prices), regime)
 
-    def _simulate_mean_reverting(self, regime: MarketRegime, seq_len: int,
-                               initial_price: float) -> np.ndarray:
+    def _simulate_mean_reverting(
+        self, regime: MarketRegime, seq_len: int, initial_price: float
+    ) -> np.ndarray:
         """Simulate mean-reverting price action.
 
         Args:
@@ -1394,8 +1456,9 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
         return self._create_ohlc_from_prices(np.array(prices), regime)
 
-    def _simulate_breakout(self, regime: MarketRegime, seq_len: int,
-                         initial_price: float) -> np.ndarray:
+    def _simulate_breakout(
+        self, regime: MarketRegime, seq_len: int, initial_price: float
+    ) -> np.ndarray:
         """Simulate breakout price action.
 
         Args:
@@ -1443,8 +1506,9 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
         return self._create_ohlc_from_prices(np.array(prices), regime)
 
-    def _simulate_regime_random_walk(self, regime: MarketRegime, seq_len: int,
-                                   initial_price: float) -> np.ndarray:
+    def _simulate_regime_random_walk(
+        self, regime: MarketRegime, seq_len: int, initial_price: float
+    ) -> np.ndarray:
         """Simulate random walk with regime characteristics.
 
         Args:
@@ -1476,8 +1540,7 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
         return self._create_ohlc_from_prices(np.array(prices), regime)
 
-    def _create_ohlc_from_prices(self, prices: np.ndarray,
-                               regime: MarketRegime) -> np.ndarray:
+    def _create_ohlc_from_prices(self, prices: np.ndarray, regime: MarketRegime) -> np.ndarray:
         """Create realistic OHLC from price series with regime characteristics.
 
         Args:
@@ -1507,7 +1570,7 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
                     gap = np.random.normal(0, intraday_vol * 2)
                 else:
                     gap = np.random.normal(0, intraday_vol * 0.3)
-                open_price = max(1e-6, prices[i-1] + gap)
+                open_price = max(1e-6, prices[i - 1] + gap)
 
             # Determine if up or down day
             is_up_day = close >= open_price
@@ -1538,8 +1601,9 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
         return ohlc
 
-    def generate(self, data: np.ndarray, labels: np.ndarray,
-                n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+    def generate(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Generate samples across different market conditions.
 
         Args:
@@ -1569,16 +1633,16 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
             # Select pattern type based on regime characteristics
             if regime.trend_strength > 0.5:
-                pattern_types = ['trend_following', 'breakout', 'random']
+                pattern_types = ["trend_following", "breakout", "random"]
                 pattern_probs = [0.5, 0.3, 0.2]
             elif regime.trend_strength < -0.5:
-                pattern_types = ['trend_following', 'breakout', 'random']
+                pattern_types = ["trend_following", "breakout", "random"]
                 pattern_probs = [0.5, 0.3, 0.2]
             elif regime.mean_reversion_speed > 0.2:
-                pattern_types = ['mean_reverting', 'random']
+                pattern_types = ["mean_reverting", "random"]
                 pattern_probs = [0.7, 0.3]
             else:
-                pattern_types = ['random', 'breakout']
+                pattern_types = ["random", "breakout"]
                 pattern_probs = [0.6, 0.4]
 
             pattern_type = np.random.choice(pattern_types, p=pattern_probs)
@@ -1624,18 +1688,22 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 
         # Statistical moments comparison
         orig_mean, orig_std, orig_skew, orig_kurt = (
-            np.mean(orig_returns), np.std(orig_returns),
-            stats.skew(orig_returns), stats.kurtosis(orig_returns)
+            np.mean(orig_returns),
+            np.std(orig_returns),
+            stats.skew(orig_returns),
+            stats.kurtosis(orig_returns),
         )
         gen_mean, gen_std, gen_skew, gen_kurt = (
-            np.mean(gen_returns), np.std(gen_returns),
-            stats.skew(gen_returns), stats.kurtosis(gen_returns)
+            np.mean(gen_returns),
+            np.std(gen_returns),
+            stats.skew(gen_returns),
+            stats.kurtosis(gen_returns),
         )
 
-        metrics['mean_similarity'] = 1.0 - abs(gen_mean - orig_mean) / (abs(orig_mean) + 1e-8)
-        metrics['volatility_similarity'] = 1.0 - abs(gen_std - orig_std) / (orig_std + 1e-8)
-        metrics['skewness_similarity'] = 1.0 - abs(gen_skew - orig_skew) / (abs(orig_skew) + 1.0)
-        metrics['kurtosis_similarity'] = 1.0 - abs(gen_kurt - orig_kurt) / (abs(orig_kurt) + 1.0)
+        metrics["mean_similarity"] = 1.0 - abs(gen_mean - orig_mean) / (abs(orig_mean) + 1e-8)
+        metrics["volatility_similarity"] = 1.0 - abs(gen_std - orig_std) / (orig_std + 1e-8)
+        metrics["skewness_similarity"] = 1.0 - abs(gen_skew - orig_skew) / (abs(orig_skew) + 1.0)
+        metrics["kurtosis_similarity"] = 1.0 - abs(gen_kurt - orig_kurt) / (abs(orig_kurt) + 1.0)
 
         # Volatility clustering
         orig_abs_returns = np.abs(orig_returns)
@@ -1644,11 +1712,11 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
         orig_autocorr = np.corrcoef(orig_abs_returns[:-1], orig_abs_returns[1:])[0, 1]
         gen_autocorr = np.corrcoef(gen_abs_returns[:-1], gen_abs_returns[1:])[0, 1]
 
-        metrics['volatility_clustering_similarity'] = 1.0 - abs(orig_autocorr - gen_autocorr)
+        metrics["volatility_clustering_similarity"] = 1.0 - abs(orig_autocorr - gen_autocorr)
 
         # Distribution similarity
         ks_stat = stats.ks_2samp(orig_returns, gen_returns).statistic
-        metrics['return_distribution_similarity'] = 1.0 - ks_stat
+        metrics["return_distribution_similarity"] = 1.0 - ks_stat
 
         # OHLC relationship preservation
         ohlc_violations = 0
@@ -1659,7 +1727,7 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
                 if not (o <= h and l <= h and o >= l and c >= l):
                     ohlc_violations += 1
 
-        metrics['ohlc_preservation_rate'] = 1.0 - (ohlc_violations / total_checks)
+        metrics["ohlc_preservation_rate"] = 1.0 - (ohlc_violations / total_checks)
 
         return metrics
 
@@ -1667,9 +1735,12 @@ class MarketConditionSimulationGenerator(BasePseudoGenerator):
 class PseudoSampleGenerationPipeline:
     """Main pipeline integrating all pseudo-sample generation strategies."""
 
-    def __init__(self, seed: int = 1337,
-                 strategy_weights: Optional[Dict[str, float]] = None,
-                 validation_threshold: float = 0.7):
+    def __init__(
+        self,
+        seed: int = 1337,
+        strategy_weights: Optional[Dict[str, float]] = None,
+        validation_threshold: float = 0.7,
+    ):
         """Initialize pseudo-sample generation pipeline.
 
         Args:
@@ -1682,18 +1753,18 @@ class PseudoSampleGenerationPipeline:
 
         # Default strategy weights
         self.strategy_weights = strategy_weights or {
-            'temporal_augmentation': 0.25,
-            'pattern_synthesis': 0.25,
-            'statistical_simulation': 0.2,
-            'market_condition': 0.3
+            "temporal_augmentation": 0.25,
+            "pattern_synthesis": 0.25,
+            "statistical_simulation": 0.2,
+            "market_condition": 0.3,
         }
 
         # Initialize generators
         self.generators = {
-            'temporal_augmentation': TemporalAugmentationGenerator(seed=seed),
-            'pattern_synthesis': PatternBasedSynthesisGenerator(seed=seed),
-            'statistical_simulation': StatisticalSimulationGenerator(seed=seed),
-            'market_condition': MarketConditionSimulationGenerator(seed=seed)
+            "temporal_augmentation": TemporalAugmentationGenerator(seed=seed),
+            "pattern_synthesis": PatternBasedSynthesisGenerator(seed=seed),
+            "statistical_simulation": StatisticalSimulationGenerator(seed=seed),
+            "market_condition": MarketConditionSimulationGenerator(seed=seed),
         }
 
         # Quality metrics storage
@@ -1705,10 +1776,10 @@ class PseudoSampleGenerationPipeline:
         Args:
             encoder_model: Pre-trained encoder model
         """
-        self.generators['self_supervised'] = SelfSupervisedPseudoLabelingGenerator(
+        self.generators["self_supervised"] = SelfSupervisedPseudoLabelingGenerator(
             seed=self.seed, encoder_model=encoder_model
         )
-        self.strategy_weights['self_supervised'] = 0.0  # Start with 0 weight
+        self.strategy_weights["self_supervised"] = 0.0  # Start with 0 weight
 
     def enable_self_supervised(self, confidence_threshold: float = 0.95):
         """Enable self-supervised pseudo-labeling.
@@ -1716,14 +1787,15 @@ class PseudoSampleGenerationPipeline:
         Args:
             confidence_threshold: Minimum confidence for pseudo-labels
         """
-        if 'self_supervised' in self.generators:
-            self.generators['self_supervised'].confidence_threshold = confidence_threshold
-            self.strategy_weights['self_supervised'] = 0.1  # Add to strategy mix
+        if "self_supervised" in self.generators:
+            self.generators["self_supervised"].confidence_threshold = confidence_threshold
+            self.strategy_weights["self_supervised"] = 0.1  # Add to strategy mix
         else:
             raise ValueError("Encoder model must be set first using set_encoder_model()")
 
-    def generate_samples(self, data: np.ndarray, labels: np.ndarray,
-                        n_samples: int, quality_check: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    def generate_samples(
+        self, data: np.ndarray, labels: np.ndarray, n_samples: int, quality_check: bool = True
+    ) -> Tuple[np.ndarray, np.ndarray, Dict]:
         """Generate pseudo-samples using integrated strategies.
 
         Args:
@@ -1751,20 +1823,24 @@ class PseudoSampleGenerationPipeline:
 
         # Distribute remaining samples
         if remaining_samples > 0 and samples_per_strategy:
-            strategies_with_weight = [s for s, w in self.strategy_weights.items() if w > 0 and s in self.generators]
+            strategies_with_weight = [
+                s for s, w in self.strategy_weights.items() if w > 0 and s in self.generators
+            ]
             if strategies_with_weight:
                 strategy = np.random.choice(strategies_with_weight)
-                samples_per_strategy[strategy] = samples_per_strategy.get(strategy, 0) + remaining_samples
+                samples_per_strategy[strategy] = (
+                    samples_per_strategy.get(strategy, 0) + remaining_samples
+                )
 
         # Generate samples from each strategy
         all_generated_data = []
         all_generated_labels = []
         generation_metadata = {
-            'strategies_used': list(samples_per_strategy.keys()),
-            'samples_per_strategy': samples_per_strategy,
-            'quality_scores': {},
-            'accepted_samples': 0,
-            'rejected_samples': 0
+            "strategies_used": list(samples_per_strategy.keys()),
+            "samples_per_strategy": samples_per_strategy,
+            "quality_scores": {},
+            "accepted_samples": 0,
+            "rejected_samples": 0,
         }
 
         for strategy, n_strategy_samples in samples_per_strategy.items():
@@ -1783,28 +1859,34 @@ class PseudoSampleGenerationPipeline:
 
                     # Calculate overall quality score
                     quality_score = np.mean(list(quality_metrics.values()))
-                    generation_metadata['quality_scores'][strategy] = quality_score
+                    generation_metadata["quality_scores"][strategy] = quality_score
 
                     # Accept or reject based on quality threshold
                     if quality_score >= self.validation_threshold:
                         all_generated_data.extend(gen_data)
                         all_generated_labels.extend(gen_labels)
-                        generation_metadata['accepted_samples'] += len(gen_data)
+                        generation_metadata["accepted_samples"] += len(gen_data)
                     else:
-                        generation_metadata['rejected_samples'] += len(gen_data)
-                        print(f"Rejected {len(gen_data)} samples from {strategy} (quality: {quality_score:.3f})")
+                        generation_metadata["rejected_samples"] += len(gen_data)
+                        print(
+                            f"Rejected {len(gen_data)} samples from {strategy} (quality: {quality_score:.3f})"
+                        )
                 else:
                     # Accept all samples without quality check
                     all_generated_data.extend(gen_data)
                     all_generated_labels.extend(gen_labels)
-                    generation_metadata['accepted_samples'] += len(gen_data)
+                    generation_metadata["accepted_samples"] += len(gen_data)
 
             except Exception as e:
                 print(f"Error generating samples with {strategy}: {e}")
-                generation_metadata['rejected_samples'] += n_strategy_samples
+                generation_metadata["rejected_samples"] += n_strategy_samples
 
         # Convert to arrays
-        generated_data = np.array(all_generated_data) if all_generated_data else np.array([]).reshape(0, data.shape[1], 4)
+        generated_data = (
+            np.array(all_generated_data)
+            if all_generated_data
+            else np.array([]).reshape(0, data.shape[1], 4)
+        )
         generated_labels = np.array(all_generated_labels) if all_generated_labels else np.array([])
 
         # Store quality history
@@ -1822,35 +1904,39 @@ class PseudoSampleGenerationPipeline:
             return {"message": "No generation history available"}
 
         report = {
-            'total_generations': len(self.quality_history),
-            'total_samples_generated': sum(meta['accepted_samples'] for meta in self.quality_history),
-            'total_samples_rejected': sum(meta['rejected_samples'] for meta in self.quality_history),
-            'average_quality_scores': {},
-            'strategy_usage': {},
-            'acceptance_rate': 0.0
+            "total_generations": len(self.quality_history),
+            "total_samples_generated": sum(
+                meta["accepted_samples"] for meta in self.quality_history
+            ),
+            "total_samples_rejected": sum(
+                meta["rejected_samples"] for meta in self.quality_history
+            ),
+            "average_quality_scores": {},
+            "strategy_usage": {},
+            "acceptance_rate": 0.0,
         }
 
         # Calculate strategy usage and quality
         strategy_counts = {}
         strategy_quality = {}
         for meta in self.quality_history:
-            for strategy in meta['strategies_used']:
+            for strategy in meta["strategies_used"]:
                 strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
-                if strategy in meta['quality_scores']:
+                if strategy in meta["quality_scores"]:
                     if strategy not in strategy_quality:
                         strategy_quality[strategy] = []
-                    strategy_quality[strategy].append(meta['quality_scores'][strategy])
+                    strategy_quality[strategy].append(meta["quality_scores"][strategy])
 
-        report['strategy_usage'] = strategy_counts
+        report["strategy_usage"] = strategy_counts
 
         # Calculate average quality scores
         for strategy, scores in strategy_quality.items():
-            report['average_quality_scores'][strategy] = np.mean(scores)
+            report["average_quality_scores"][strategy] = np.mean(scores)
 
         # Calculate acceptance rate
-        total_generated = report['total_samples_generated'] + report['total_samples_rejected']
+        total_generated = report["total_samples_generated"] + report["total_samples_rejected"]
         if total_generated > 0:
-            report['acceptance_rate'] = report['total_samples_generated'] / total_generated
+            report["acceptance_rate"] = report["total_samples_generated"] / total_generated
 
         return report
 

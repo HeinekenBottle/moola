@@ -4,14 +4,15 @@ Tests bootstrap resampling and CI computation for classification, pointer regres
 and calibration metrics on small datasets.
 """
 
-import pytest
 import numpy as np
+import pytest
+
 from moola.utils.metrics.bootstrap import (
-    bootstrap_resample,
-    bootstrap_metric,
     bootstrap_accuracy,
-    bootstrap_pointer_metrics,
     bootstrap_calibration_metrics,
+    bootstrap_metric,
+    bootstrap_pointer_metrics,
+    bootstrap_resample,
     format_bootstrap_result,
 )
 

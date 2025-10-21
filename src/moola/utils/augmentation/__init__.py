@@ -1,12 +1,12 @@
 """Data augmentation utilities for Moola ML pipeline."""
 
-from .augmentation import mixup, cutmix, mixup_cutmix, mixup_criterion
-from .mixup import mixup_data, augment_dataset, mixup_criterion_sklearn
+from .augmentation import cutmix, mixup, mixup_criterion, mixup_cutmix
 from .financial_augmentation import (
     AugmentationType,
     FinancialAugmentationConfig,
     FinancialAugmentationPipeline,
 )
+from .mixup import augment_dataset, mixup_criterion_sklearn, mixup_data
 from .temporal_augmentation import TemporalAugmentation
 
 __all__ = [

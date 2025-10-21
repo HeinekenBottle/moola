@@ -338,14 +338,14 @@ class TestPretrainingIntegration:
         model = get_model("simple_lstm", device="cpu")
 
         # Check that transfer learning features are implemented
-        assert hasattr(model, 'load_pretrained_encoder'), "Transfer loading missing"
-        assert hasattr(model, 'fit'), "Training method missing"
+        assert hasattr(model, "load_pretrained_encoder"), "Transfer loading missing"
+        assert hasattr(model, "fit"), "Training method missing"
 
         # Check two-phase training parameters
         assert model.early_stopping_patience > 0, "Early stopping needed for transfer learning"
 
         # Check learning rate reduction capability
-        assert hasattr(model, 'learning_rate'), "Learning rate control needed"
+        assert hasattr(model, "learning_rate"), "Learning rate control needed"
 
         print("✅ Transfer learning performance structure validated")
 

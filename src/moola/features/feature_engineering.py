@@ -13,9 +13,10 @@ Usage:
     >>> X_engineered = engineer.transform(X_raw)  # [N, 105, 4] -> [N, 105, ~30]
 """
 
-import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+import numpy as np
 from loguru import logger
 
 
@@ -107,13 +108,13 @@ class AdvancedFeatureEngineer:
         if self.config.use_returns:
             returns = self._compute_returns(X)
             features.append(returns)
-            self.feature_names.extend(['ret_open', 'ret_high', 'ret_low', 'ret_close'])
+            self.feature_names.extend(["ret_open", "ret_high", "ret_low", "ret_close"])
             logger.debug("Added log returns (4 features)")
 
         if self.config.use_zscore:
             zscore = self._compute_zscore_prices(X)
             features.append(zscore)
-            self.feature_names.extend(['z_open', 'z_high', 'z_low', 'z_close'])
+            self.feature_names.extend(["z_open", "z_high", "z_low", "z_close"])
             logger.debug("Added z-score normalization (4 features)")
 
         # Category B: Volatility
@@ -121,38 +122,37 @@ class AdvancedFeatureEngineer:
             # Compute volatility on close returns
             close_returns = self._compute_returns(X)[..., -1:]
             volatility = self._compute_rolling_volatility(
-                close_returns,
-                self.config.volatility_windows
+                close_returns, self.config.volatility_windows
             )
             features.append(volatility)
             for w in self.config.volatility_windows:
-                self.feature_names.append(f'vol_{w}')
+                self.feature_names.append(f"vol_{w}")
             logger.debug(f"Added volatility (×{len(self.config.volatility_windows)} features)")
 
         # Category C: Pattern Recognition
         if self.config.use_candle_patterns:
             candles = self._compute_candle_features(X)
             features.append(candles)
-            self.feature_names.extend(['body_ratio', 'upper_wick', 'lower_wick', 'direction'])
+            self.feature_names.extend(["body_ratio", "upper_wick", "lower_wick", "direction"])
             logger.debug("Added candle patterns (4 features)")
 
         if self.config.use_swing_points:
             swings = self._compute_swing_points(high, low, self.config.swing_window)
             features.append(swings)
-            self.feature_names.extend(['swing_high', 'swing_low'])
+            self.feature_names.extend(["swing_high", "swing_low"])
             logger.debug("Added swing points (2 features)")
 
         if self.config.use_gaps:
             gaps = self._compute_gaps(X)
             features.append(gaps)
-            self.feature_names.extend(['gap_up', 'gap_down'])
+            self.feature_names.extend(["gap_up", "gap_down"])
             logger.debug("Added price gaps (2 features)")
 
         # Category D: Volume Proxies
         if self.config.use_volume_proxy:
             tick_vol = self._compute_tick_volume_proxy(X)
             features.append(tick_vol)
-            self.feature_names.extend(['tick_volume'])
+            self.feature_names.extend(["tick_volume"])
             logger.debug("Added volume proxies (1 feature)")
 
         # Concatenate all features
@@ -202,17 +202,15 @@ class AdvancedFeatureEngineer:
         std = ohlc.std(axis=1, keepdims=True) + 1e-8
         return (ohlc - mean) / std
 
-    def _compute_rolling_volatility(
-        self,
-        returns: np.ndarray,
-        windows: List[int]
-    ) -> np.ndarray:
+    def _compute_rolling_volatility(self, returns: np.ndarray, windows: List[int]) -> np.ndarray:
         """Compute rolling volatility (std of returns)."""
         vols = []
         for window in windows:
             vol = np.zeros_like(returns)
             for t in range(window, returns.shape[1]):
-                vol[:, t] = returns[:, t-window+1:t+1].std(axis=1, keepdims=True).squeeze(-1)
+                vol[:, t] = (
+                    returns[:, t - window + 1 : t + 1].std(axis=1, keepdims=True).squeeze(-1)
+                )
             vols.append(vol)
 
         return np.concatenate(vols, axis=-1)
@@ -234,21 +232,16 @@ class AdvancedFeatureEngineer:
 
         return np.stack([body_ratio, upper_wick, lower_wick, direction], axis=-1)
 
-    def _compute_swing_points(
-        self,
-        high: np.ndarray,
-        low: np.ndarray,
-        window: int
-    ) -> np.ndarray:
+    def _compute_swing_points(self, high: np.ndarray, low: np.ndarray, window: int) -> np.ndarray:
         """Detect swing highs and lows."""
         swing_high = np.zeros_like(high)
         swing_low = np.zeros_like(low)
 
         for t in range(window, high.shape[1] - window):
-            is_swing_high = (high[:, t] == high[:, t-window:t+window+1].max(axis=1))
+            is_swing_high = high[:, t] == high[:, t - window : t + window + 1].max(axis=1)
             swing_high[:, t] = is_swing_high.astype(float)
 
-            is_swing_low = (low[:, t] == low[:, t-window:t+window+1].min(axis=1))
+            is_swing_low = low[:, t] == low[:, t - window : t + window + 1].min(axis=1)
             swing_low[:, t] = is_swing_low.astype(float)
 
         return np.stack([swing_high, swing_low], axis=-1)
@@ -285,11 +278,7 @@ class FeatureImportanceTracker:
         self.feature_names = feature_names
         self.importance_history: List[Dict[str, float]] = []
 
-    def compute_gradient_importance(
-        self,
-        model,
-        X: np.ndarray
-    ) -> Dict[str, float]:
+    def compute_gradient_importance(self, model, X: np.ndarray) -> Dict[str, float]:
         """Compute feature importance using input gradients.
 
         Args:
@@ -318,9 +307,7 @@ class FeatureImportanceTracker:
         return importance_dict
 
     def select_top_features(
-        self,
-        importance_scores: Dict[str, float],
-        top_k: int = 20
+        self, importance_scores: Dict[str, float], top_k: int = 20
     ) -> List[str]:
         """Select top-k most important features.
 
@@ -331,11 +318,7 @@ class FeatureImportanceTracker:
         Returns:
             List of top-k feature names sorted by importance
         """
-        sorted_features = sorted(
-            importance_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        sorted_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)
 
         return [name for name, _ in sorted_features[:top_k]]
 
@@ -344,9 +327,5 @@ class FeatureImportanceTracker:
         self.importance_history.append(importance_scores)
 
         logger.info("Feature importance computed:")
-        for name, score in sorted(
-            importance_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:10]:
+        for name, score in sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)[:10]:
             logger.info(f"  {name}: {score:.6f}")

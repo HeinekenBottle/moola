@@ -4,8 +4,8 @@ Tests that bootstrap flags work correctly in the train command
 and produce expected output format.
 """
 
-import pytest
 import numpy as np
+import pytest
 
 
 def test_bootstrap_functions_integration():

@@ -225,6 +225,7 @@ SET_FLOAT32_MATMUL_PRECISION = "high"
 # UTILITY FUNCTIONS
 # ============================================================================
 
+
 def apply_performance_optimizations(device: str = "cuda") -> None:
     """Apply all performance optimizations to PyTorch backend.
 
@@ -245,15 +246,15 @@ def apply_performance_optimizations(device: str = "cuda") -> None:
         torch.backends.cudnn.deterministic = CUDNN_DETERMINISTIC
 
         # TF32 for matmul operations (Ampere+ GPUs)
-        if hasattr(torch.backends.cuda, 'matmul'):
+        if hasattr(torch.backends.cuda, "matmul"):
             torch.backends.cuda.matmul.allow_tf32 = TF32_ENABLED
 
         # TF32 for cuDNN operations
-        if hasattr(torch.backends.cudnn, 'allow_tf32'):
+        if hasattr(torch.backends.cudnn, "allow_tf32"):
             torch.backends.cudnn.allow_tf32 = TF32_ENABLED
 
         # Set float32 matmul precision (PyTorch 2.0+)
-        if hasattr(torch, 'set_float32_matmul_precision'):
+        if hasattr(torch, "set_float32_matmul_precision"):
             torch.set_float32_matmul_precision(SET_FLOAT32_MATMUL_PRECISION)
 
         print("[PERFORMANCE] Applied CUDA optimizations:")
@@ -278,11 +279,15 @@ def get_optimized_dataloader_kwargs(is_training: bool = True) -> dict:
         >>> loader = DataLoader(dataset, batch_size=512, **kwargs)
     """
     kwargs = {
-        'num_workers': DATALOADER_NUM_WORKERS if is_training else 0,
-        'pin_memory': DATALOADER_PIN_MEMORY,
-        'prefetch_factor': DATALOADER_PREFETCH_FACTOR if is_training and DATALOADER_NUM_WORKERS > 0 else None,
-        'persistent_workers': DATALOADER_PERSISTENT_WORKERS if is_training and DATALOADER_NUM_WORKERS > 0 else False,
-        'drop_last': DATALOADER_DROP_LAST,
+        "num_workers": DATALOADER_NUM_WORKERS if is_training else 0,
+        "pin_memory": DATALOADER_PIN_MEMORY,
+        "prefetch_factor": (
+            DATALOADER_PREFETCH_FACTOR if is_training and DATALOADER_NUM_WORKERS > 0 else None
+        ),
+        "persistent_workers": (
+            DATALOADER_PERSISTENT_WORKERS if is_training and DATALOADER_NUM_WORKERS > 0 else False
+        ),
+        "drop_last": DATALOADER_DROP_LAST,
     }
 
     # Remove None values
@@ -319,58 +324,58 @@ def get_amp_scaler():
 
 __all__ = [
     # AMP
-    'AMP_ENABLED',
-    'AMP_GROWTH_FACTOR',
-    'AMP_BACKOFF_FACTOR',
-    'AMP_GROWTH_INTERVAL',
+    "AMP_ENABLED",
+    "AMP_GROWTH_FACTOR",
+    "AMP_BACKOFF_FACTOR",
+    "AMP_GROWTH_INTERVAL",
     # DataLoader
-    'DATALOADER_NUM_WORKERS',
-    'DATALOADER_PIN_MEMORY',
-    'DATALOADER_PREFETCH_FACTOR',
-    'DATALOADER_PERSISTENT_WORKERS',
-    'DATALOADER_DROP_LAST',
+    "DATALOADER_NUM_WORKERS",
+    "DATALOADER_PIN_MEMORY",
+    "DATALOADER_PREFETCH_FACTOR",
+    "DATALOADER_PERSISTENT_WORKERS",
+    "DATALOADER_DROP_LAST",
     # Backend
-    'CUDNN_BENCHMARK',
-    'CUDNN_DETERMINISTIC',
-    'TF32_ENABLED',
-    'TORCH_COMPILE_ENABLED',
-    'TORCH_COMPILE_MODE',
+    "CUDNN_BENCHMARK",
+    "CUDNN_DETERMINISTIC",
+    "TF32_ENABLED",
+    "TORCH_COMPILE_ENABLED",
+    "TORCH_COMPILE_MODE",
     # Gradients
-    'GRADIENT_ACCUMULATION_STEPS',
-    'GRADIENT_CLIPPING_ENABLED',
-    'GRADIENT_CLIPPING_MAX_NORM',
+    "GRADIENT_ACCUMULATION_STEPS",
+    "GRADIENT_CLIPPING_ENABLED",
+    "GRADIENT_CLIPPING_MAX_NORM",
     # Checkpoints
-    'CHECKPOINT_SAVE_FREQUENCY',
-    'CHECKPOINT_ASYNC',
-    'CHECKPOINT_COMPRESSION',
+    "CHECKPOINT_SAVE_FREQUENCY",
+    "CHECKPOINT_ASYNC",
+    "CHECKPOINT_COMPRESSION",
     # Augmentation
-    'PRE_AUGMENT_ENABLED',
-    'PRE_AUGMENT_CACHE_DIR',
-    'PRE_AUGMENT_NUM_VERSIONS',
+    "PRE_AUGMENT_ENABLED",
+    "PRE_AUGMENT_CACHE_DIR",
+    "PRE_AUGMENT_NUM_VERSIONS",
     # Early stopping
-    'EARLY_STOPPING_AGGRESSIVE',
-    'EARLY_STOPPING_PATIENCE',
-    'EARLY_STOPPING_MIN_DELTA',
+    "EARLY_STOPPING_AGGRESSIVE",
+    "EARLY_STOPPING_PATIENCE",
+    "EARLY_STOPPING_MIN_DELTA",
     # Fused kernels
-    'LSTM_FUSED_KERNELS',
-    'ATTENTION_FUSED_KERNELS',
+    "LSTM_FUSED_KERNELS",
+    "ATTENTION_FUSED_KERNELS",
     # Profiling
-    'PROFILE_ENABLED',
-    'PROFILE_WARMUP_STEPS',
-    'PROFILE_ACTIVE_STEPS',
-    'PROFILE_RECORD_SHAPES',
-    'PROFILE_PROFILE_MEMORY',
-    'MONITOR_GPU_UTILIZATION',
-    'MONITOR_LOGGING_INTERVAL',
+    "PROFILE_ENABLED",
+    "PROFILE_WARMUP_STEPS",
+    "PROFILE_ACTIVE_STEPS",
+    "PROFILE_RECORD_SHAPES",
+    "PROFILE_PROFILE_MEMORY",
+    "MONITOR_GPU_UTILIZATION",
+    "MONITOR_LOGGING_INTERVAL",
     # Batch sizes
-    'PRETRAIN_BATCH_SIZE',
-    'FINETUNE_BATCH_SIZE',
-    'AUTO_SCALE_BATCH_SIZE',
+    "PRETRAIN_BATCH_SIZE",
+    "FINETUNE_BATCH_SIZE",
+    "AUTO_SCALE_BATCH_SIZE",
     # Memory
-    'EMPTY_CACHE_FREQUENCY',
-    'SET_FLOAT32_MATMUL_PRECISION',
+    "EMPTY_CACHE_FREQUENCY",
+    "SET_FLOAT32_MATMUL_PRECISION",
     # Utilities
-    'apply_performance_optimizations',
-    'get_optimized_dataloader_kwargs',
-    'get_amp_scaler',
+    "apply_performance_optimizations",
+    "get_optimized_dataloader_kwargs",
+    "get_amp_scaler",
 ]

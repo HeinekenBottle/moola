@@ -29,12 +29,7 @@ class TestBiLSTMMaskedAutoencoder:
 
     def test_model_initialization(self):
         """Test model builds with correct architecture."""
-        model = BiLSTMMaskedAutoencoder(
-            input_dim=4,
-            hidden_dim=128,
-            num_layers=2,
-            dropout=0.2
-        )
+        model = BiLSTMMaskedAutoencoder(input_dim=4, hidden_dim=128, num_layers=2, dropout=0.2)
 
         # Check encoder is bidirectional
         assert model.encoder_lstm.bidirectional is True
@@ -77,11 +72,11 @@ class TestBiLSTMMaskedAutoencoder:
         total_loss, loss_dict = model.compute_loss(reconstruction, x_original, mask)
 
         # Verify loss components
-        assert 'total' in loss_dict
-        assert 'reconstruction' in loss_dict
-        assert 'regularization' in loss_dict
-        assert 'latent_std' in loss_dict
-        assert 'num_masked' in loss_dict
+        assert "total" in loss_dict
+        assert "reconstruction" in loss_dict
+        assert "regularization" in loss_dict
+        assert "latent_std" in loss_dict
+        assert "num_masked" in loss_dict
 
         # Check loss is scalar tensor
         assert total_loss.ndim == 0
@@ -133,9 +128,7 @@ class TestMaskingStrategies:
         x = torch.randn(8, 105, 4)
         mask_token = torch.randn(1, 1, 4)
 
-        x_masked, mask = MaskingStrategy.mask_patch(
-            x, mask_token, mask_ratio=0.15, patch_size=7
-        )
+        x_masked, mask = MaskingStrategy.mask_patch(x, mask_token, mask_ratio=0.15, patch_size=7)
 
         # Check shapes
         assert x_masked.shape == x.shape
@@ -160,10 +153,7 @@ class TestMaskingStrategies:
         # Test all strategies
         for strategy in ["random", "block", "patch"]:
             x_masked, mask = apply_masking(
-                x, mask_token,
-                mask_strategy=strategy,
-                mask_ratio=0.15,
-                patch_size=7
+                x, mask_token, mask_strategy=strategy, mask_ratio=0.15, patch_size=7
             )
 
             assert x_masked.shape == x.shape
@@ -182,7 +172,7 @@ class TestPreTraining:
             num_layers=2,
             mask_ratio=0.15,
             mask_strategy="patch",
-            device="cpu"
+            device="cpu",
         )
 
         assert pretrainer.model is not None
@@ -201,37 +191,28 @@ class TestPreTraining:
             mask_ratio=0.15,
             mask_strategy="random",
             batch_size=32,
-            device="cpu"
+            device="cpu",
         )
 
         # Train for 1 epoch
         history = pretrainer.pretrain(
-            X_unlabeled,
-            n_epochs=1,
-            val_split=0.2,
-            patience=10,
-            verbose=False
+            X_unlabeled, n_epochs=1, val_split=0.2, patience=10, verbose=False
         )
 
         # Check history has expected keys
-        assert 'train_loss' in history
-        assert 'val_loss' in history
-        assert 'train_recon' in history
-        assert 'val_recon' in history
+        assert "train_loss" in history
+        assert "val_loss" in history
+        assert "train_recon" in history
+        assert "val_recon" in history
 
         # Check losses are reasonable
-        assert len(history['train_loss']) == 1
-        assert history['train_loss'][0] > 0
-        assert history['val_loss'][0] > 0
+        assert len(history["train_loss"]) == 1
+        assert history["train_loss"][0] > 0
+        assert history["val_loss"][0] > 0
 
     def test_encoder_save_load(self):
         """Test encoder saving and loading."""
-        pretrainer = MaskedLSTMPretrainer(
-            input_dim=4,
-            hidden_dim=64,
-            num_layers=1,
-            device="cpu"
-        )
+        pretrainer = MaskedLSTMPretrainer(input_dim=4, hidden_dim=64, num_layers=1, device="cpu")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "encoder.pt"
@@ -242,10 +223,7 @@ class TestPreTraining:
 
             # Load encoder in new instance
             pretrainer2 = MaskedLSTMPretrainer(
-                input_dim=4,
-                hidden_dim=64,
-                num_layers=1,
-                device="cpu"
+                input_dim=4, hidden_dim=64, num_layers=1, device="cpu"
             )
             pretrainer2.load_encoder(save_path)
 
@@ -264,27 +242,19 @@ class TestWeightTransfer:
         """Test bidirectional and unidirectional LSTM weight shapes."""
         # Bidirectional LSTM (encoder)
         bilstm = torch.nn.LSTM(
-            input_size=4,
-            hidden_size=128,
-            num_layers=2,
-            bidirectional=True,
-            batch_first=True
+            input_size=4, hidden_size=128, num_layers=2, bidirectional=True, batch_first=True
         )
 
         # Unidirectional LSTM (SimpleLSTM)
         unilstm = torch.nn.LSTM(
-            input_size=4,
-            hidden_size=128,
-            num_layers=2,
-            bidirectional=False,
-            batch_first=True
+            input_size=4, hidden_size=128, num_layers=2, bidirectional=False, batch_first=True
         )
 
         # Check layer 0 weight shapes
         # PyTorch stores bidirectional weights separately with "_reverse" suffix
-        bi_weight_ih_fwd = bilstm.state_dict()['weight_ih_l0']  # Forward direction
-        bi_weight_ih_bwd = bilstm.state_dict()['weight_ih_l0_reverse']  # Backward direction
-        uni_weight_ih = unilstm.state_dict()['weight_ih_l0']
+        bi_weight_ih_fwd = bilstm.state_dict()["weight_ih_l0"]  # Forward direction
+        bi_weight_ih_bwd = bilstm.state_dict()["weight_ih_l0_reverse"]  # Backward direction
+        uni_weight_ih = unilstm.state_dict()["weight_ih_l0"]
 
         # Both bidirectional and unidirectional have same shape: [hidden*4, input]
         assert bi_weight_ih_fwd.shape == (128 * 4, 4)
@@ -299,24 +269,15 @@ class TestWeightTransfer:
         from moola.models.simple_lstm import SimpleLSTMModel
 
         # Create SimpleLSTM model
-        model = SimpleLSTMModel(
-            hidden_size=128,
-            num_layers=2,
-            device="cpu"
-        )
+        model = SimpleLSTMModel(hidden_size=128, num_layers=2, device="cpu")
 
         # Build model with dummy data
         X_dummy = np.random.randn(10, 105, 4).astype(np.float32)
-        y_dummy = np.array(['A', 'B'] * 5)
+        y_dummy = np.array(["A", "B"] * 5)
         model.fit(X_dummy, y_dummy, unfreeze_encoder_after=0)
 
         # Create pre-trained encoder
-        pretrainer = MaskedLSTMPretrainer(
-            input_dim=4,
-            hidden_dim=128,
-            num_layers=2,
-            device="cpu"
-        )
+        pretrainer = MaskedLSTMPretrainer(input_dim=4, hidden_dim=128, num_layers=2, device="cpu")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             encoder_path = Path(tmpdir) / "encoder.pt"
@@ -340,9 +301,7 @@ class TestDataAugmentation:
     def test_augmenter_initialization(self):
         """Test TimeSeriesAugmenter initializes with correct parameters."""
         augmenter = TimeSeriesAugmenter(
-            time_warp_prob=0.5,
-            jitter_prob=0.5,
-            volatility_scale_prob=0.3
+            time_warp_prob=0.5, jitter_prob=0.5, volatility_scale_prob=0.3
         )
 
         assert augmenter.time_warp_prob == 0.5
@@ -414,17 +373,13 @@ class TestRTX4090Optimization:
             hidden_dim=128,
             num_layers=2,
             batch_size=512,  # Large batch for RTX 4090
-            device="cuda"
+            device="cuda",
         )
 
         # Train for 1 epoch
-        history = pretrainer.pretrain(
-            X_unlabeled,
-            n_epochs=1,
-            verbose=False
-        )
+        history = pretrainer.pretrain(X_unlabeled, n_epochs=1, verbose=False)
 
-        assert history['train_loss'][0] > 0
+        assert history["train_loss"][0] > 0
 
     def test_batch_size_memory_estimate(self):
         """Test batch size fits in 24GB VRAM (RTX 4090)."""
@@ -444,8 +399,8 @@ class TestRTX4090Optimization:
 
         # Estimate memory per batch (rough calculation)
         bytes_per_param = 4  # FP32
-        param_memory_mb = (total_params * bytes_per_param) / (1024 ** 2)
-        activation_memory_mb = (512 * 105 * 128 * 2 * 4) / (1024 ** 2)
+        param_memory_mb = (total_params * bytes_per_param) / (1024**2)
+        activation_memory_mb = (512 * 105 * 128 * 2 * 4) / (1024**2)
         total_memory_mb = param_memory_mb * 3 + activation_memory_mb  # params + grads + optimizer
 
         # Should fit comfortably in 24GB
@@ -469,7 +424,7 @@ class TestIntegration:
             num_layers=1,
             mask_strategy="patch",
             batch_size=32,
-            device="cpu"
+            device="cpu",
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -477,26 +432,18 @@ class TestIntegration:
 
             # Pre-train for 2 epochs
             history = pretrainer.pretrain(
-                X_unlabeled,
-                n_epochs=2,
-                save_path=encoder_path,
-                verbose=False
+                X_unlabeled, n_epochs=2, save_path=encoder_path, verbose=False
             )
 
             assert encoder_path.exists()
-            assert len(history['train_loss']) == 2
+            assert len(history["train_loss"]) == 2
 
             # Step 3: Create labeled data
             X_labeled = np.random.randn(50, 105, 4).astype(np.float32)
-            y_labeled = np.array(['class_A', 'class_B'] * 25)
+            y_labeled = np.array(["class_A", "class_B"] * 25)
 
             # Step 4: Fine-tune SimpleLSTM with pre-trained encoder
-            model = SimpleLSTMModel(
-                hidden_size=64,
-                num_layers=1,
-                n_epochs=2,
-                device="cpu"
-            )
+            model = SimpleLSTMModel(hidden_size=64, num_layers=1, n_epochs=2, device="cpu")
 
             # Build model first
             model.fit(X_labeled[:10], y_labeled[:10], unfreeze_encoder_after=0)
@@ -528,7 +475,7 @@ class TestIntegration:
             learning_rate=1e-3,
             batch_size=512,
             device="cpu",
-            seed=1337
+            seed=1337,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -540,12 +487,12 @@ class TestIntegration:
                 val_split=0.1,
                 patience=10,
                 save_path=output_path,
-                verbose=False
+                verbose=False,
             )
 
             assert output_path.exists()
-            assert 'train_loss' in history
-            assert 'val_loss' in history
+            assert "train_loss" in history
+            assert "val_loss" in history
 
 
 if __name__ == "__main__":
