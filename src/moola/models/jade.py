@@ -54,6 +54,7 @@ from ..utils.focal_loss import FocalLoss
 from ..utils.model_diagnostics import ModelDiagnostics
 from ..utils.seeds import get_device, set_seed
 from ..utils.temporal_augmentation import TemporalAugmentation
+from ..metrics.hit_metrics import hit_at_k
 from .base import BaseModel
 
 
@@ -76,9 +77,11 @@ class UncertaintyWeightedLoss(nn.Module):
 
     def __init__(self):
         super().__init__()
-        # Initialize log variances to 0 (σ = 1.0, equal weighting)
-        self.log_var_ptr = nn.Parameter(torch.zeros(1))
-        self.log_var_type = nn.Parameter(torch.zeros(1))
+        # Initialize with Kendall bias: favor pointer regression
+        # log_var_ptr = -0.60 → σ_ptr = exp(0.5 * -0.60) = exp(-0.30) ≈ 0.74 (higher weight)
+        # log_var_type = 0.00 → σ_type = exp(0.5 * 0.00) = exp(0) = 1.00 (baseline weight)
+        self.log_var_ptr = nn.Parameter(torch.tensor(-0.60))
+        self.log_var_type = nn.Parameter(torch.tensor(0.00))
 
     def forward(self, ptr_loss: torch.Tensor, type_loss: torch.Tensor) -> torch.Tensor:
         """Compute weighted multi-task loss.
@@ -309,9 +312,9 @@ class JadeModel(BaseModel):
                 f"Jade expects 11-dim input, got {input_dim}. Architecture may be suboptimal."
             )
 
-        if n_classes != 3:
+        if n_classes not in [2, 3]:
             logger.warning(
-                f"Jade expects 3 classes, got {n_classes}. Architecture may be suboptimal."
+                f"Jade expects 2 or 3 classes, got {n_classes}. Architecture may be suboptimal."
             )
 
         class JadeNet(nn.Module):
@@ -349,7 +352,7 @@ class JadeModel(BaseModel):
                 # Jade: Dense dropout 0.4-0.5 (Stones requirement)
                 self.dense_dropout = nn.Dropout(0.45)
 
-                # Jade: Type head: 3-way logits (Stones requirement)
+                # Jade: Type head: n_classes-way logits (2 or 3 classes supported)
                 self.type_head = nn.Sequential(
                     nn.Linear(hidden_size * 2, 64),
                     nn.ReLU(),
@@ -527,11 +530,12 @@ class JadeModel(BaseModel):
         else:
             X_train, y_train = X, y_indices
             X_val, y_val = None, None
-        if has_pointers:
-            ptr_start_train, ptr_end_train = expansion_start, expansion_end
-        else:
-            ptr_start_train, ptr_end_train = None, None
-        ptr_start_val, ptr_end_val = None, None
+            if has_pointers:
+                ptr_start_train, ptr_end_train = expansion_start, expansion_end
+                ptr_start_val, ptr_end_val = None, None
+            else:
+                ptr_start_train, ptr_end_train = None, None
+                ptr_start_val, ptr_end_val = None, None
 
         # Create training dataloader
         X_train_tensor = torch.FloatTensor(X_train)
@@ -625,10 +629,10 @@ class JadeModel(BaseModel):
             )
             logger.info("Jade: Using uncertainty-weighted multi-task loss (DEFAULT)")
 
-        # Jade: ReduceLROnPlateau scheduler (Stones requirement)
+        # Jade: ReduceLROnPlateau scheduler with hit_at_3 metric (pointer-favoring)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
-            mode="min",  # Monitor validation loss
+            mode="max",  # Monitor hit_at_3 (higher is better)
             factor=self.scheduler_factor,
             patience=self.scheduler_patience,
             threshold=self.scheduler_threshold,
@@ -638,21 +642,22 @@ class JadeModel(BaseModel):
             verbose=True,
         )
         logger.info(
-            f"Jade: ReduceLROnPlateau scheduler enabled (factor={self.scheduler_factor}, "
-            f"patience={self.scheduler_patience})"
+            f"Jade: ReduceLROnPlateau scheduler enabled with hit_at_3 metric (mode=max, "
+            f"factor={self.scheduler_factor}, patience={self.scheduler_patience})"
         )
 
         # Setup mixed precision training
         scaler = GradScaler() if self.use_amp else None
 
-        # Setup early stopping
+        # Setup early stopping with hit_at_3 metric (pointer-favoring)
         early_stopping = None
-        best_val_loss = float("inf")
+        best_val_hit = 0.0  # Track best hit_at_3 for multi-task
+        best_val_loss = float("inf")  # Track best loss for single-task
         best_epoch = 0
         patience_counter = 0
         if val_dataloader is not None:
             early_stopping = EarlyStopping(
-                patience=self.early_stopping_patience, mode="min", verbose=True
+                patience=self.early_stopping_patience, mode="max", verbose=True
             )
 
         # Training loop
@@ -817,58 +822,156 @@ class JadeModel(BaseModel):
                 avg_val_loss = val_loss / len(val_dataloader)
                 val_accuracy = val_correct / val_total
 
-                # Jade: Step ReduceLROnPlateau scheduler (Stones requirement)
-                scheduler.step(avg_val_loss)
+                # Compute hit_at_3 metric for pointer-favoring evaluation
+                val_hit_at_3 = 0.0
+                if has_pointers and val_total > 0:
+                    # Collect all predictions and targets for hit_at_3 computation
+                    all_pred_centers = []
+                    all_true_centers = []
+                    
+                    # Re-run validation to collect pointer predictions (needed for hit_at_3)
+                    self.model.eval()
+                    with torch.no_grad():
+                        for batch_data in val_dataloader:
+                            batch_X, batch_y, batch_ptr_start, batch_ptr_end = batch_data
+                            batch_X = batch_X.to(self.device, non_blocking=True)
+                            batch_ptr_start = batch_ptr_start.to(self.device, non_blocking=True)
+                            batch_ptr_end = batch_ptr_end.to(self.device, non_blocking=True)
+                            
+                            outputs = self.model(batch_X)
+                            
+                            # Convert predictions to center-length format
+                            if "pointers_cl" in outputs:
+                                pred_center = outputs["pointers_cl"][:, 0]
+                            else:
+                                # Convert from start-end to center-length if needed
+                                pred_start = outputs["pointers"][:, 0]
+                                pred_end = outputs["pointers"][:, 1]
+                                pred_center = 0.5 * (pred_start + pred_end) / 104.0
+                            
+                            # Convert true targets to center-length
+                            from ..data.pointer_transforms import start_end_to_center_length
+                            true_center, _ = start_end_to_center_length(
+                                batch_ptr_start.float(), batch_ptr_end.float(), seq_len=104
+                            )
+                            
+                            all_pred_centers.append(pred_center)
+                            all_true_centers.append(true_center)
+                    
+                    if all_pred_centers:
+                        pred_centers_tensor = torch.cat(all_pred_centers)
+                        true_centers_tensor = torch.cat(all_true_centers)
+                        val_hit_at_3 = hit_at_k(pred_centers_tensor, true_centers_tensor, k=3)
 
-                # Enhanced early stopping tracking
-                if avg_val_loss < best_val_loss:
-                    improvement = best_val_loss - avg_val_loss
-                    best_val_loss = avg_val_loss
-                    best_epoch = epoch
-                    patience_counter = 0
-
-                    logger.info(
-                        f"  ✓ New best validation loss: {best_val_loss:.4f} "
-                        f"(improved by {improvement:.4f})"
-                    )
-
-                    # Save best model checkpoint if enabled
-                    if self.save_checkpoints:
-                        from pathlib import Path
-
-                        checkpoint_dir = Path("artifacts/models/supervised/checkpoints")
-                        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-                        checkpoint_path = checkpoint_dir / "jade_best_checkpoint.pt"
-
-                        torch.save(
-                            {
-                                "epoch": epoch,
-                                "model_state_dict": self.model.state_dict(),
-                                "optimizer_state_dict": optimizer.state_dict(),
-                                "scheduler_state_dict": scheduler.state_dict(),
-                                "best_val_loss": best_val_loss,
-                                "train_loss": avg_train_loss,
-                                "val_accuracy": val_accuracy,
-                                "model_id": self.MODEL_ID,
-                                "codename": self.CODENAME,
-                            },
-                            checkpoint_path,
-                        )
-                        logger.info(f"  Saved checkpoint to {checkpoint_path}")
+                # Jade: Step ReduceLROnPlateau scheduler with hit_at_3 metric (pointer-favoring)
+                if has_pointers:
+                    scheduler.step(val_hit_at_3)  # Maximize hit_at_3
+                    metric_value = val_hit_at_3
+                    metric_name = "hit_at_3"
                 else:
-                    patience_counter += 1
-                    logger.info(
-                        f"  No improvement for {patience_counter}/"
-                        f"{self.early_stopping_patience} epochs"
-                    )
+                    scheduler.step(avg_val_loss)  # Minimize loss for single-task
+                    metric_value = avg_val_loss
+                    metric_name = "val_loss"
 
-                # Check early stopping
-                if early_stopping(avg_val_loss, self.model):
-                    logger.info(
-                        f"\nJade: Early stopping triggered at epoch {epoch + 1}\n"
-                        f"  Best validation loss: {best_val_loss:.4f} (epoch {best_epoch + 1})\n"
-                        f"  Final learning rate: {optimizer.param_groups[0]['lr']:.2e}"
-                    )
+                # Enhanced early stopping tracking with hit_at_3 (pointer-favoring)
+                if has_pointers:
+                    if val_hit_at_3 > best_val_hit:
+                        improvement = val_hit_at_3 - best_val_hit
+                        best_val_hit = val_hit_at_3
+                        best_epoch = epoch
+                        patience_counter = 0
+
+                        logger.info(
+                            f"  ✓ New best hit_at_3: {best_val_hit:.4f} "
+                            f"(improved by {improvement:.4f})"
+                        )
+                        
+                        # Save best model checkpoint if enabled
+                        if self.save_checkpoints:
+                            from pathlib import Path
+
+                            checkpoint_dir = Path("artifacts/models/supervised/checkpoints")
+                            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+                            checkpoint_path = checkpoint_dir / "jade_best_checkpoint.pt"
+
+                            torch.save(
+                                {
+                                    "epoch": epoch,
+                                    "model_state_dict": self.model.state_dict(),
+                                    "optimizer_state_dict": optimizer.state_dict(),
+                                    "scheduler_state_dict": scheduler.state_dict(),
+                                    "best_val_hit": best_val_hit,
+                                    "train_loss": avg_train_loss,
+                                    "val_accuracy": val_accuracy,
+                                    "model_id": self.MODEL_ID,
+                                    "codename": self.CODENAME,
+                                },
+                                checkpoint_path,
+                            )
+                            logger.info(f"  Saved checkpoint to {checkpoint_path}")
+                    else:
+                        patience_counter += 1
+                        logger.info(
+                            f"  No improvement for {patience_counter}/"
+                            f"{self.early_stopping_patience} epochs"
+                        )
+                else:
+                    if avg_val_loss < best_val_loss:
+                        improvement = best_val_loss - avg_val_loss
+                        best_val_loss = avg_val_loss
+                        best_epoch = epoch
+                        patience_counter = 0
+
+                        logger.info(
+                            f"  ✓ New best validation loss: {best_val_loss:.4f} "
+                            f"(improved by {improvement:.4f})"
+                        )
+                        
+                        # Save best model checkpoint if enabled
+                        if self.save_checkpoints:
+                            from pathlib import Path
+
+                            checkpoint_dir = Path("artifacts/models/supervised/checkpoints")
+                            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+                            checkpoint_path = checkpoint_dir / "jade_best_checkpoint.pt"
+
+                            torch.save(
+                                {
+                                    "epoch": epoch,
+                                    "model_state_dict": self.model.state_dict(),
+                                    "optimizer_state_dict": optimizer.state_dict(),
+                                    "scheduler_state_dict": scheduler.state_dict(),
+                                    "best_val_loss": best_val_loss,
+                                    "train_loss": avg_train_loss,
+                                    "val_accuracy": val_accuracy,
+                                    "model_id": self.MODEL_ID,
+                                    "codename": self.CODENAME,
+                                },
+                                checkpoint_path,
+                            )
+                            logger.info(f"  Saved checkpoint to {checkpoint_path}")
+                    else:
+                        patience_counter += 1
+                        logger.info(
+                            f"  No improvement for {patience_counter}/"
+                            f"{self.early_stopping_patience} epochs"
+                        )
+
+                # Check early stopping with appropriate metric
+                early_stop_metric = val_hit_at_3 if has_pointers else avg_val_loss
+                if early_stopping(early_stop_metric, self.model):
+                    if has_pointers:
+                        logger.info(
+                            f"\nJade: Early stopping triggered at epoch {epoch + 1}\n"
+                            f"  Best hit_at_3: {best_val_hit:.4f} (epoch {best_epoch + 1})\n"
+                            f"  Final learning rate: {optimizer.param_groups[0]['lr']:.2e}"
+                        )
+                    else:
+                        logger.info(
+                            f"\nJade: Early stopping triggered at epoch {epoch + 1}\n"
+                            f"  Best validation loss: {best_val_loss:.4f} (epoch {best_epoch + 1})\n"
+                            f"  Final learning rate: {optimizer.param_groups[0]['lr']:.2e}"
+                        )
                     break
 
                 if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
@@ -877,11 +980,19 @@ class JadeModel(BaseModel):
                         if self.device.type == "cuda"
                         else ""
                     )
-                    logger.info(
-                        f"Epoch [{epoch+1}/{self.n_epochs}] [Jade] "
-                        f"Train Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f} | "
-                        f"Val Loss: {avg_val_loss:.4f} Acc: {val_accuracy:.4f}{gpu_mem}"
-                    )
+                    if has_pointers:
+                        logger.info(
+                            f"Epoch [{epoch+1}/{self.n_epochs}] [Jade] "
+                            f"Train Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f} | "
+                            f"Val Loss: {avg_val_loss:.4f} Acc: {val_accuracy:.4f} | "
+                            f"Hit@3: {val_hit_at_3:.4f}{gpu_mem}"
+                        )
+                    else:
+                        logger.info(
+                            f"Epoch [{epoch+1}/{self.n_epochs}] [Jade] "
+                            f"Train Loss: {avg_train_loss:.4f} Acc: {train_accuracy:.4f} | "
+                            f"Val Loss: {avg_val_loss:.4f} Acc: {val_accuracy:.4f}{gpu_mem}"
+                        )
             else:
                 if (epoch + 1) % max(1, self.n_epochs // 10) == 0:
                     gpu_mem = (
@@ -1078,8 +1189,77 @@ class JadeModel(BaseModel):
                 "Model must be built first. Call fit() or _build_model() before loading encoder."
             )
 
-        # TODO: Implement pretrained encoder loading for Jade
-        logger.warning(f"Jade: Pretrained encoder loading not yet implemented for {encoder_path}")
-        logger.info("Jade: Using randomly initialized weights")
-
+        try:
+            # Load pretrained encoder checkpoint
+            checkpoint = torch.load(encoder_path, map_location=self.device)
+            
+            # Extract encoder LSTM state dict
+            if isinstance(checkpoint, dict) and "encoder_lstm" in checkpoint:
+                encoder_state_dict = checkpoint["encoder_lstm"]
+                hyperparams = checkpoint.get("hyperparams", {})
+            else:
+                # Check if this is a full autoencoder checkpoint
+                # Look for encoder_lstm within the state dict
+                encoder_state_dict = {}
+                hyperparams = {}
+                for key, value in checkpoint.items():
+                    if key.startswith("encoder_lstm."):
+                        encoder_state_dict[key] = value
+                
+                if not encoder_state_dict:
+                    raise ValueError(
+                        f"Could not find encoder_lstm weights in {encoder_path}. "
+                        "Expected 'encoder_lstm' key or keys starting with 'encoder_lstm.'"
+                    )
+            
+            # Validate hyperparameters match
+            expected_hidden = self.hidden_size
+            expected_layers = self.num_layers
+            
+            actual_hidden = hyperparams.get("hidden_dim", 128)
+            actual_layers = hyperparams.get("num_layers", 2)
+            actual_input_dim = hyperparams.get("input_dim", 11)
+            
+            if actual_hidden != expected_hidden:
+                logger.warning(
+                    f"Hidden size mismatch: expected {expected_hidden}, got {actual_hidden}. "
+                    "Loading may fail or produce suboptimal results."
+                )
+            
+            if actual_layers != expected_layers:
+                logger.warning(
+                    f"Num layers mismatch: expected {expected_layers}, got {actual_layers}. "
+                    "Loading may fail or produce suboptimal results."
+                )
+            
+            if actual_input_dim != self.input_dim:
+                logger.warning(
+                    f"Input dim mismatch: expected {self.input_dim}, got {actual_input_dim}. "
+                    "This is expected if loading from 4D OHLC to 11D RelativeTransform."
+                )
+            
+            # Load encoder weights into Jade's LSTM
+            if hasattr(self.model, 'lstm') and self.model.lstm is not None:
+                self.model.lstm.load_state_dict(encoder_state_dict)
+                
+                # Freeze encoder if requested
+                if freeze_encoder:
+                    for param in self.model.lstm.parameters():
+                        param.requires_grad = False
+                    logger.info("Jade: Frozen encoder LSTM parameters")
+                else:
+                    logger.info("Jade: Encoder LSTM parameters remain trainable")
+                
+                logger.info(
+                    f"Jade: Successfully loaded pretrained encoder from {encoder_path} "
+                    f"(hidden={actual_hidden}, layers={actual_layers}, input_dim={actual_input_dim})"
+                )
+            else:
+                raise ValueError("Model LSTM not initialized")
+            
+        except Exception as e:
+            logger.error(f"Jade: Failed to load pretrained encoder: {e}")
+            logger.info("Jade: Using randomly initialized weights")
+            # Continue with random weights if loading fails
+        
         return self

@@ -12,9 +12,9 @@ def hit_at_k(pred_center: torch.Tensor, true_center: torch.Tensor, k: int = 3) -
     """Compute Hit@±k accuracy for center predictions.
 
     Args:
-        pred_center: Predicted center values [batch]
-        true_center: True center values [batch]
-        k: Tolerance window (default: 3)
+        pred_center: Predicted center values [batch] in range [0, 1]
+        true_center: True center values [batch] in range [0, 1]
+        k: Tolerance window in timesteps (default: 3)
 
     Returns:
         Hit@±k accuracy
@@ -22,12 +22,12 @@ def hit_at_k(pred_center: torch.Tensor, true_center: torch.Tensor, k: int = 3) -
     pred_center_np = pred_center.detach().cpu().numpy()
     true_center_np = true_center.detach().cpu().numpy()
 
-    # Convert normalized positions to indices
-    pred_idx = (pred_center_np * 104).astype(int)  # 0-104 for 105 timesteps
-    true_idx = (true_center_np * 104).astype(int)
+    # Convert tolerance from timesteps to normalized units
+    # seq_len = 104 for 105 timesteps (0-based indices)
+    tolerance = k / 104.0
 
-    # Check if prediction is within ±k of true position
-    hits = np.abs(pred_idx - true_idx) <= k
+    # Check if prediction is within ±k timesteps of true position
+    hits = np.abs(pred_center_np - true_center_np) <= tolerance
     return hits.mean()
 
 
@@ -65,10 +65,10 @@ def compute_pointer_metrics(
     # Weighted combined error
     combined_error = center_weight * center_error + length_weight * length_error
 
-    # Hit accuracies at different tolerances
-    hit_1 = (center_error <= 0.01).mean()  # ±1 timestep
-    hit_3 = (center_error <= 0.03).mean()  # ±3 timesteps
-    hit_5 = (center_error <= 0.05).mean()  # ±5 timesteps
+    # Hit accuracies at different tolerances (convert timesteps to normalized units)
+    hit_1 = (center_error <= (1/104)).mean()  # ±1 timestep
+    hit_3 = (center_error <= (3/104)).mean()  # ±3 timesteps
+    hit_5 = (center_error <= (5/104)).mean()  # ±5 timesteps
 
     return {
         "center_mae": center_error.mean(),

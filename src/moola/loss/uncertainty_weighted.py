@@ -45,8 +45,8 @@ class UncertaintyWeightedLoss(nn.Module):
 
     def __init__(
         self,
-        init_log_var_ptr: float = 0.0,
-        init_log_var_type: float = 0.0,
+        init_log_var_ptr: float = -0.60,  # Kendall bias: favor pointer (σ≈0.74)
+        init_log_var_type: float = 0.00,   # Neutral for classification (σ=1.0)
         min_sigma: float = 1e-6,
         max_sigma: float = 1e6,
     ):

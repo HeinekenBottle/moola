@@ -11,10 +11,10 @@ from pathlib import Path
 import torch
 
 try:
-    from .enhanced_simple_lstm import EnhancedSimpleLSTMModel as JadeModel
+    from .jade import JadeModel
 except ImportError:
     # Fallback for development
-    from .enhanced_simple_lstm import EnhancedSimpleLSTMModel as JadeModel
+    from .jade import JadeModel
 
 
 @dataclass
@@ -57,7 +57,7 @@ class ModelRegistry:
             default_params={
                 "hidden_size": 128,
                 "num_layers": 2,
-                "predict_pointers": False,
+                "predict_pointers": True,  # Jade is designed for multi-task learning
                 "use_uncertainty_weighting": True,  # Default for Jade
                 "max_grad_norm": 2.0,
                 "early_stopping_patience": 20,
@@ -77,7 +77,7 @@ class ModelRegistry:
             default_params={
                 "hidden_size": 128,
                 "num_layers": 2,
-                "predict_pointers": False,
+                "predict_pointers": True,  # Multi-task learning for better transfer
                 "use_uncertainty_weighting": True,
                 "max_grad_norm": 2.0,
                 "early_stopping_patience": 20,
@@ -99,7 +99,7 @@ class ModelRegistry:
             default_params={
                 "hidden_size": 128,
                 "num_layers": 2,
-                "predict_pointers": False,
+                "predict_pointers": True,  # Multi-task learning for adaptive fine-tuning
                 "use_uncertainty_weighting": True,
                 "max_grad_norm": 2.0,
                 "early_stopping_patience": 20,

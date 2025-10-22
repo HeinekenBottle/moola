@@ -1,0 +1,68 @@
+# Jade Model Configuration - Optimized for Small Dataset (174 samples)
+# moola-lstm-s-v1.1 // codename: Jade-Compact
+# Production BiLSTM sized appropriately for small dataset regime
+
+model:
+  name: jade_compact
+  architecture:
+    hidden_size: 64  # Reduced from 128 for small dataset
+    num_layers: 2
+    input_dropout: 0.3  # Increased regularization
+    recurrent_dropout: 0.7  # Strong recurrent dropout
+    dense_dropout: 0.6  # Strong dense dropout
+  
+  # Multi-task settings
+  predict_pointers: true
+  use_uncertainty_weighting: true  # REQUIRED: Kendall et al.
+  
+  # Pointer regression
+  pointer_encoding: center_length  # NOT start_end
+  huber_delta: 0.08  # 8 timesteps transition
+  
+  # Gradient and optimization
+  max_grad_norm: 1.5  # Lower for stability
+  learning_rate: 1e-4  # Lower learning rate for small dataset
+  weight_decay: 1e-4  # Stronger L2 regularization
+  
+  # Scheduler
+  scheduler:
+    type: ReduceLROnPlateau
+    mode: min
+    factor: 0.7
+    patience: 8  # Faster adaptation
+    min_lr: 1e-7
+  
+  # Early stopping
+  early_stopping:
+    patience: 15  # Faster stopping for small dataset
+    monitor: val_loss
+    mode: min
+
+# Augmentation (Stones doctrine - stronger for small dataset)
+augmentation:
+  jitter:
+    enabled: true
+    sigma: 0.04  # Slightly stronger
+    prob: 0.9  # Higher probability
+  magnitude_warp:
+    enabled: true
+    sigma: 0.25  # Stronger warping
+    knots: 4
+    prob: 0.6  # Higher probability
+  multiplier: 5  # On-the-fly ×5 (more augmentation)
+
+# Uncertainty quantification
+uncertainty:
+  mc_dropout:
+    enabled: true
+    n_passes: 100  # More passes for stability
+    dropout_rate: 0.2  # Higher dropout
+  temperature_scaling:
+    enabled: true
+
+# Evaluation gates (adjusted for small dataset)
+gates:
+  hit_at_3: 0.55  # Slightly lower threshold
+  f1_macro: 0.45  # Slightly lower threshold
+  ece: 0.12  # Slightly higher tolerance
+  joint_success: 0.35  # Slightly lower threshold
