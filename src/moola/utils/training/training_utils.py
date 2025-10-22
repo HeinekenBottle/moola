@@ -4,9 +4,11 @@ Provides reusable components for:
 - DataLoader creation with optimal configurations
 - Mixed precision training setup
 - Device-aware optimizations (CPU vs CUDA)
+- Float32 precision enforcement
+- Batch validation and conversion
 """
 
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -114,3 +116,91 @@ class TrainingSetup:
         )
 
         return X_train, X_val, y_train, y_val
+
+
+def enforce_float32_precision():
+    """Enforce float32 precision throughout the pipeline."""
+    torch.set_float32_matmul_precision('high')
+
+
+def convert_batch_to_float32(batch: Union[Dict[str, Any], List[Any], torch.Tensor]) -> Union[Dict[str, Any], List[Any], torch.Tensor]:
+    """Convert all tensors in batch to float32.
+    
+    Args:
+        batch: Batch data (dict, list, or tensor)
+        
+    Returns:
+        Batch with all tensors converted to float32
+    """
+    if isinstance(batch, dict):
+        return {k: v.float() if torch.is_tensor(v) else v for k, v in batch.items()}
+    elif isinstance(batch, (list, tuple)):
+        return [v.float() if torch.is_tensor(v) else v for v in batch]
+    elif torch.is_tensor(batch):
+        return batch.float()
+    else:
+        return batch
+
+
+def validate_batch_schema(batch: Dict[str, torch.Tensor]) -> None:
+    """Validate batch schema and check for NaNs.
+    
+    Args:
+        batch: Batch dictionary with tensors
+        
+    Raises:
+        AssertionError: If schema validation fails or NaNs found
+    """
+    # Check required keys
+    required_keys = {"X", "y_ptr", "y_cls"}
+    missing_keys = required_keys - set(batch.keys())
+    assert not missing_keys, f"Missing required keys in batch: {missing_keys}"
+    
+    # Check for NaNs
+    for key, tensor in batch.items():
+        if torch.is_tensor(tensor):
+            assert not torch.isnan(tensor).any(), f"NaN values found in tensor '{key}'"
+            assert tensor.dtype == torch.float32, f"Tensor '{key}' is not float32: {tensor.dtype}"
+
+
+def initialize_model_biases(model: torch.nn.Module) -> None:
+    """Initialize model biases for pointer-only warmup.
+    
+    Args:
+        model: PyTorch model to initialize
+    """
+    if hasattr(model, 'log_sigma_ptr'):
+        model.log_sigma_ptr.data.fill_(-0.30)
+        print("Initialized log_sigma_ptr to -0.30")
+    
+    if hasattr(model, 'log_sigma_cls'):
+        model.log_sigma_cls.data.fill_(0.00)
+        print("Initialized log_sigma_cls to 0.00")
+
+
+def setup_optimized_dataloader(dataset, batch_size: int = 64, shuffle: bool = True, 
+                             num_workers: int = 4, pin_memory: bool = True, 
+                             persistent_workers: bool = True, drop_last: bool = True) -> DataLoader:
+    """Setup optimized DataLoader with recommended settings.
+    
+    Args:
+        dataset: Dataset to load
+        batch_size: Batch size (default: 64 for pretrain, 29 for supervised)
+        shuffle: Whether to shuffle data
+        num_workers: Number of worker processes
+        pin_memory: Whether to pin memory
+        persistent_workers: Whether to keep workers alive
+        drop_last: Whether to drop last incomplete batch
+        
+    Returns:
+        Configured DataLoader
+    """
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        drop_last=drop_last
+    )

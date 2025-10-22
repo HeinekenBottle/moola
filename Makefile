@@ -38,6 +38,11 @@ BATCH_SIZE := 32
 SEED := 1337
 DEVICE := cpu
 
+# Clean pipeline parameters
+BATCH := 64
+MASK_RATIO := 0.4
+DROPOUT := 0.15
+
 # Help target
 help: ## Show this help message
 	@echo "MOOLA Makefile - Stones Guide 80/20 Production Workflow"
@@ -54,6 +59,12 @@ help: ## Show this help message
 	@echo "  make train-jade    - Train Jade (moola-lstm-m-v1.0)"
 	@echo "  make train-sapphire - Train Sapphire (moola-preenc-fr-s-v1.0)"
 	@echo "  make train-opal    - Train Opal (moola-preenc-ad-m-v1.0)"
+	@echo ""
+	@echo "CLEAN PIPELINE:"
+	@echo "  make pretrain-encoder - Clean MAE pretraining on OHLC (11 months)"
+	@echo "  make train-jade-clean - Clean Jade with invariants + pointer warmup"
+	@echo "  make train-sapphire-clean - Clean Sapphire with pretrained encoder"
+	@echo "  make train-opal-clean - Clean Opal with pretrained encoder"
 	@echo ""
 	@echo "TRAINING OPTIONS:"
 	@echo "  make train-cpu     - CPU training (for development)"
@@ -427,7 +438,79 @@ check-env: ## Check environment setup
 	@echo "✅ Environment check complete"
 
 # =============================================================================
-# PRETRAINING UTILITIES
+# CLEAN PRETRAINING UTILITIES
+# =============================================================================
+
+pretrain-encoder: ## Clean MAE pretraining on OHLC data (11 months)
+	@echo "🧠 Clean MAE pretraining on OHLC data (11 months)..."
+	@mkdir -p $(ARTIFACTS)/encoders/pretrained
+	$(PY) scripts/run_mae_pretrain.py \
+		--data-path data/raw/ohlc_windows.parquet \
+		--epochs $(EPOCHS) \
+		--batch-size $(BATCH) \
+		--mask-ratio $(MASK_RATIO) \
+		--dropout $(DROPOUT) \
+		--device $(DEVICE) \
+		--output-dir $(ARTIFACTS)/encoders/pretrained
+	@echo "✅ MAE pretrained encoder saved to $(ARTIFACTS)/encoders/pretrained/stones_encoder_mae.pt"
+
+# =============================================================================
+# SUPERVISED TRAINING UTILITIES
+# =============================================================================
+
+train-jade-clean: ## Clean Jade training with invariants and pointer warmup
+	@echo "💎 Clean Jade training with invariants and pointer warmup..."
+	@mkdir -p $(LOGS_DIR) $(ARTIFACTS)/models
+	$(PY) scripts/run_supervised_train.py \
+		--model jade \
+		--data-path $(TRAIN_DATA) \
+		--epochs $(EPOCHS) \
+		--batch-size 29 \
+		--device $(DEVICE) \
+		--warmup-epochs 2 \
+		--output-dir $(ARTIFACTS)/models
+	@echo "✅ Jade training complete"
+
+train-sapphire-clean: ## Clean Sapphire training with pretrained encoder
+	@echo "💎 Clean Sapphire training with pretrained encoder..."
+	@if [ ! -f "$(ARTIFACTS)/encoders/pretrained/stones_encoder_mae.pt" ]; then \
+		echo "❌ Pretrained encoder not found"; \
+		echo "💡 Run: make pretrain-encoder"; \
+		exit 1; \
+	fi
+	@mkdir -p $(LOGS_DIR) $(ARTIFACTS)/models
+	$(PY) scripts/run_supervised_train.py \
+		--model sapphire \
+		--data-path $(TRAIN_DATA) \
+		--epochs 40 \
+		--batch-size 29 \
+		--device $(DEVICE) \
+		--warmup-epochs 2 \
+		--pretrained-encoder $(ARTIFACTS)/encoders/pretrained/stones_encoder_mae.pt \
+		--output-dir $(ARTIFACTS)/models
+	@echo "✅ Sapphire training complete"
+
+train-opal-clean: ## Clean Opal training with pretrained encoder
+	@echo "💎 Clean Opal training with pretrained encoder..."
+	@if [ ! -f "$(ARTIFACTS)/encoders/pretrained/stones_encoder_mae.pt" ]; then \
+		echo "❌ Pretrained encoder not found"; \
+		echo "💡 Run: make pretrain-encoder"; \
+		exit 1; \
+	fi
+	@mkdir -p $(LOGS_DIR) $(ARTIFACTS)/models
+	$(PY) scripts/run_supervised_train.py \
+		--model opal \
+		--data-path $(TRAIN_DATA) \
+		--epochs 40 \
+		--batch-size 29 \
+		--device $(DEVICE) \
+		--warmup-epochs 2 \
+		--pretrained-encoder $(ARTIFACTS)/encoders/pretrained/stones_encoder_mae.pt \
+		--output-dir $(ARTIFACTS)/models
+	@echo "✅ Opal training complete"
+
+# =============================================================================
+# LEGACY PRETRAINING UTILITIES
 # =============================================================================
 
 pretrain-11d: ## Pretrain BiLSTM encoder on 11D data
