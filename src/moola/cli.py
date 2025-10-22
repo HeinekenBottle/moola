@@ -437,6 +437,10 @@ def train(
     import numpy as np
     import pandas as pd
 
+    from .data_infra.storage_11d import (
+        create_dual_input_processor,
+        prepare_model_inputs,
+    )
     from .data.splits import assert_no_random, assert_temporal, load_split
     from .models import get_model
     from .utils.seeds import print_gpu_info
@@ -1440,7 +1444,7 @@ def evaluate(
         recall_score,
     )
 
-    from .data.dual_input_pipeline import (
+    from .data_infra.storage_11d import (
         create_dual_input_processor,
         prepare_model_inputs,
     )
@@ -1508,15 +1512,12 @@ def evaluate(
         df, enable_engineered_features=use_engineered_features
     )
 
-    # Prepare model inputs based on model type
-    model_inputs = prepare_model_inputs(
-        processed_data, model_type=model, use_engineered_features=use_engineered_features
-    )
+    # Extract training variables from Stones loader
+    X = processed_data["X"]
+    y = processed_data["y"]
+    expansion_start = processed_data["expansion_start"]
+    expansion_end = processed_data["expansion_end"]
 
-    X = model_inputs["X"]
-    y = model_inputs["y"]
-    expansion_start = model_inputs.get("expansion_start")
-    expansion_end = model_inputs.get("expansion_end")
 
     log.info(f"Evaluation data shape for {model}: {X.shape}")
     if use_engineered_features and processed_data["X_engineered"] is not None:

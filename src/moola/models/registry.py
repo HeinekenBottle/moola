@@ -4,36 +4,55 @@ Provides centralized model management with codename system.
 Registry format: moola-{family}-{size}{variant}-v{semver} // codename: {Stone}
 """
 
-from .jade import JadeModel
+from .jade_core import JadeCore, JadeCompact
 
-ALLOWED = {"jade","sapphire","opal"}
+ALLOWED = {"jade", "sapphire", "opal"}
 
 def build(cfg):
+    """Build Stones model from Hydra config.
+
+    Args:
+        cfg: Hydra config with model, train, and data sections
+
+    Returns:
+        JadeCore or JadeCompact instance
+    """
     # Hard invariant checks
     assert cfg.model.name in ALLOWED, f"Model name must be one of {ALLOWED}, got {cfg.model.name}"
     assert cfg.model.pointer_head.encoding == "center_length", f"Pointer encoding must be 'center_length', got {cfg.model.pointer_head.encoding}"
     assert cfg.train.batch_size == 29, f"Batch size must be 29, got {cfg.train.batch_size}"
-    
-    # Build model with correct parameters for JadeModel
-    model = JadeModel(
+
+    # Determine model variant
+    use_compact = getattr(cfg.model, 'use_compact', False)
+    model_cls = JadeCompact if use_compact else JadeCore
+
+    # Build model with correct parameters
+    model = model_cls(
         input_size=11,  # Fixed for RelativeTransform
-        hidden_size=getattr(cfg.model, 'hidden_size', 96),
-        num_layers=getattr(cfg.model, 'num_layers', 1),
-        bidirectional=getattr(cfg.model, 'bidirectional', True),
-        proj_head=getattr(cfg.model, 'proj_head', True),
-        head_width=getattr(cfg.model, 'head_width', 64),
-        pointer_encoding=cfg.model.pointer_head.encoding
+        hidden_size=getattr(cfg.model, 'hidden_size', 96 if use_compact else 128),
+        num_layers=getattr(cfg.model, 'num_layers', 1 if use_compact else 2),
+        dropout=getattr(cfg.model, 'dropout', 0.7 if use_compact else 0.65),
+        input_dropout=getattr(cfg.model, 'input_dropout', 0.3 if use_compact else 0.25),
+        dense_dropout=getattr(cfg.model, 'dense_dropout', 0.6 if use_compact else 0.5),
+        num_classes=getattr(cfg.model, 'num_classes', 3),
+        predict_pointers=getattr(cfg.model, 'predict_pointers', False),
     )
-    
+
     # Print parameter count
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model: {cfg.model.name} | Total params: {total_params:,} | Trainable: {trainable_params:,}")
-    
-    # Expected ranges for Jade_Compact (adjusted for input_size=11)
+    param_stats = model.get_num_parameters()
+    print(f"Model: {cfg.model.name} ({model_cls.__name__}) | "
+          f"Total params: {param_stats['total']:,} | "
+          f"Trainable: {param_stats['trainable']:,}")
+
+    # Expected ranges for Jade variants (adjusted for input_size=11)
     if cfg.model.name == "jade":
-        assert 40000 <= total_params <= 120000, f"Jade_Compact should have 40-120K params, got {total_params:,}"
-    
+        if use_compact:
+            assert 40000 <= param_stats['total'] <= 80000, \
+                f"Jade-Compact should have 40-80K params, got {param_stats['total']:,}"
+        else:
+            assert 80000 <= param_stats['total'] <= 150000, \
+                f"Jade should have 80-150K params, got {param_stats['total']:,}"
+
     return model
 
 def enforce_float32_precision():
