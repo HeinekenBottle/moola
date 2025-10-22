@@ -16,7 +16,7 @@ import sys
 import os
 
 from .base import BaseModel
-from .jade_compact import JadeModel
+from .jade import JadeModel
 # Simplified registry - direct model building from config
 
 # PAPER-STRICT: Only Stones models allowed
