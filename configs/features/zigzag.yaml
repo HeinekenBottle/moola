@@ -1,0 +1,43 @@
+# Zigzag Features Configuration  
+# AGENTS.md Section 6: Feature development playbook
+
+zigzag:
+  window_size: 105          # Fixed sequence length (Window K)
+  zigzag_k: 5.0            # Zigzag reversal threshold in percent
+  min_segments: 3          # Minimum segments for valid zigzag
+  max_segments: 20         # Maximum segments to prevent overfitting
+  normalize_features: true  # Normalize features to [-1, 1]
+
+# Input/output specifications
+input:
+  required_columns: ["open", "high", "low", "close"]
+  min_rows: 105
+  
+output:
+  feature_names: [
+    "pivot_1_pos", "pivot_2_pos", "pivot_3_pos", "pivot_4_pos",
+    "amplitude_1_ratio", "amplitude_2_ratio", 
+    "n_pivots_norm", "pattern_symmetry"
+  ]
+  feature_ranges:
+    pivot_1_pos: "[0, 1]"
+    pivot_2_pos: "[0, 1]"
+    pivot_3_pos: "[0, 1]"
+    pivot_4_pos: "[0, 1]"
+    amplitude_1_ratio: "[0, 1]"
+    amplitude_2_ratio: "[0, 1]"
+    n_pivots_norm: "[0, 1]"
+    pattern_symmetry: "[-1, 1]"
+
+# Quality gates (AGENTS.md Section 18)
+gates:
+  invariance:
+    price_scaling: 1e-6     # Features unchanged within tolerance
+  bounds:
+    distance_features: "[-3, 3]"   # AGENTS.md: distances in ~[-3, 3]
+    positional_features: "[0, 1]"
+  causality:
+    no_future_leakage: true
+  pattern_validation:
+    min_pivots: 3
+    max_pivots: 20

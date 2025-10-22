@@ -1,0 +1,54 @@
+# Relativity Features Configuration
+# AGENTS.md Section 6: Feature development playbook
+
+relativity:
+  ohlc:
+    eps: 1.0e-6              # Small constant to prevent division by zero
+    ema_range_period: 20     # EMA period for range normalization
+  atr:
+    period: 10               # ATR calculation period
+  zigzag:
+    k: 1.2                   # ATR multiplier for swing confirmation
+    hybrid_confirm_lookback: 5        # confirm top/bottom seen in last 5 bars
+    hybrid_min_retrace_atr: 0.5      # minimum retrace for hybrid confirmation
+  window:
+    length: 105              # Fixed sequence length
+    overlap: 0.5             # Window overlap fraction
+
+# Input/output specifications
+input:
+  required_columns: ["open", "high", "low", "close"]
+  min_rows: 105
+  
+output:
+  feature_names: [
+    "open_norm", "close_norm", "body_pct", "upper_wick_pct", "lower_wick_pct", "range_z",
+    "dist_to_prev_SH", "dist_to_prev_SL", "bars_since_SH_norm", "bars_since_SL_norm"
+  ]
+  feature_ranges:
+    open_norm: "[0, 1]"
+    close_norm: "[0, 1]"
+    body_pct: "[-1, 1]"
+    upper_wick_pct: "[0, 1]"
+    lower_wick_pct: "[0, 1]"
+    range_z: "[0, 3]"
+    dist_to_prev_SH: "[-3, 3]"
+    dist_to_prev_SL: "[-3, 3]"
+    bars_since_SH_norm: "[0, 3]"
+    bars_since_SL_norm: "[0, 3]"
+  n_features: 10
+
+# Quality gates (AGENTS.md Section 18)
+gates:
+  invariance:
+    price_scaling: 1e-6      # Features unchanged within tolerance
+  bounds:
+    shape_features: "[0, 1]"
+    body_features: "[-1, 1]"
+    distance_features: "[-3, 3]"
+    range_features: "[0, 3]"
+  causality:
+    no_future_leakage: true
+  completeness:
+    warmup_bars: 15         # First 15 bars masked
+    finite_ratio: 0.999     # ≥99.9% finite values
