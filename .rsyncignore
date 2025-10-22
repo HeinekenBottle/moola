@@ -1,95 +1,35 @@
-# Version control
 .git/
-
-# Python bytecode and cache
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
+.artifacts/
+artifacts/
+data/raw/
+data/processed/
+logs/
+wandb/
 .env
 .venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDE and editor files
+.ipynb_checkpoints/
+.DS_Store
+*.tmp
+*.pth
+*.pt
+*.ckpt
+*.pyc
+*.pyo
+.pyd
+.coverage
+.pytest_cache
+.mypy_cache
+htmlcov/
+.tox/
+.nyc_output
+coverage.xml
+*.cover
+*.log
+.env.*
+.DS_Store?
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-.ipynb_checkpoints/
-
-# OS-specific files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Testing and coverage
-.coverage
-.pytest_cache/
-.tox/
-.nox/
-htmlcov/
-.coverage.*
-coverage.xml
-*.cover
-.hypothesis/
-
-# Documentation and notebooks
-docs/_build/
-*.ipynb
-
-# Logs and temporary files
-logs/
-*.log
-tmp/
-temp/
-*.tmp
-
-# ML/Artifacts directories
-artifacts/
-wandb/
-.mlflow/
-checkpoints/
-*.ckpt
-*.pth
-
-# Data directories
-data/raw/
-data/processed/
-data/external/
-data/*.csv
-data/*.parquet
-data/*.json
-data/*.pkl
-
-# Backup files
-*.bak
-*.backup
 *~

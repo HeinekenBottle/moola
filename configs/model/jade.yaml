@@ -1,42 +1,45 @@
-# Jade Model Configuration
+# Jade_Compact Model Configuration
 # moola-lstm-m-v1.0 // codename: Jade
 # Production BiLSTM with uncertainty-weighted multi-task learning
 
 model:
   name: jade
-  architecture:
-    hidden_size: 128
-    num_layers: 2
-    input_dropout: 0.25  # Stones: 0.2-0.3
-    recurrent_dropout: 0.65  # Stones: 0.6-0.7 (inter-layer)
-    dense_dropout: 0.5  # Stones: 0.4-0.5
-  
-  # Multi-task settings
-  predict_pointers: true
-  use_uncertainty_weighting: true  # REQUIRED: Kendall et al.
-  
-  # Pointer regression
-  pointer_encoding: center_length  # NOT start_end
-  huber_delta: 0.08  # 8 timesteps transition
-  
-  # Gradient and optimization
-  max_grad_norm: 2.0  # Stones: 1.5-2.0
-  learning_rate: 3e-4
-  weight_decay: 1e-5
-  
-  # Scheduler
-  scheduler:
-    type: ReduceLROnPlateau
-    mode: min
-    factor: 0.5
-    patience: 10
-    min_lr: 1e-6
-  
-  # Early stopping
-  early_stopping:
-    patience: 20
-    monitor: val_loss
-    mode: min
+  input_size: 11         # keep actual value you use
+  hidden_size: 64
+  num_layers: 1
+  bidirectional: true
+  proj_head: true
+  head_width: 64
+  pointer_head:
+    encoding: center_length
+
+train:
+  batch_size: 29
+  dropout_input: 0.25
+  dropout_recurrent: 0.65
+  dropout_dense: 0.5
+  mc_dropout_passes: 50
+
+loss:
+  kendall_uncertainty: true
+  init_log_sigma_ptr: -0.30
+  init_log_sigma_cls: 0.00
+
+early_stop:
+  metric: hit_at_pm3
+  patience: 20
+
+plateau:
+  metric: hit_at_pm3
+  factor: 0.5
+  patience: 10
+  min_lr: 1e-6
+
+# Early stopping
+early_stopping:
+  patience: 20
+  monitor: val_loss
+  mode: min
 
 # Augmentation (Stones doctrine)
 augmentation:

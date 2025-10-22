@@ -155,7 +155,7 @@ def compute_pointer_regression_loss(
     return loss
 
 
-class JadeModel(BaseModel):
+class JadeModel(nn.Module):
     """Jade Architecture - Production BiLSTM with Multi-task Learning.
 
     Implements Stones non-negotiables for robust multi-task learning.
@@ -165,43 +165,31 @@ class JadeModel(BaseModel):
     MODEL_ID = "moola-lstm-m-v1.0"
     CODENAME = "Jade"
 
-    def __init__(
-        self,
-        seed: int = 1337,
-        hidden_size: int = 128,
-        num_layers: int = 2,  # Jade: 2 layers (Stones requirement)
-        n_epochs: int = 60,
-        batch_size: int = 29,
-        learning_rate: float = 3e-4,
-        max_grad_norm: float = 2.0,  # Jade: 2.0 (Stones: 1.5-2.0)
-        device: str = "cpu",
-        use_amp: bool = True,
-        num_workers: int = 16,
-        early_stopping_patience: int = 20,  # Jade: 20 (Stones requirement)
-        val_split: float = 0.15,
-        mixup_alpha: float = 0.4,
-        cutmix_prob: float = 0.5,
-        use_temporal_aug: bool = True,
-        jitter_prob: float = 0.8,
-        jitter_sigma: float = 0.03,
-        magnitude_warp_prob: float = 0.5,
-        magnitude_warp_sigma: float = 0.2,
-        magnitude_warp_knots: int = 4,
-        scaling_prob: float = 0.0,
-        time_warp_prob: float = 0.0,
-        predict_pointers: bool = False,  # Multi-task: predict expansion center/length
-        use_latent_mixup: bool = True,
-        latent_mixup_alpha: float = 0.4,
-        latent_mixup_prob: float = 0.5,
-        # Jade: ReduceLROnPlateau configuration (Stones requirement)
-        scheduler_factor: float = 0.5,
-        scheduler_patience: int = 10,
-        scheduler_threshold: float = 0.001,
-        scheduler_cooldown: int = 0,
-        scheduler_min_lr: float = 1e-6,
-        save_checkpoints: bool = False,
-        **kwargs,
-    ):
+    def __init__(self, input_size, hidden_size=96, num_layers=1, bidirectional=True,
+                 proj_head=True, head_width=64, pointer_encoding="center_length"):
+        super().__init__()
+        
+        # Core encoder
+        self.encoder = nn.LSTM(input_size, hidden_size, num_layers=num_layers,
+                               bidirectional=bidirectional, batch_first=True, dropout=0.0)
+        enc_out = hidden_size * (2 if bidirectional else 1)
+        
+        # Projection head
+        rep = nn.Linear(enc_out, head_width) if proj_head else nn.Identity()
+        self.backbone = nn.Sequential(rep, nn.ReLU())
+        
+        # Task heads
+        backbone_out = head_width if proj_head else enc_out
+        self.cls_head = nn.Sequential(nn.Dropout(0.5), nn.Linear(backbone_out, 3))
+        self.ptr_head = nn.Sequential(nn.Dropout(0.5), nn.Linear(backbone_out, 2))
+        
+        # Kendall uncertainty parameters
+        self.log_sigma_ptr = nn.Parameter(torch.tensor(-0.30))
+        self.log_sigma_cls = nn.Parameter(torch.tensor(0.00))
+        
+        # Assert center_length encoding (PAPER-STRICT)
+        assert pointer_encoding == "center_length"
+        self.pointer_encoding = pointer_encoding
         """Initialize Jade model with Stones non-negotiables.
 
         Args:

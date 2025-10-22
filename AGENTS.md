@@ -1,0 +1,20 @@
+# AGENTS GUIDE
+- Python 3.10+ only; run `pip3 install -r requirements.txt` then `pre-commit install`.
+- Dev install: `pip3 install -e .` keeps CLI entrypoints packaged for notebooks/tests.
+- Build/format via `make format`; `make lint` runs black --check, isort --check-only, ruff.
+- Test all with `make test` or `python3 -m pytest tests/ -v --tb=short`.
+- Single test example: `python3 -m pytest tests/test_pipeline.py::test_simple_lstm_training -v`.
+- Favor Make/CLI commands; manual runs should go through `python3 -m moola.cli`.
+- RunPod sync lives in `scripts/sync_to_runpod.sh`; uses rsync + `~/.ssh/id_ed25519_runpod`.
+- After syncing, `pip install --no-cache-dir -r requirements-runpod.txt` installs GPU deps remotely.
+- Keep artifacts/data out of git; rsync script already excludes heavy folders.
+- Imports/formatting: isort black profile (stdlib→third-party→local), Black 100 cols, trailing commas.
+- Types: annotate new functions; prefer TypedDict/Protocol/dataclasses for structured payloads.
+- Naming: snake_case funcs/vars, PascalCase classes, UPPER_SNAKE constants/config keys.
+- Error handling: raise specific exceptions, never bare except, chain with `raise ... from e`.
+- Logging: route through `moola.logging_setup.configure_logging()`; prints only in CLI entrypoints.
+- Config: Hydra/YAML driven (`src/moola/config`, `defaults.yaml`); override configs instead of hardcoding.
+- Stones doctrine is mandatory—enhanced models must keep uncertainty-weighted loss toggles enabled.
+- Seed randomness via `moola.utils.seeds`; mirror src layout when adding tests.
+- Pre-commit runs GitOps/data/security guards—fix hook failures; no Cursor/Copilot rules, follow `CLAUDE.md`.
+- Watch for numpy<2/pandas/pyarrow wheel mismatches on RunPod; reinstall with `pip --no-cache-dir` if needed.

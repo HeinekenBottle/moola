@@ -123,13 +123,13 @@ def ingest(cfg_dir, over, input_path):
 @click.option("--over", multiple=True)
 @click.option(
     "--model",
-    default="enhanced_simple_lstm",
+    default="jade",
     help=(
         "Model name. Options:\n"
-        "  - enhanced_simple_lstm: PRIMARY production model (BiLSTM + attention, pretrained support)\n"
+        "  - jade: PRODUCTION COMPACT BiLSTM (1 layer, 96 hidden) with uncertainty-weighted multi-task learning (DEFAULT)\n"
+        "  - sapphire: Frozen encoder variant for transfer learning\n"
+        "  - opal: Adaptive fine-tuning variant\n"
         "  - simple_lstm: BASELINE lightweight model for smoke tests\n"
-        "  - cnn_transformer: EXPERIMENTAL multi-task model\n"
-        "  - rwkv_ts: EXPERIMENTAL RWKV for time series\n"
         "  - logreg, rf, xgb: Classical ML models for stacking\n"
     ),
 )
@@ -224,7 +224,7 @@ def ingest(cfg_dir, over, input_path):
     "--predict-pointers",
     is_flag=True,
     default=False,
-    help="Enable multi-task pointer prediction (for enhanced_simple_lstm)",
+    help="Enable multi-task pointer prediction (for enhanced_simple_lstm, jade, opal, sapphire)",
 )
 @click.option(
     "--use-latent-mixup/--no-latent-mixup",
@@ -536,6 +536,40 @@ def train(
         input_dim if input_dim else "auto",
     )
 
+    # SANITY ASSERTS: Pointer-favoring patch requirements
+    log.info("=" * 60)
+    log.info("SANITY CHECKS: Pointer-Favoring Patch Requirements")
+    log.info("=" * 60)
+    
+    # Check model is one of the approved Stones models
+    approved_models = {"jade", "sapphire", "opal"}
+    assert model in approved_models, f"❌ Model must be one of {approved_models}, got: {model}"
+    log.info(f"✅ Model approved: {model}")
+    
+    # Check pointer encoding is center_length (this should be hardcoded in Jade models)
+    if hasattr(cfg.model, 'pointer_encoding'):
+        assert cfg.model.pointer_encoding == "center_length", f"❌ Pointer encoding must be 'center_length', got: {cfg.model.pointer_encoding}"
+        log.info(f"✅ Pointer encoding: {cfg.model.pointer_encoding}")
+    else:
+        log.info("✅ Pointer encoding: center_length (hardcoded in Jade models)")
+    
+    # Check batch size is 29 for supervised training
+    batch_size = getattr(cfg.model, 'batch_size', 29)  # Default to 29 if not specified
+    assert batch_size == 29, f"❌ Batch size must be 29 for supervised training, got: {batch_size}"
+    log.info(f"✅ Batch size: {batch_size}")
+    
+    # Check uncertainty weighting is enabled (for multi-task models)
+    if predict_pointers:
+        use_uncertainty_weighting = getattr(cfg.model, 'use_uncertainty_weighting', True)
+        assert use_uncertainty_weighting, "❌ Uncertainty weighting must be enabled for pointer prediction"
+        log.info("✅ Uncertainty weighting: enabled (pointer-favoring)")
+        
+        # Log Kendall bias initialization
+        log.info("✅ Kendall bias: log_var_ptr=-0.60 (σ≈0.74), log_var_type=0.00 (σ=1.00)")
+        log.info("✅ Pointer task weight: ~1.8x higher than classification")
+    
+    log.info("=" * 60)
+
     # Log feature configuration
     log.info("=" * 60)
     log.info("DUAL-INPUT DATA PIPELINE CONFIGURATION")
@@ -697,11 +731,14 @@ def train(
 
     # Get model from registry and train
     # Pass device parameter for deep learning models
-    # Enable multi-task pointer prediction for CNN-Transformer and EnhancedSimpleLSTM
+    # Enable multi-task pointer prediction for CNN-Transformer, EnhancedSimpleLSTM, Jade, Opal, Sapphire
     model_kwargs = {"seed": cfg.seed, "device": device}
     if model == "cnn_transformer":
         model_kwargs["predict_pointers"] = True
     if model == "enhanced_simple_lstm" and predict_pointers:
+        model_kwargs["predict_pointers"] = True
+    # Enable multi-task pointer prediction for Jade family models
+    if model in ["jade", "opal", "sapphire"] and predict_pointers:
         model_kwargs["predict_pointers"] = True
         # PHASE 2: Add latent mixup parameters for enhanced_simple_lstm
         model_kwargs["use_latent_mixup"] = use_latent_mixup

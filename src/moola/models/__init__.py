@@ -16,16 +16,8 @@ import sys
 import os
 
 from .base import BaseModel
-from .jade import JadeModel
-from .registry import (
-    registry,
-    get_model as get_model_by_id,
-    get_jade,
-    get_sapphire,
-    get_opal,
-    list_available_models,
-    get_stones_collection,
-)
+from .jade_compact import JadeModel
+# Simplified registry - direct model building from config
 
 # PAPER-STRICT: Only Stones models allowed
 _MODEL_REGISTRY: dict[str, Type[BaseModel]] = {
@@ -40,7 +32,7 @@ def get_model(name: str, **kwargs) -> BaseModel:
 
     Args:
         name: Model name (jade, sapphire, opal ONLY)
-        **kwargs: Model-specific hyperparameters (seed, device, predict_pointers, etc.)
+        **kwargs: Model-specific hyperparameters (input_size, hidden_size, etc.)
 
     Returns:
         Instantiated model implementing BaseModel interface
@@ -49,15 +41,8 @@ def get_model(name: str, **kwargs) -> BaseModel:
         ValueError: If model name not found in Stones registry
 
     Examples:
-        >>> model = get_model("jade", seed=1337, device="cuda", predict_pointers=True)
-        >>> model.fit(X_train, y_train, expansion_start=starts, expansion_end=ends)
-        >>> predictions = model.predict(X_test)
-
-        >>> # Sapphire with frozen encoder
-        >>> model = get_model("sapphire", device="cuda", predict_pointers=True)
-
-        >>> # Opal with adaptive fine-tuning  
-        >>> model = get_model("opal", device="cuda", predict_pointers=True)
+        >>> model = get_model("jade", input_size=11, hidden_size=96)
+        >>> # All models use Jade_Compact architecture with different configurations
     """
     # PAPER-STRICT: Only allow Stones models
     allowed_models = {"jade", "sapphire", "opal"}
@@ -72,17 +57,22 @@ def get_model(name: str, **kwargs) -> BaseModel:
         raise ValueError(f"Unknown model '{name}'. Available models: {available}")
 
     model_class = _MODEL_REGISTRY[name]
-
-    # PAPER-STRICT: Use registry configuration for Stones models
-    if name == "jade":
-        return get_jade(**kwargs)
-    elif name == "sapphire":
-        return get_sapphire(**kwargs)
-    elif name == "opal":
-        return get_opal(**kwargs)
-    else:
-        # Fallback (should not reach due to validation above)
-        return model_class(**kwargs)
+    
+    # Default parameters for Jade_Compact
+    default_kwargs = {
+        "input_size": kwargs.get("input_size", 11),
+        "hidden_size": 64,
+        "num_layers": 1,
+        "bidirectional": True,
+        "proj_head": True,
+        "head_width": 64,
+        "pointer_encoding": "center_length"
+    }
+    
+    # Override with user-provided kwargs
+    default_kwargs.update(kwargs)
+    
+    return model_class(**default_kwargs)
 
 
 def list_models() -> list[str]:
@@ -100,12 +90,6 @@ __all__ = [
     "get_model",
     "list_models",
     "_MODEL_REGISTRY",  # For testing and introspection
-    # Registry functions
-    "get_jade",
-    "get_sapphire", 
-    "get_opal",
-    "list_available_models",
-    "get_stones_collection",
 ]
 
 # Alias for backward compatibility and testing

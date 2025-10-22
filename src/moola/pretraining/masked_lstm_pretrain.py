@@ -31,7 +31,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from ..models.bilstm_masked_autoencoder import (
+from ..encoder.bilstm_masked_autoencoder import (
     BiLSTMMaskedAutoencoder,
     apply_masking,
 )
