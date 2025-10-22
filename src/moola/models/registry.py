@@ -4,7 +4,7 @@ Provides centralized model management with codename system.
 Registry format: moola-{family}-{size}{variant}-v{semver} // codename: {Stone}
 """
 
-from .jade_compact import JadeModel
+from .jade import JadeModel
 
 ALLOWED = {"jade","sapphire","opal"}
 

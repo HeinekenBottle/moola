@@ -124,13 +124,12 @@ def ingest(cfg_dir, over, input_path):
 @click.option(
     "--model",
     default="jade",
+    type=click.Choice(["jade", "sapphire", "opal"]),
     help=(
-        "Model name. Options:\n"
-        "  - jade: PRODUCTION COMPACT BiLSTM (1 layer, 96 hidden) with uncertainty-weighted multi-task learning (DEFAULT)\n"
+        "Model name (Stones-only). Options:\n"
+        "  - jade: PRODUCTION BiLSTM with uncertainty-weighted multi-task learning (DEFAULT)\n"
         "  - sapphire: Frozen encoder variant for transfer learning\n"
         "  - opal: Adaptive fine-tuning variant\n"
-        "  - simple_lstm: BASELINE lightweight model for smoke tests\n"
-        "  - logreg, rf, xgb: Classical ML models for stacking\n"
     ),
 )
 @click.option(
@@ -197,7 +196,7 @@ def ingest(cfg_dir, over, input_path):
     "--pretrained-encoder",
     type=click.Path(exists=True),
     default=None,
-    help="Path to pretrained encoder (for enhanced_simple_lstm)",
+    help="Path to pretrained encoder (for opal/sapphire transfer learning)",
 )
 @click.option(
     "--freeze-encoder/--no-freeze-encoder",
@@ -224,7 +223,7 @@ def ingest(cfg_dir, over, input_path):
     "--predict-pointers",
     is_flag=True,
     default=False,
-    help="Enable multi-task pointer prediction (for enhanced_simple_lstm, jade, opal, sapphire)",
+    help="Enable multi-task pointer prediction (for jade, opal, sapphire)",
 )
 @click.option(
     "--use-latent-mixup/--no-latent-mixup",
@@ -438,10 +437,6 @@ def train(
     import numpy as np
     import pandas as pd
 
-    from .data.dual_input_pipeline import (
-        create_dual_input_processor,
-        prepare_model_inputs,
-    )
     from .data.splits import assert_no_random, assert_temporal, load_split
     from .models import get_model
     from .utils.seeds import print_gpu_info
@@ -733,32 +728,24 @@ def train(
     # Pass device parameter for deep learning models
     # Enable multi-task pointer prediction for CNN-Transformer, EnhancedSimpleLSTM, Jade, Opal, Sapphire
     model_kwargs = {"seed": cfg.seed, "device": device}
-    if model == "cnn_transformer":
-        model_kwargs["predict_pointers"] = True
-    if model == "enhanced_simple_lstm" and predict_pointers:
-        model_kwargs["predict_pointers"] = True
-    # Enable multi-task pointer prediction for Jade family models
+    # Enable multi-task pointer prediction for Stones models
     if model in ["jade", "opal", "sapphire"] and predict_pointers:
         model_kwargs["predict_pointers"] = True
-        # PHASE 2: Add latent mixup parameters for enhanced_simple_lstm
         model_kwargs["use_latent_mixup"] = use_latent_mixup
         model_kwargs["latent_mixup_alpha"] = latent_mixup_alpha
         model_kwargs["latent_mixup_prob"] = latent_mixup_prob
-        # PHASE 1: Add uncertainty weighting parameter (CRITICAL for production)
         model_kwargs["use_uncertainty_weighting"] = use_uncertainty_weighting
 
-    # PHASE 4: Add learning rate scheduler parameters for enhanced_simple_lstm
-    if model == "enhanced_simple_lstm":
+    # Add learning rate scheduler parameters for Stones models
+    if model in ["jade", "opal", "sapphire"]:
         model_kwargs["use_lr_scheduler"] = use_lr_scheduler
         model_kwargs["scheduler_factor"] = scheduler_factor
         model_kwargs["scheduler_patience"] = scheduler_patience
         model_kwargs["scheduler_min_lr"] = scheduler_min_lr
         model_kwargs["save_checkpoints"] = save_checkpoints
-        # PHASE 1: Always pass uncertainty weighting parameter (CRITICAL for production)
-        model_kwargs["use_uncertainty_weighting"] = use_uncertainty_weighting
 
-    # PHASE 2: Add temporal augmentation parameters (jitter + warp)
-    if model in ["simple_lstm", "enhanced_simple_lstm"] and (augment_jitter or augment_warp):
+    # Add temporal augmentation parameters (jitter + warp) for Stones models
+    if model in ["jade", "opal", "sapphire"] and (augment_jitter or augment_warp):
         model_kwargs["use_temporal_aug"] = True
         model_kwargs["jitter_sigma"] = jitter_sigma if augment_jitter else 0.0
         model_kwargs["jitter_prob"] = 0.8 if augment_jitter else 0.0
@@ -772,12 +759,8 @@ def train(
 
     # Add engineered features to model kwargs if available
     if use_engineered_features and processed_data["X_engineered"] is not None:
-        if model in ["lstm", "simple_lstm", "cnn_transformer"]:
-            # Deep learning models can potentially use engineered features as additional context
-            log.info(
-                f"Deep learning model {model} has engineered features available for potential use"
-            )
-            # Note: Model architecture would need to be updated to actually use these features
+        # Stones models use 11D RelativeTransform features by default
+        log.info(f"Stones model {model} uses 11D RelativeTransform features")
 
     model_instance = get_model(model, **model_kwargs)
 
@@ -854,7 +837,7 @@ def train(
         "expansion_end": exp_end_train,
     }
 
-    if pretrained_encoder and model in ["enhanced_simple_lstm", "relative_transform_lstm"]:
+    if pretrained_encoder and model in ["opal", "sapphire"]:
         fit_kwargs["pretrained_encoder_path"] = Path(pretrained_encoder)
         fit_kwargs["freeze_encoder"] = freeze_encoder
 
@@ -1013,7 +996,7 @@ def train(
             log.error(f"Failed to compute pointer metrics: {e}")
 
     # PHASE 3: MC Dropout uncertainty estimation
-    if mc_dropout and model == "enhanced_simple_lstm" and predict_pointers:
+    if mc_dropout and model in ["jade", "opal", "sapphire"] and predict_pointers:
         log.info("=" * 60)
         log.info("MC DROPOUT UNCERTAINTY ESTIMATION")
         log.info("=" * 60)
@@ -1061,7 +1044,7 @@ def train(
         log.info("=" * 60)
 
     # PHASE 3: Temperature scaling for probability calibration
-    if temperature_scaling and model == "enhanced_simple_lstm" and predict_pointers:
+    if temperature_scaling and model in ["jade", "opal", "sapphire"] and predict_pointers:
         log.info("=" * 60)
         log.info("TEMPERATURE SCALING CALIBRATION")
         log.info("=" * 60)
