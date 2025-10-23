@@ -37,6 +37,9 @@ pyarrow==16.1.0
 # Schema validation
 pandera==0.26.1
 
+# Technical analysis library for ATR/EMA calculations
+TA-Lib==0.4.28
+
 #############################################
 # Configuration Management
 #############################################
@@ -79,7 +82,7 @@ opencv-python-headless==4.10.0.84
 psutil==6.1.0
 
 # Process management
-threading-utils==1.0.0
+# threading-utils==1.0.0  # Removed - not available on PyPI
 
 #############################################
 # Utilities

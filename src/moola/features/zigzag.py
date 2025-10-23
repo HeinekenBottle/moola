@@ -66,10 +66,10 @@ class CausalZigZag:
         
         # Calculate rolling ATR
         if len(self.tr_history) >= self.atr_period:
-            atr = np.mean(self.tr_history)
+            atr = float(np.mean(self.tr_history))
         else:
             # Use expanding mean during warmup
-            atr = np.mean(self.tr_history) if self.tr_history else 0.0
+            atr = float(np.mean(self.tr_history)) if self.tr_history else 0.0
         
         return atr
     
@@ -121,12 +121,12 @@ class CausalZigZag:
         required_retrace = self.hybrid_min_atr * atr
         return retrace >= required_retrace
     
-    def update(self, open_price: float, high: float, low: float, close: float) -> Tuple[Optional[Tuple[int, float]], Optional[Tuple[int, float]]]:
+    def update(self, open_price: float, high: float, low: float, close: float) -> Tuple[Optional[Tuple[int, Optional[float]]], Optional[Tuple[int, Optional[float]]]]:
         """Update zigzag with new closed candle data.
-        
+
         Args:
             open_price, high, low, close: OHLC data for completed bar
-            
+
         Returns:
             Tuple of (prev_SH, prev_SL) where each is (index, price) or None
         """
@@ -159,10 +159,10 @@ class CausalZigZag:
         self._extend_current_leg(high, low, close, idx)
         
         # Track extreme candidate for hybrid confirmation
-        if self.current_trend == 'up' and high > (self.extreme_candidate_price or 0):
+        if self.current_trend == 'up' and (self.extreme_candidate_price is None or high > self.extreme_candidate_price):
             self.extreme_candidate_price = high
             self.extreme_candidate_idx = idx
-        elif self.current_trend == 'down' and (low < (self.extreme_candidate_price or float('inf'))):
+        elif self.current_trend == 'down' and (self.extreme_candidate_price is None or low < self.extreme_candidate_price):
             self.extreme_candidate_price = low
             self.extreme_candidate_idx = idx
         
@@ -260,6 +260,210 @@ def swing_relative(close: float, prev_SH_price: Optional[float], prev_SL_price: 
     bars_since_SL_norm = np.clip(bars_since_SL_norm, 0, 3)
     
     return dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm
+
+
+def build_zigzag_features(data: pd.DataFrame, config: Dict) -> Tuple[np.ndarray, np.ndarray, Dict]:
+    """Build standalone zigzag pattern features.
+
+    Implements AGENTS.md Section 6 zigzag features:
+    - Pivot positions normalized to [0,1] within window
+    - Amplitude ratios for pattern strength
+    - Pattern metrics for complexity/symmetry
+
+    Args:
+        data: OHLC DataFrame
+        config: Zigzag configuration dictionary
+
+    Returns:
+        X: Feature tensor [N, K, D] with float32 dtype, D=8
+        mask: Boolean mask [N, K] (False for invalid patterns)
+        meta: Metadata dictionary
+    """
+    # Extract config with defaults
+    window_size = config.get('window_size', 105)
+    zigzag_k = config.get('zigzag_k', 5.0)
+    min_segments = config.get('min_segments', 3)
+    max_segments = config.get('max_segments', 20)
+    normalize_features = config.get('normalize_features', True)
+
+    # Validate input
+    required_cols = ['open', 'high', 'low', 'close']
+    missing = [col for col in required_cols if col not in data.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    n_bars = len(data)
+    if n_bars < window_size:
+        raise ValueError(f"Data length {n_bars} less than window size {window_size}")
+
+    # Initialize outputs
+    n_windows = n_bars - window_size + 1
+    n_features = 8  # 4 pivot positions + 2 amplitudes + 2 pattern metrics
+    X = np.zeros((n_windows, window_size, n_features), dtype=np.float32)
+    mask = np.ones((n_windows, window_size), dtype=bool)
+
+    # Process each window
+    for w_idx in range(n_windows):
+        window_data = data.iloc[w_idx:w_idx + window_size]
+        prices = window_data['close'].values
+
+        # Detect zigzag pivots in this window
+        pivots = detect_zigzag_pivots(prices, zigzag_k, min_segments, max_segments)
+
+        if len(pivots) < min_segments:
+            # Invalid pattern, mask entire window
+            mask[w_idx, :] = False
+            continue
+
+        # Extract up to 4 pivots (most recent)
+        pivot_positions = []
+        pivot_prices = []
+        for pivot_idx, pivot_price in pivots[-4:]:  # Last 4 pivots
+            pos_norm = pivot_idx / (window_size - 1)  # Normalize to [0,1]
+            pivot_positions.append(pos_norm)
+            pivot_prices.append(pivot_price)
+
+        # Pad with zeros if fewer than 4 pivots
+        while len(pivot_positions) < 4:
+            pivot_positions.append(0.0)
+            pivot_prices.append(0.0)
+
+        # Calculate amplitude ratios (relative to price range)
+        price_range = np.max(prices) - np.min(prices)
+        if price_range > 0:
+            amplitudes = []
+            for i in range(len(pivot_prices) - 1):
+                if pivot_prices[i] > 0 and pivot_prices[i+1] > 0:
+                    amp = abs(pivot_prices[i+1] - pivot_prices[i]) / price_range
+                    amplitudes.append(amp)
+                else:
+                    amplitudes.append(0.0)
+
+            amplitude_1_ratio = amplitudes[0] if len(amplitudes) > 0 else 0.0
+            amplitude_2_ratio = amplitudes[1] if len(amplitudes) > 1 else 0.0
+        else:
+            amplitude_1_ratio = 0.0
+            amplitude_2_ratio = 0.0
+
+        # Pattern metrics
+        n_pivots_norm = len(pivots) / max_segments  # Normalize to [0,1]
+        n_pivots_norm = np.clip(n_pivots_norm, 0, 1)
+
+        # Simple symmetry measure (alternating high/low)
+        if len(pivots) >= 3:
+            directions = []
+            for i in range(1, len(pivots)):
+                if pivots[i][1] > pivots[i-1][1]:
+                    directions.append(1)  # up
+                else:
+                    directions.append(-1)  # down
+
+            # Check if directions alternate
+            alternating = True
+            for i in range(1, len(directions)):
+                if directions[i] == directions[i-1]:
+                    alternating = False
+                    break
+
+            pattern_symmetry = 1.0 if alternating else -1.0
+        else:
+            pattern_symmetry = 0.0
+
+        # Fill feature tensor for entire window (features are window-level)
+        for t in range(window_size):
+            X[w_idx, t, :] = [
+                pivot_positions[0], pivot_positions[1], pivot_positions[2], pivot_positions[3],
+                amplitude_1_ratio, amplitude_2_ratio,
+                n_pivots_norm, pattern_symmetry
+            ]
+
+    # Metadata
+    meta = {
+        'n_features': n_features,
+        'feature_names': [
+            'pivot_1_pos', 'pivot_2_pos', 'pivot_3_pos', 'pivot_4_pos',
+            'amplitude_1_ratio', 'amplitude_2_ratio',
+            'n_pivots_norm', 'pattern_symmetry'
+        ],
+        'feature_ranges': {
+            'pivot_1_pos': '[0, 1]',
+            'pivot_2_pos': '[0, 1]',
+            'pivot_3_pos': '[0, 1]',
+            'pivot_4_pos': '[0, 1]',
+            'amplitude_1_ratio': '[0, 1]',
+            'amplitude_2_ratio': '[0, 1]',
+            'n_pivots_norm': '[0, 1]',
+            'pattern_symmetry': '[-1, 1]'
+        },
+        'properties': [
+            'Scale-invariant zigzag patterns',
+            'Causal pivot detection',
+            'Bounded feature ranges',
+            'Pattern complexity metrics'
+        ],
+        'window_size': window_size,
+        'config': config
+    }
+
+    return X, mask, meta
+
+
+def detect_zigzag_pivots(prices: np.ndarray, k: float, min_segments: int, max_segments: int) -> List[Tuple[int, float]]:
+    """Detect zigzag pivot points in price series.
+
+    Args:
+        prices: Price array
+        k: Reversal threshold as percentage
+        min_segments/max_segments: Pivot count limits
+
+    Returns:
+        List of (index, price) pivot tuples
+    """
+    if len(prices) < 3:
+        return []
+
+    pivots = []
+    trend = 0  # 0: undetermined, 1: up, -1: down
+    last_pivot_idx = 0
+    last_pivot_price = prices[0]
+
+    for i in range(1, len(prices)):
+        if trend == 0:
+            # Looking for initial trend
+            change_pct = abs(prices[i] - last_pivot_price) / last_pivot_price * 100
+            if change_pct >= k:
+                if prices[i] > last_pivot_price:
+                    trend = 1  # Uptrend
+                else:
+                    trend = -1  # Downtrend
+                pivots.append((last_pivot_idx, last_pivot_price))
+                last_pivot_idx = i
+                last_pivot_price = prices[i]
+                pivots.append((i, prices[i]))
+        else:
+            # Check for reversal
+            if trend == 1 and prices[i] < last_pivot_price:
+                # Potential reversal to down
+                change_pct = (last_pivot_price - prices[i]) / last_pivot_price * 100
+                if change_pct >= k:
+                    trend = -1
+                    last_pivot_idx = i
+                    last_pivot_price = prices[i]
+                    pivots.append((i, prices[i]))
+            elif trend == -1 and prices[i] > last_pivot_price:
+                # Potential reversal to up
+                change_pct = (prices[i] - last_pivot_price) / last_pivot_price * 100
+                if change_pct >= k:
+                    trend = 1
+                    last_pivot_idx = i
+                    last_pivot_price = prices[i]
+                    pivots.append((i, prices[i]))
+
+    # Filter to valid segment count
+    if len(pivots) < min_segments or len(pivots) > max_segments:
+        return []
+
+    return pivots
 
 
 # AGENTS.md CLI integration

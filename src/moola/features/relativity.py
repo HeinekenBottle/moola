@@ -84,11 +84,13 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
         mask: Boolean mask [N, K] (False for warmup period)
         meta: Metadata dictionary
     """
-    # Validate required columns (OHLC only)
+    # Validate required columns (OHLC, volume optional)
     required_cols = ['open', 'high', 'low', 'close']
+    optional_cols = ['volume']
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
+    has_volume = 'volume' in df.columns
     
     n_bars = len(df)
     window_length = cfg.window_length
@@ -96,9 +98,10 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
     if n_bars < window_length:
         raise ValueError(f"Data length {n_bars} less than window length {window_length}")
     
-    # Initialize outputs
+    # Initialize outputs (10 base + 3 new features)
+    n_features = 13 if has_volume else 12
     n_windows = n_bars - window_length + 1
-    X = np.zeros((n_windows, window_length, 10), dtype=np.float32)
+    X = np.zeros((n_windows, window_length, n_features), dtype=np.float32)
     mask = np.ones((n_windows, window_length), dtype=bool)
     
     # Initialize zigzag detector
@@ -109,8 +112,9 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
         hybrid_min_atr=cfg.zigzag_hybrid_min_retrace_atr
     )
     
-    # Initialize EMA for range
+    # Initialize EMA for range and volume
     ema_range = None
+    ema_volume = None
     alpha = 2.0 / (cfg.ohlc_ema_range_period + 1)
     
     # Sequential pass over data
@@ -149,7 +153,7 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
             # Swing-relative features (4 dims)
             from .zigzag import swing_relative
             dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm = swing_relative(
-                c, 
+                c,
                 state['prev_SH'][1] if state['prev_SH'] else None,
                 state['prev_SL'][1] if state['prev_SL'] else None,
                 atr,
@@ -157,13 +161,33 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
                 bars_since_SL,
                 K=window_length  # Normalize by window length
             )
-            
+
+            # New features: expansion_proxy, compression, vol_norm (if available)
+            leg_dir = 1 if state['prev_SH'] and state['prev_SL'] and state['prev_SH'][0] > state['prev_SL'][0] else -1
+            expansion_proxy = range_z * leg_dir * body_pct
+
+            compression = 1.0 / max(ema_range, 1e-6) * abs(dist_to_prev_SH) if dist_to_prev_SH != 0 else 0.0
+
+            vol_norm = 0.0
+            if has_volume:
+                v = row.get('volume', 0)
+                if ema_volume is None:
+                    ema_volume = v
+                else:
+                    ema_volume = alpha * v + (1 - alpha) * ema_volume
+                vol_norm = v / max(ema_volume, 1e-6) if ema_volume > 0 else 0.0
+
             # Store features in window
             timestep_idx = window_length - 1  # Current bar is last in window
-            X[window_idx, timestep_idx, :] = [
+            base_features = [
                 open_norm, close_norm, body_pct, upper_wick_pct, lower_wick_pct, range_z,
-                dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm
+                dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm,
+                expansion_proxy, compression
             ]
+            if has_volume:
+                base_features.append(vol_norm)
+
+            X[window_idx, timestep_idx, :] = base_features
             
             # Set mask for warmup period (first 15 bars)
             warmup_bars = 15
@@ -175,33 +199,44 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
     # This is already correct from our construction above
     
     # Prepare metadata
+    feature_names = [
+        'open_norm', 'close_norm', 'body_pct', 'upper_wick_pct', 'lower_wick_pct', 'range_z',
+        'dist_to_prev_SH', 'dist_to_prev_SL', 'bars_since_SH_norm', 'bars_since_SL_norm',
+        'expansion_proxy', 'compression'
+    ]
+    feature_ranges = {
+        'open_norm': '[0, 1]',
+        'close_norm': '[0, 1]',
+        'body_pct': '[-1, 1]',
+        'upper_wick_pct': '[0, 1]',
+        'lower_wick_pct': '[0, 1]',
+        'range_z': '[0, 3]',
+        'dist_to_prev_SH': '[-3, 3]',
+        'dist_to_prev_SL': '[-3, 3]',
+        'bars_since_SH_norm': '[0, 3]',
+        'bars_since_SL_norm': '[0, 3]',
+        'expansion_proxy': '[-3, 3]',
+        'compression': '[0, inf]'
+    }
+    if has_volume:
+        feature_names.append('vol_norm')
+        feature_ranges['vol_norm'] = '[0, inf]'
+
     meta = {
-        'n_features': 10,
-        'feature_names': [
-            'open_norm', 'close_norm', 'body_pct', 'upper_wick_pct', 'lower_wick_pct', 'range_z',
-            'dist_to_prev_SH', 'dist_to_prev_SL', 'bars_since_SH_norm', 'bars_since_SL_norm'
-        ],
-        'feature_ranges': {
-            'open_norm': '[0, 1]',
-            'close_norm': '[0, 1]',
-            'body_pct': '[-1, 1]',
-            'upper_wick_pct': '[0, 1]',
-            'lower_wick_pct': '[0, 1]',
-            'range_z': '[0, 3]',
-            'dist_to_prev_SH': '[-3, 3]',
-            'dist_to_prev_SL': '[-3, 3]',
-            'bars_since_SH_norm': '[0, 3]',
-            'bars_since_SL_norm': '[0, 3]'
-        },
+        'n_features': n_features,
+        'feature_names': feature_names,
+        'feature_ranges': feature_ranges,
         'properties': [
             'Price-relative (no absolute leakage)',
             'Volatility-adjusted (ATR-normalized)',
             'Scaling invariant',
             'Causal (no future information)',
-            'Zigzag swing detection'
+            'Zigzag swing detection',
+            'Expansion and compression metrics'
         ],
         'window_length': window_length,
         'warmup_bars': 15,
+        'has_volume': has_volume,
         'config': cfg.dict()
     }
     
@@ -211,13 +246,13 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
 # Convenience wrapper for the main build_features function
 def build_relativity_features(data: pd.DataFrame, config: Optional[Dict] = None) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """Build relativity features with output contract.
-    
+
     AGENTS.md Section 15: Every feature builder returns X, mask, meta.
-    
+
     Args:
-        data: OHLC DataFrame (no volume)
+        data: OHLC DataFrame (volume optional)
         config: Configuration dictionary
-        
+
     Returns:
         X: Feature tensor [N, K, D] with float32 dtype
         mask: Boolean mask [N, K] (all True for valid windows)

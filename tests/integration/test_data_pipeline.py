@@ -149,7 +149,7 @@ class TestDataPipelineIntegration:
         assert 0.0 <= lam <= 1.0
 
         # Test temporal augmentation
-        from moola.utils.temporal_augmentation import TemporalAugmentation
+        # from moola.utils.temporal_augmentation import TemporalAugmentation  # Purged
 
         temporal_aug = TemporalAugmentation(
             jitter_prob=0.5,

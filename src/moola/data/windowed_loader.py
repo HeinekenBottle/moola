@@ -22,6 +22,7 @@ class WindowedConfig(BaseModel):
     stride: int = Field(52, description="Window stride (~50% overlap)")
     warmup_bars: int = Field(20, description="Warmup bars to mask")
     mask_ratio: float = Field(0.15, description="Fraction of timesteps to mask")
+    padding_bars: int = Field(20, description="Number of bars to pad at start of each window")
     feature_config: Optional[Dict[str, Any]] = Field(None, description="Relativity feature config")
     splits: Optional[Dict[str, str]] = Field(None, description="Date-based splits (train_end, val_end, test_end)")
     gates: Optional[Dict[str, Any]] = Field(None, description="Quality gates")
@@ -93,34 +94,84 @@ class WindowedDataset(Dataset):
     
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get a windowed sample.
-        
+
         Returns:
             X: Features [K, D]
             mask: Reconstruction mask [K] (True for masked positions)
-            valid_mask: Valid mask [K] (False for warmup)
+            valid_mask: Valid mask [K] (False for warmup and padding)
         """
         window_start = self.window_indices[idx]
-        
+
         # Get features for this window
         X = self.X_full[window_start]  # [K, D]
         valid_mask = self.valid_mask_full[window_start]  # [K]
-        
+
+        # Apply padding if configured
+        if self.config.padding_bars > 0:
+            X, valid_mask = self._apply_padding(X, valid_mask, window_start)
+
         # Create reconstruction mask (15% random masking)
-        mask = torch.zeros(self.window_length, dtype=torch.bool)
-        
-        # Only mask valid positions (not warmup)
+        mask = torch.zeros(len(X), dtype=torch.bool)
+
+        # Only mask valid positions (not warmup or padding)
         valid_indices = torch.where(torch.from_numpy(valid_mask))[0]
         if len(valid_indices) > 0:
             n_mask = int(self.config.mask_ratio * len(valid_indices))
             if n_mask > 0:
                 mask_indices = valid_indices[torch.randperm(len(valid_indices))[:n_mask]]
                 mask[mask_indices] = True
-        
+
         return (
-            torch.from_numpy(X).float(),  # [K, D]
-            mask,                          # [K] 
-            torch.from_numpy(valid_mask)   # [K]
+            torch.from_numpy(X).float(),  # [K + padding, D]
+            mask,                          # [K + padding]
+            torch.from_numpy(valid_mask)   # [K + padding]
         )
+
+    def _apply_padding(self, X: np.ndarray, valid_mask: np.ndarray, window_start: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Apply padding to the window by prepending bars from global data.
+
+        Args:
+            X: Window features [K, D]
+            valid_mask: Window valid mask [K]
+            window_start: Starting index of window in full data
+
+        Returns:
+            Padded X and valid_mask
+        """
+        padding_bars = self.config.padding_bars
+
+        if window_start == 0:
+            # No padding available, repeat first bar
+            padding_X = np.tile(X[0:1], (padding_bars, 1))
+            padding_valid = np.zeros(padding_bars, dtype=bool)
+        else:
+            # Use previous bars for padding
+            padding_end = window_start
+            padding_start = max(0, window_start - padding_bars)
+
+            if padding_start < padding_end:
+                padding_X = self.X_full[padding_start:padding_end]
+                padding_valid = self.valid_mask_full[padding_start:padding_end]
+            else:
+                # Not enough bars, repeat first available
+                padding_X = np.tile(self.X_full[0:1], (padding_bars, 1))
+                padding_valid = np.zeros(padding_bars, dtype=bool)
+
+            # Ensure exactly padding_bars
+            if len(padding_X) < padding_bars:
+                repeat_X = np.tile(padding_X[0:1], (padding_bars - len(padding_X), 1))
+                repeat_valid = np.zeros(padding_bars - len(padding_X), dtype=bool)
+                padding_X = np.concatenate([repeat_X, padding_X], axis=0)
+                padding_valid = np.concatenate([repeat_valid, padding_valid], axis=0)
+            elif len(padding_X) > padding_bars:
+                padding_X = padding_X[-padding_bars:]
+                padding_valid = padding_valid[-padding_bars:]
+
+        # Concatenate padding + window
+        X_padded = np.concatenate([padding_X, X], axis=0)
+        valid_mask_padded = np.concatenate([padding_valid, valid_mask], axis=0)
+
+        return X_padded, valid_mask_padded
 
 
 def create_time_splits(df: pd.DataFrame, 

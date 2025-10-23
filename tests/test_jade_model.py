@@ -412,17 +412,18 @@ class TestJadeModelTraining:
         model.fit(X, y, expansion_start=start, expansion_end=end)
         assert model.is_fitted
 
-    def test_temporal_augmentation_configuration(self):
-        """Test temporal augmentation parameters match Stones specifications."""
-        model = JadeModel(
-            use_temporal_aug=True,
-            jitter_sigma=0.03,  # Stones specification
-            magnitude_warp_sigma=0.2,  # Stones specification
-        )
-        
-        assert model.jitter_sigma == 0.03
-        assert model.magnitude_warp_sigma == 0.2
-        assert model.temporal_aug is not None
+    # def test_temporal_augmentation_configuration(self):
+    #     """Test temporal augmentation parameters match Stones specifications."""
+    #     # NOTE: Temporal augmentation purged per STAGE4_PURGE_REPORT.md
+    #     # model = JadeModel(
+    #     #     use_temporal_aug=True,
+    #     #     jitter_sigma=0.03,  # Stones specification
+    #     #     magnitude_warp_sigma=0.2,  # Stones specification
+    #     # )
+    #     #
+    #     # assert model.jitter_sigma == 0.03
+    #     # assert model.magnitude_warp_sigma == 0.2
+    #     # assert model.temporal_aug is not None
 
 
 class TestJadeModelPrediction:

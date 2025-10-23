@@ -101,7 +101,7 @@ class PerformanceBenchmark:
     def benchmark_data_augmentation(self, X: np.ndarray, iterations: int = 50) -> Dict[str, Any]:
         """Benchmark data augmentation performance."""
         from moola.utils.augmentation import mixup_cutmix
-        from moola.utils.temporal_augmentation import TemporalAugmentation
+        # from moola.utils.temporal_augmentation import TemporalAugmentation  # Purged
 
         # Benchmark mixup/cutmix
         start_time = time.time()
