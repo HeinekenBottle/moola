@@ -1,0 +1,16 @@
+# Base Uncertainty Quantification Configuration  
+# AGENTS.md: Uncertainty quantification for robust predictions
+
+uncertainty:
+  mc_dropout:
+    enabled: true
+    n_passes: 50  # AGENTS.md: 50-100
+    dropout_rate: 0.15
+  temperature_scaling:
+    enabled: true
+    
+# Validation: ensure uncertainty estimates are calibrated
+validation:
+  ece_threshold: 0.10      # Expected Calibration Error < 10%
+  reliability_check: true
+  coverage_check: true

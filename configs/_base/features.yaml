@@ -1,0 +1,25 @@
+# Base Features Configuration
+# AGENTS.md Section 9: Configs compose; defaults live under configs/_base/
+
+defaults:
+  - relativity: relativity
+  - zigzag: zigzag
+
+# Global feature settings
+global:
+  window_size: 105          # Default window size (Window K)
+  dtype: "float32"          # AGENTS.md: All numeric arrays float32
+  seed: 42                  # For reproducible feature extraction
+  
+# Quality gates (AGENTS.md Section 18)
+quality_gates:
+  invariance_threshold: 1e-6
+  bounds_check: true
+  causality_check: true
+  
+# Output contracts (AGENTS.md Section 15)
+output_contracts:
+  require_X: true           # Feature tensor
+  require_mask: true        # Boolean mask
+  require_meta: true        # Metadata dictionary
+  save_effective_config: true  # Persist config alongside outputs

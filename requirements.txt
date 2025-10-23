@@ -10,11 +10,7 @@ pandas==2.2.2
 scipy==1.11.4
 scikit-learn==1.5.2
 
-# Gradient boosting
-xgboost==2.1.1
 
-# SMOTE for class imbalance
-imbalanced-learn==0.14.0
 
 #############################################
 # PyTorch Ecosystem (Paper-Strict)
@@ -70,34 +66,22 @@ rich==14.0.0
 matplotlib==3.9.0
 
 #############################################
-# Computer Vision (Paper-Strict)
-#############################################
-# OpenCV for data augmentation
-opencv-python-headless==4.10.0.84
-
-#############################################
 # GitOps & Deployment
 #############################################
 # System monitoring
 psutil==6.1.0
 
-# Process management
-# threading-utils==1.0.0  # Removed - not available on PyPI
-
 #############################################
 # Utilities
 #############################################
-# Job scheduling
-joblib==1.5.0
-
 # YAML support
 PyYAML==6.0.1
 
-#############################################
-# AI Integration (Optional)
-#############################################
-# OpenAI integration (optional, for future features)
-openai==2.3.0
+# Parallel processing
+joblib==1.4.2
+
+# Progress bars
+tqdm==4.66.1
 
 #############################################
 # Project Dependencies

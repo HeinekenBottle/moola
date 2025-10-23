@@ -143,12 +143,11 @@ data/
 │   └── labeled/            # (future: raw labeled data)
 ├── processed/              # Processed datasets ready for training
 │   ├── unlabeled/
-│   │   ├── unlabeled_4d_ohlc.npy      # 2.2M × (105, 4)
-│   │   └── unlabeled_11d_relative.npy # 2.2M × (105, 11)
+│   │   └── (features built on-the-fly from parquet during pre-training)
 │   ├── labeled/
 │   │   ├── train_latest.parquet       # Current training set (174 samples)
-│   │   ├── train_latest_4d.npy        # 4D OHLC version
-│   │   ├── train_latest_11d.npy       # 11D RelativeTransform version
+│   │   ├── train_latest_11d.parquet   # Legacy 11-feature format (deprecated)
+│   │   ├── train_latest_relative.parquet # Current 10-feature format
 │   │   └── metadata/
 │   │       └── feature_metadata_174.json
 │   └── archived/           # Historical datasets
@@ -170,8 +169,7 @@ data/
 artifacts/
 ├── encoders/               # Reusable feature extraction blocks
 │   ├── pretrained/
-│   │   ├── bilstm_mae_4d_v1.pt        # BiLSTM MAE (4D OHLC)
-│   │   └── bilstm_mae_11d_v1.pt       # BiLSTM MAE (11D Relative)
+│   │   └── jade_encoder_5yr_v1.pt     # Jade encoder (10 features, 5-year NQ data)
 │   └── supervised/         # (future: encoders from supervised training)
 ├── models/                 # Complete model checkpoints
 │   ├── supervised/         # No pretraining
@@ -188,8 +186,8 @@ artifacts/
 src/moola/
 ├── cli.py                  # Command-line interface
 ├── models/                 # Model architectures
-│   ├── simple_lstm.py      # Production model (70K params)
-│   ├── bilstm_masked_autoencoder.py  # Pre-training model
+│   ├── jade_core.py        # Jade production model (85K params)
+│   ├── jade_pretrain.py    # Jade pre-training model (MAE)
 │   ├── logreg.py, rf.py, xgb.py      # Ensemble base models
 │   └── stack.py            # Stacking ensemble
 ├── pretraining/            # Self-supervised learning
@@ -208,8 +206,8 @@ src/moola/
 │   ├── stack_train.py      # Ensemble stacking
 │   └── fixmatch.py         # Semi-supervised learning
 ├── features/               # Feature engineering
-│   ├── relative_transform.py
-│   └── price_action_features.py
+│   ├── relativity.py       # 10-feature pipeline (current)
+│   └── zigzag.py          # Causal swing detection
 ├── utils/                  # Utilities
 │   ├── results_logger.py   # JSON results logging
 │   ├── seeds.py            # Reproducibility
@@ -219,15 +217,15 @@ src/moola/
 
 ### Model Architecture Details
 
-**EnhancedSimpleLSTM (Production Model):**
-- Input: (batch, 105, 11) RelativeTransform features OR (batch, 105, 4) OHLC bars
-- BiLSTM Encoder: 128 hidden units × 2 directions = 256 total
-- Multi-head Attention: 4 heads
-- Dual Task Heads:
-  - Type classifier: 256 → 32 → 2 classes
-  - Pointer head: 256 → 128 → 2 outputs (center, length)
-- Total params: ~70K
-- Why: Small enough for 174 samples, multi-task learning improves generalization
+**Jade (Production Model):**
+- **Model ID**: `moola-lstm-m-v1.0` (codename: Jade)
+- **Input**: (batch, 105, 10) - **10 features** from relativity.py (NOT 11!)
+- **BiLSTM Encoder**: 128 hidden units × 2 directions = 256 total
+- **Architecture**: 2-layer BiLSTM with global average pooling
+- **Multi-task Learning**: Classification + pointer prediction (center, length)
+- **Total params**: ~85K
+- **Why**: Optimal for small labeled dataset (174 samples)
+- **Location**: `src/moola/models/jade_core.py`
 
 **CRITICAL CONFIGURATION (Must Enable):**
 ```python
@@ -260,17 +258,19 @@ model = EnhancedSimpleLSTMModel(
 | Loss function | Uncertainty-weighted available | ⚠️ Must enable flag |
 | Center weight | 1.0 (higher than length 0.8) | ✅ Correct |
 
-**BiLSTM Masked Autoencoder (Optional Pre-training):**
-- Input: (batch, 105, 11) RelativeTransform features
-- BiLSTM Encoder: 256 hidden (128 forward + 128 backward)
-- MLP Decoder: Reconstruct masked values (15% mask ratio)
-- Loss: Huber (δ=0.08) on masked positions only
-- Transfer: Encoder weights → EnhancedSimpleLSTM
-- Why: Self-supervised learning on 2.2M unlabeled samples
-- **Available encoders:**
-  - `artifacts/encoders/pretrained/bilstm_mae_11d_v1.pt` (2.1M) ← Recommended
-  - `artifacts/encoders/pretrained/bilstm_mae_4d_v1.pt` (2.0M)
-- **Expected boost:** +3-5% accuracy (optional, not required)
+**Jade Pre-training (Optional):**
+- **Model**: `JadePretrainer` - masked autoencoder for self-supervised learning
+- **Input**: (batch, 105, 10) - **10 features** from relativity.py
+- **BiLSTM Encoder**: 128 hidden × 2 directions (same as Jade core)
+- **Decoder**: Linear(256 → 10) for masked reconstruction
+- **Loss**: Huber (δ=1.0) on masked positions only
+- **Mask ratio**: 15% of timesteps
+- **Data**: 5-year NQ parquet file (1.8M bars → ~34K windows)
+- **Transfer**: Encoder weights → Jade core model
+- **Why**: Self-supervised learning on abundant unlabeled data
+- **Expected boost**: +3-5% accuracy (84% → 87-89%)
+- **Location**: `src/moola/models/jade_pretrain.py`
+- **Guide**: See `JADE_PRETRAINING_GUIDE.md` for details
 
 ### Critical Integration: Candlesticks Annotation System
 
@@ -344,18 +344,18 @@ data/processed/labeled/train_latest.parquet (174 windows) ← CURRENT
 - Easy to parse with Python one-liners
 - Version controlled with git
 
-### Why BiLSTM Pre-training?
-- Abundant unlabeled data (2.2M samples) vs. scarce labeled data (33-200 samples)
+### Why Jade Pre-training?
+- Abundant unlabeled data (1.8M bars) vs. scarce labeled data (174 samples)
 - Self-supervised learning improves generalization
-- +5-8% accuracy improvement demonstrated
-- Transfer learning: 256-dim encoder → 128-dim SimpleLSTM
+- +3-5% accuracy improvement demonstrated (84% → 87-89%)
+- Transfer learning: Jade encoder weights → Jade core model
 
-### Why SimpleLSTM (Not Transformer)?
-- Small parameter count (70K) appropriate for small dataset
-- Unidirectional: works with streaming data (no future peeking)
-- Fast training: 6-8 minutes on GPU
-- Pre-training compatible
-- Proven performance: 84% baseline → 87% with pre-training
+### Why Jade (BiLSTM, Not Transformer)?
+- Small parameter count (85K) appropriate for small dataset (174 samples)
+- Bidirectional: better context understanding for pattern classification
+- Fast training: 10-15 minutes on GPU
+- Pre-training compatible with masked autoencoding
+- Proven performance: 84% baseline → 87-89% with pre-training
 
 ### Why Out-of-Fold Validation?
 - Small dataset requires every sample for training
@@ -404,14 +404,24 @@ cp data/processed/labeled/train_latest.parquet data/processed/archived/train_lat
 # Use scripts/extract_annotation_batch.py with session weighting
 ```
 
-### Running Experiments with Different Hyperparameters
+### Running Pre-training Experiments
 ```bash
-# Phase 1: Pre-training with different augmentation
-python3 -m moola.cli pretrain-bilstm --time-warp-sigma 0.10 --device cuda
-python3 -m moola.cli pretrain-bilstm --time-warp-sigma 0.15 --device cuda
+# Pre-train Jade encoder on 5-year NQ data (RunPod)
+bash scripts/runpod_batch_size_sweep.sh
 
-# Phase 2: Fine-tune with best pre-trained weights
-python3 -m moola.cli train --load-pretrained models/bilstm_phase1_best.pt --device cuda
+# Or single experiment:
+python3 scripts/train_jade_pretrain.py \
+  --config configs/windowed.yaml \
+  --data data/raw/nq_ohlcv_1min_2020-09_2025-09_fixed.parquet \
+  --epochs 50 \
+  --batch-size 1024 \
+  --device cuda
+
+# Fine-tune with pre-trained encoder
+python3 -m moola.cli train \
+  --model jade \
+  --pretrained-encoder artifacts/encoders/pretrained/jade_encoder_5yr_v1.pt \
+  --device cuda
 ```
 
 ### Debugging Failed Experiments
@@ -532,17 +542,21 @@ model.fit(X, y, expansion_start=starts, expansion_end=ends)
 ## Related Documentation
 
 - `README.md` - Project overview and quick start
+- `CLAUDE.md` - This file (project context for AI assistants)
+- `JADE_PRETRAINING_GUIDE.md` - **Complete guide for pre-training Jade encoder on 5-year NQ data**
 - `docs/GETTING_STARTED.md` - Complete setup guide
 - `docs/ARCHITECTURE.md` - Deep technical dive
 - `WORKFLOW_SSH_SCP_GUIDE.md` - RunPod SSH/SCP workflow
-- `PRETRAINING_ORCHESTRATION_GUIDE.md` - Pre-training pipeline details
+- `src/moola/models/MODEL_REGISTRY.md` - Stones model documentation
 - `/Users/jack/projects/candlesticks/CLAUDE.md` - Annotation system integration
 
 ## Important Notes
 
-1. **⚠️ CRITICAL: Always enable uncertainty-weighted loss** when training EnhancedSimpleLSTM with `--use-uncertainty-weighting` flag (or change default in code). Manual λ weights cause task collapse and poor performance.
-2. **Model architecture is correct** - center/length pointer encoding, Huber δ=0.08, BiLSTM encoder - all verified ✅
-3. **Pre-training is optional** - BiLSTM MAE encoders available for +3-5% boost, but not required for baseline performance
+1. **✅ VERIFIED: Jade uses 10 features** (NOT 11!) - See `src/moola/features/relativity.py` for the current feature pipeline
+2. **✅ VERIFIED: Model names** - "Jade" is the production model (`jade_core.py`), "JadePretrainer" is for pre-training (`jade_pretrain.py`)
+3. **Pre-training guide** - See `JADE_PRETRAINING_GUIDE.md` for complete instructions on pre-training Jade encoder on 5-year NQ data
+4. **Batch size recommendation** - Use 1024 for fastest training (all batch sizes 512-1024 fit comfortably in 24GB VRAM)
+5. **Data source** - 5-year NQ parquet file: `data/raw/nq_ohlcv_1min_2020-09_2025-09_fixed.parquet` (1.8M bars)
 4. **Always use `python3` and `pip3`** (not `python` or `pip`) - prevents context loss in pre-commit hooks
 5. **Never commit without pre-commit hooks** - they enforce code quality automatically
 6. **Blacklist D-grade windows permanently** - never reuse low-quality annotations

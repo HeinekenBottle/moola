@@ -1,164 +1,72 @@
-# MOOLA — Production ML Pipeline for NQ Futures Pattern Classification
+# Moola — ML Pipeline for Financial Pattern Classification
 
-Production-grade ML pipeline for binary classification of financial patterns (consolidation vs. retracement) in NQ futures using BiLSTM pre-training. Designed for small datasets (33-200 labeled samples) with strict workflow constraints.
+A production-ready ML pipeline for binary classification of financial patterns in NQ futures data. Features automated feature engineering, model training, and deployment with strict compliance to Stones doctrine.
 
-## Stones Doctrine (Non-Negotiable)
+## Key Features
 
-- **Pointer**: Center+Length (Huber δ≈0.08)
-- **Loss**: Uncertainty-weighted (Kendall) — NO manual λ
-- **Dropout**: recurrent 0.6–0.7, dense 0.4–0.5, input 0.2–0.3
-- **Augment**: jitter σ=0.03 + magnitude-warp σ=0.2 (×3, on-the-fly)
-- **Uncertainty**: MC Dropout 50–100 + Temperature Scaling
-- **Gates**: Hit@±3 ≥60, F1-macro ≥0.50, ECE <0.10, Joint ≥40
-- **Input**: [B,105,11] single canonical schema
-
-## Stones Collection (Production SKUs)
-
-| SKU | Codename | Description |
-|-----|----------|-------------|
-| `moola-lstm-m-v1.0` | **Jade** | Production BiLSTM with multi-task learning |
-| `moola-preenc-fr-s-v1.0` | **Sapphire** | Frozen encoder transfer learning |
-| `moola-preenc-ad-m-v1.0` | **Opal** | Adaptive fine-tuning transfer learning |
+- **Automated Feature Engineering**: Relativity features with candle norms, swing relativity, ATR normalization
+- **Model Training**: Jade BiLSTM with multi-task learning, uncertainty weighting
+- **Data Pipeline**: Pre-computation for fast training, windowed data loading
+- **Deployment**: RunPod integration for GPU training, automated sync scripts
+- **Compliance**: Stones doctrine enforcement (Float32, no absolute prices, causality)
 
 ## Quick Start
 
 ```bash
-# Install dependencies (one-time)
+# Install
 pip install -r requirements.txt
+pip install -e .
 pre-commit install
 
-# Train Jade (production model)
-make train-jade DEVICE=cuda EPOCHS=60
+# Pre-compute features (requires 5-year NQ data in data_raw/)
+python3 scripts/precompute_nq_features.py --data data_raw/nq_ohlcv_1min_2020-09_2025-09_fixed.parquet --output data/processed/nq_features
 
-# Train all Stones models
-make stones DEVICE=cuda
+# Train Jade model
+python3 -m moola.cli train --model jade --device cuda
 
-# Evaluate with gates
-make eval
-
-# Generate report
-make report
+# Evaluate
+python3 -m moola.cli evaluate --model jade
 ```
-
-See [MODEL_REGISTRY.md](src/moola/models/MODEL_REGISTRY.md) for full documentation.
-
-## Documentation
-
-**Core Documentation** (in this repository):
-- `README.md` — This file (quick start and overview)
-- `CLAUDE.md` — Project context for AI assistants
-- `src/moola/models/MODEL_REGISTRY.md` — Stones SKU documentation
-
-**Extended Documentation** (archived):
-- Phase summaries, implementation guides, and research notes are archived in `../moola_docs_archive/`
-- Legacy code and experimental models are archived in `../moola_legacy_20251021_193518/`
-- Databento utilities are in `../databento/`
-
-## What's Working
-
-- **SimpleLSTM** (70K params) - Lightweight model optimized for 98 labeled samples
-- **BiLSTM Masked Autoencoder** - Self-supervised pre-training on unlabeled data
-- **Data Infrastructure** - Schema validation, drift detection, versioning (DVC)
-- **RunPod Integration** - SSH/SCP workflow (no shell scripts, no Docker)
 
 ## Project Structure
 
-```
-src/moola/
-├── cli.py                    # Command-line interface (train, evaluate, pretrain, etc.)
-├── models/                   # SimpleLSTM, BiLSTM, CNN-Transformer, RWKV-TS
-├── pretraining/              # Masked LSTM pre-training orchestration
-├── pipelines/                # OOF validation, stacking, FixMatch SSL
-├── data_infra/               # Schemas, validators, drift detection, versioning
-├── features/                 # Feature engineering (technical indicators)
-├── config/                   # Hydra configuration files
-└── utils/                    # Utilities, metrics, seeds, results logging
-```
+- `src/moola/` - Core package
+- `configs/` - Hydra configurations
+- `scripts/` - Training and utility scripts
+- `tests/` - Test suite
+- `data_raw/` - Raw data storage (not in repo)
+- `artifacts/` - Model outputs and logs (not in repo)
 
-## Setup
+## Documentation
 
-See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for:
-- Prerequisites and one-time setup
-- Running your first experiment
-- SSH/SCP workflow for RunPod
-- Troubleshooting common issues
+- `AGENTS.md` - Detailed guide for models, features, and workflows
+- `CLAUDE.md` - Context for AI assistants
+- `.factory/` - AI agent workflows and documentation
 
-## Architecture & Design
+## Data Setup
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for:
-- Model architectures and why they were chosen
-- Pre-training → fine-tuning pipeline
-- Data infrastructure details
-- Configuration system
-- Design rationale
+1. Download 5-year NQ data using Databento API (see .factory/docs/2025-10-22-download-missing-nq-data-months-via-databento-api.md)
+2. Place in `data_raw/nq_ohlcv_1min_2020-09_2025-09_fixed.parquet`
+3. Run feature pre-computation
 
-## Workflows
+## Training
 
-### Local Development
-```bash
-# Code changes with automatic pre-commit hooks
-git add .
-git commit -m "Fix SimpleLSTM"  # Black, Ruff, isort run automatically
+- Use `python3 -m moola.cli` for all operations
+- Models: Jade (BiLSTM), with pre-training support
+- Features: Relativity (candle norms, swing relativity)
+- Configs in `configs/` directory
 
-# Run experiments locally (CPU)
-python -m moola.cli train --model simple_lstm --device cpu
-```
+## Deployment
 
-### Remote Training on RunPod
-```bash
-# SSH into RunPod
-ssh -i ~/.ssh/runpod_key ubuntu@YOUR_IP
+- Sync to RunPod: `./scripts/sync_to_runpod.sh <IP>`
+- Train remotely, sync results back with `./scripts/sync_from_runpod.sh <IP>`
 
-# Run experiment
-python -m moola.cli pretrain-bilstm --time-warp-sigma 0.12 --device cuda
+## Compliance
 
-# Back on your Mac: get results
-scp -i ~/.ssh/runpod_key ubuntu@YOUR_IP:/workspace/moola/experiment_results.jsonl ./
-```
-
-See [`WORKFLOW_SSH_SCP_GUIDE.md`](WORKFLOW_SSH_SCP_GUIDE.md) for complete workflow details.
-
-## Current Status
-
-**Working:**
-- ✅ SimpleLSTM architecture (1 LSTM layer + attention + FC head)
-- ✅ BiLSTM pre-training with masking strategies
-- ✅ Data validation and drift detection
-- ✅ Pre-commit hooks (Black, Ruff, isort)
-- ✅ SSH/SCP workflow for RunPod
-
-**Not in scope:**
-- ❌ Docker (use SSH/SCP instead)
-- ❌ MLflow infrastructure (use JSON results logging)
-- ❌ CI/CD pipelines (use manual experiments on RunPod)
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `WORKFLOW_SSH_SCP_GUIDE.md` | How to work with RunPod |
-| `CLEANUP_SUMMARY.md` | 80/20 cleanup reference |
-| `PRETRAINING_ORCHESTRATION_GUIDE.md` | Pre-training details |
-| `src/moola/utils/results_logger.py` | Simple results logging (no database) |
-| `.pre-commit-config.yaml` | Git hooks configuration |
-
-## Performance Benchmarks
-
-| Model | Accuracy | Class 1 Accuracy | Training Time |
-|-------|----------|------------------|---------------|
-| Logistic Regression | 79% | 22% | 5s |
-| SimpleLSTM (baseline) | 84% | 48% | 8m |
-| SimpleLSTM + pre-training | 87% | 62% | 28m |
-| Ensemble (5 models) | 89% | 65% | 45m |
-
-## Getting Help
-
-1. **"How do I get started?"** → [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
-2. **"How does the system work?"** → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-3. **"How do I use RunPod?"** → [`WORKFLOW_SSH_SCP_GUIDE.md`](WORKFLOW_SSH_SCP_GUIDE.md)
-4. **"How do I do pre-training?"** → [`PRETRAINING_ORCHESTRATION_GUIDE.md`](PRETRAINING_ORCHESTRATION_GUIDE.md)
-5. **"My experiment failed"** → See Troubleshooting in [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)
+- Stones doctrine: Float32, uncertainty weighting, no absolute prices
+- Causality: No future information leakage
+- Scale invariance: Features normalized and bounded
 
 ---
 
-**Python 3.10+** | **PyTorch 2.2+** | **scikit-learn 1.7+** | **CUDA 11.8** (optional)
+**Python 3.10+** | **PyTorch 2.3+** | **CUDA 12.1+**

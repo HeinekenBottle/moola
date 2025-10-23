@@ -1,0 +1,77 @@
+# AGENTS.md Section 9: Config Composition Examples
+# This file demonstrates how configs should be structured
+
+# ✅ CORRECT: Using composition from base defaults
+# File: configs/model/jade.yaml
+---
+defaults:
+  - _base: model
+  - _base: augmentation  
+  - _base: uncertainty
+  - _base: gates
+
+# Only specify overrides for this specific model
+model:
+  name: jade
+  hidden_size: 64
+  num_layers: 1
+
+train:
+  batch_size: 29
+
+# ❌ WRONG: Don't duplicate base settings
+# This would violate DRY principle and create maintenance burden
+---
+# model:
+#   name: jade
+#   input_size: 11          # Already in _base/model.yaml
+#   bidirectional: true     # Already in _base/model.yaml
+#   dropout_input: 0.25     # Already in _base/model.yaml
+#   jitter:
+#     enabled: true         # Already in _base/augmentation.yaml
+#     sigma: 0.03           # Already in _base/augmentation.yaml
+
+# ✅ CORRECT: Feature-specific config
+# File: configs/features/relativity.yaml  
+---
+relativity:
+  window_size: 105
+  atr_period: 14
+  
+# Include base feature defaults
+defaults:
+  - _base: features
+
+# ❌ WRONG: Feature config with model settings mixed in
+---
+# Don't mix concerns:
+# model:
+#   hidden_size: 64        # This belongs in model config
+# train:
+#   batch_size: 29         # This belongs in model config
+
+# ✅ CORRECT: Config composition for experiments
+# File: configs/experiments/jade-relativity-v1.yaml
+---
+defaults:
+  - model: jade
+  - features: relativity
+  - _base: gates
+
+# Experiment-specific overrides
+experiment:
+  name: "jade-relativity-v1"
+  description: "Test Jade model with relativity features"
+  
+# Override just what's needed for this experiment
+model:
+  hidden_size: 96  # Larger for this experiment
+  
+features:
+  relativity:
+    window_size: 105
+    atr_period: 21  # Longer ATR for this experiment
+
+# ❌ WRONG: Experiment config that copies everything
+# Don't copy-paste entire model and feature configs
+# Just reference them with defaults and override specific values

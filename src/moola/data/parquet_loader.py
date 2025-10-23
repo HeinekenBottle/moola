@@ -201,7 +201,7 @@ def load_nq_5year() -> pd.DataFrame:
         - Returns only OHLC columns (no volume)
         - Data is properly typed and validated
     """
-    nq_path = "/Users/jack/projects/moola/data/raw/nq_ohlcv_1min_2020-09_2025-09_fixed.parquet"
+    nq_path = "/Users/jack/projects/moola/data/raw/nq_5year.parquet"
     return load([nq_path], cols=("open", "high", "low", "close"))
 
 

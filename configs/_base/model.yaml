@@ -1,0 +1,58 @@
+# Base Model Configuration
+# AGENTS.md Section 9: Configs compose; defaults live under configs/_base/
+
+defaults:
+  - augmentation: augmentation
+  - uncertainty: uncertainty
+  - gates: gates
+
+# Global model settings
+global:
+  input_size: 10            # Fixed for Relativity features (6+4=10)
+  num_classes: 3           # Binary classification + neutral
+  dtype: "float32"         # AGENTS.md: All numeric arrays float32
+  seed: 42                 # For reproducible training
+  device: "auto"           # cuda/cpu auto-detection
+
+# Default model architecture
+model_defaults:
+  bidirectional: true
+  proj_head: true
+  head_width: 64
+  pointer_head:
+    encoding: "center_length"
+
+ # Default training settings
+ train_defaults:
+   batch_size: 32           # Updated for better GPU utilization (32-64 range)
+   dropout_input: 0.25      # AGENTS.md: 0.2-0.3
+   dropout_recurrent: 0.65  # AGENTS.md: 0.6-0.7
+   dropout_dense: 0.5       # AGENTS.md: 0.4-0.5
+   mc_dropout_passes: 50    # AGENTS.md: 50-100
+
+# Default loss settings
+loss_defaults:
+  kendall_uncertainty: true
+  init_log_sigma_ptr: -0.30
+  init_log_sigma_cls: 0.00
+
+# Early stopping defaults
+early_stop_defaults:
+  metric: "hit_at_pm3"
+  patience: 20
+  monitor: "val_loss"
+  mode: "min"
+
+# Learning rate scheduler defaults
+plateau_defaults:
+  metric: "hit_at_pm3"
+  factor: 0.5
+  patience: 10
+  min_lr: 1e-6
+
+# Output contracts (AGENTS.md Section 15)
+output_contracts:
+  save_effective_config: true
+  log_training_metrics: true
+  save_checkpoints: true
+  validate_inputs: true

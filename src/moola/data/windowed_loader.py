@@ -174,10 +174,21 @@ class WindowedDataset(Dataset):
         return X_padded, valid_mask_padded
 
 
-def create_time_splits(df: pd.DataFrame, 
+def create_time_splits(df: pd.DataFrame,
                       train_end: str = "2024-12-31",
                       val_end: str = "2025-03-31",
                       test_end: str = "2025-06-30") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Create time-based splits for pretraining.
+
+    Args:
+        df: OHLC DataFrame with datetime index
+        train_end: Training period end date (inclusive)
+        val_end: Validation period end date (inclusive)
+        test_end: Test period end date (inclusive)
+
+    Returns:
+        Tuple of (train_df, val_df, test_df)
+    """
     """Create time-based splits for pretraining.
     
     Args:

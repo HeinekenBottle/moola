@@ -18,6 +18,10 @@ data/**/*
 .ruff_cache/
 .claude/
 # RunPod credentials (DO NOT COMMIT!)
+
+# Scratch directory (AGENTS.md Section 4)
+scratch/**/*
+!scratch/README.md
 .runpod/*credentials*
 .runpod/aws-*
 

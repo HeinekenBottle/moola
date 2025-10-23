@@ -46,7 +46,7 @@ def doctor(cfg_dir, over):
     help="Input parquet file to ingest (optional)",
 )
 def ingest(cfg_dir, over, input_path):
-    """Ingest and validate raw data, write processed/train.parquet."""
+    """Ingest and validate raw data, write processed/train_174.parquet."""
     import numpy as np
     import pandas as pd
 
@@ -76,8 +76,8 @@ def ingest(cfg_dir, over, input_path):
                 log.error("❌ Dataset schema validation failed")
                 raise ValueError("Invalid dataset schema")
 
-        # Copy to standard train.parquet location
-        output_path = paths.data / "processed" / "train.parquet"
+        # Copy to standard train_174.parquet location
+        output_path = paths.data / "processed" / "train_174.parquet"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(output_path, index=False, engine="pyarrow")
         log.info(f"Copied validated dataset to {output_path}")
@@ -109,7 +109,7 @@ def ingest(cfg_dir, over, input_path):
 
         # Create DataFrame and write to parquet
         df = pd.DataFrame(rows)
-        output_path = paths.data / "processed" / "train.parquet"
+        output_path = paths.data / "processed" / "train_174.parquet"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(output_path, index=False, engine="pyarrow")
 
@@ -124,18 +124,16 @@ def ingest(cfg_dir, over, input_path):
 @click.option(
     "--model",
     default="jade",
-    type=click.Choice(["jade", "sapphire", "opal"]),
+    type=click.Choice(["jade"]),
     help=(
         "Model name (Stones-only). Options:\n"
         "  - jade: PRODUCTION BiLSTM with uncertainty-weighted multi-task learning (DEFAULT)\n"
-        "  - sapphire: Frozen encoder variant for transfer learning\n"
-        "  - opal: Adaptive fine-tuning variant\n"
     ),
 )
 @click.option(
     "--data",
     type=click.Path(exists=True),
-    default="data/processed/train_latest.parquet",
+    default="data/processed/train_174.parquet",
     help="Path to training data parquet file",
 )
 @click.option(
@@ -437,10 +435,7 @@ def train(
     import numpy as np
     import pandas as pd
 
-    from .data_infra.storage_11d import (
-        create_dual_input_processor,
-        prepare_model_inputs,
-    )
+    from .data_infra.storage_11d import prepare_model_inputs
     from .data.splits import assert_no_random, assert_temporal, load_split
     from .models import get_model
     from .utils.seeds import print_gpu_info
@@ -625,22 +620,53 @@ def train(
             log.info("Successfully deserialized pickled features")
         # else: nested array format (keep as is)
 
-    # Process data with dual-input pipeline
-    processor = create_dual_input_processor(
-        use_engineered_features=use_engineered_features,
-        max_engineered_features=max_engineered_features,
-        use_hopsketch=use_hopsketch,
-        enable_augmentation=augment_data,
-        augmentation_ratio=augmentation_ratio,
-        max_synthetic_samples=max_synthetic_samples,
-        augmentation_seed=augmentation_seed,
-        quality_threshold=quality_threshold,
-        use_safe_strategies_only=True,  # Always use safe strategies in CLI
+    # Process data with new relativity feature pipeline
+    log.info("=" * 60)
+    log.info("RELATIVITY FEATURE PIPELINE")
+    log.info("=" * 60)
+    
+    from .data.parquet_loader import load
+    from .features.relativity import build_features, RelativityConfig
+    
+    # Load data with parquet loader (replaces df from above)
+    df = load([data])
+    log.info(f"Loaded {len(df)} rows with parquet loader")
+    
+    # Build relativity features
+    relativity_cfg = RelativityConfig(
+        ohlc_eps=1.0e-6,
+        ohlc_ema_range_period=20,
+        atr_period=10,
+        zigzag_k=1.2,
+        zigzag_hybrid_confirm_lookback=5,
+        zigzag_hybrid_min_retrace_atr=0.5,
+        window_length=105,
+        window_overlap=0.5
     )
-
-    processed_data = processor.process_training_data(
-        df, enable_engineered_features=use_engineered_features
-    )
+    
+    X, mask, meta = build_features(df, relativity_cfg)
+    log.info(f"Built relativity features: shape={X.shape}, features={meta['n_features']}")
+    log.info(f"Feature names: {meta['feature_names']}")
+    
+    # Prepare processed data in expected format
+    processed_data = {
+        "X_raw": None,  # No raw OHLC needed anymore
+        "X_engineered": X,  # Relativity features
+        "y": df["label"].values if "label" in df.columns else None,
+        "feature_names": meta["feature_names"],
+        "expansion_start": None,  # Not applicable for relativity features
+        "expansion_end": None,    # Not applicable for relativity features
+        "metadata": {
+            "feature_config": {
+                "use_engineered_features": True,
+                "max_engineered_features": meta["n_features"],
+                "use_hopsketch": False,
+                "feature_type": "relativity",
+                "input_size": meta["n_features"]
+            },
+            "relativity_meta": meta
+        }
+    }
 
     # Log data processing results
     log.info("=" * 60)
@@ -1463,7 +1489,7 @@ def evaluate(
     start_time = time.time()
 
     # Load data
-    train_path = paths.data / "processed" / "train.parquet"
+    train_path = paths.data / "processed" / "train_174.parquet"
     if not train_path.exists():
         log.error(f"Training data not found at {train_path}")
         raise FileNotFoundError(f"Missing {train_path}")
@@ -1495,22 +1521,53 @@ def evaluate(
     else:
         log.info("No feature metadata found, using provided flags")
 
-    # Process data with dual-input pipeline
-    processor = create_dual_input_processor(
-        use_engineered_features=use_engineered_features,
-        max_engineered_features=max_engineered_features,
-        use_hopsketch=use_hopsketch,
-        enable_augmentation=augment_data,
-        augmentation_ratio=augmentation_ratio,
-        max_synthetic_samples=max_synthetic_samples,
-        augmentation_seed=augmentation_seed,
-        quality_threshold=quality_threshold,
-        use_safe_strategies_only=True,  # Always use safe strategies in CLI
+    # Process data with new relativity feature pipeline
+    log.info("=" * 60)
+    log.info("RELATIVITY FEATURE PIPELINE (EVALUATION)")
+    log.info("=" * 60)
+    
+    from .data.parquet_loader import load
+    from .features.relativity import build_features, RelativityConfig
+    
+    # Load data with parquet loader (replaces df from above)
+    df = load([str(train_path)])
+    log.info(f"Loaded {len(df)} rows with parquet loader")
+    
+    # Build relativity features
+    relativity_cfg = RelativityConfig(
+        ohlc_eps=1.0e-6,
+        ohlc_ema_range_period=20,
+        atr_period=10,
+        zigzag_k=1.2,
+        zigzag_hybrid_confirm_lookback=5,
+        zigzag_hybrid_min_retrace_atr=0.5,
+        window_length=105,
+        window_overlap=0.5
     )
-
-    processed_data = processor.process_training_data(
-        df, enable_engineered_features=use_engineered_features
-    )
+    
+    X, mask, meta = build_features(df, relativity_cfg)
+    log.info(f"Built relativity features: shape={X.shape}, features={meta['n_features']}")
+    log.info(f"Feature names: {meta['feature_names']}")
+    
+    # Prepare processed data in expected format
+    processed_data = {
+        "X_raw": None,  # No raw OHLC needed anymore
+        "X_engineered": X,  # Relativity features
+        "y": df["label"].values if "label" in df.columns else None,
+        "feature_names": meta["feature_names"],
+        "expansion_start": None,  # Not applicable for relativity features
+        "expansion_end": None,    # Not applicable for relativity features
+        "metadata": {
+            "feature_config": {
+                "use_engineered_features": True,
+                "max_engineered_features": meta["n_features"],
+                "use_hopsketch": False,
+                "feature_type": "relativity",
+                "input_size": meta["n_features"]
+            },
+            "relativity_meta": meta
+        }
+    }
 
     # Extract training variables from Stones loader
     X = processed_data["X"]
@@ -1722,7 +1779,7 @@ def oof(cfg_dir, over, model, seed, device, load_pretrained_encoder):
         print_gpu_info()
 
     # Load training data
-    train_path = paths.data / "processed" / "train.parquet"
+    train_path = paths.data / "processed" / "train_174.parquet"
     if not train_path.exists():
         log.error(f"Training data not found at {train_path}")
         raise FileNotFoundError(f"Missing {train_path}")
@@ -1811,7 +1868,7 @@ def pretrain_tcc(cfg_dir, over, device, epochs, patience):
         print_gpu_info()
 
     # Load training data (use as unlabeled data for contrastive learning)
-    train_path = paths.data / "processed" / "train.parquet"
+    train_path = paths.data / "processed" / "train_174.parquet"
     if not train_path.exists():
         log.error(f"Training data not found at {train_path}")
         raise FileNotFoundError(f"Missing {train_path}")
@@ -2039,18 +2096,286 @@ def pretrain_bilstm(
     log.info("=" * 70)
     log.info("PRE-TRAINING COMPLETE")
     log.info("=" * 70)
-    log.info(f"Final train loss: {history['train_loss'][-1]:.4f}")
-    log.info(f"Final val loss: {history['val_loss'][-1]:.4f}")
-    log.info(f"Best val loss: {min(history['val_loss']):.4f}")
-    log.info(f"Encoder saved: {output_path}")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
+@click.option(
+    "--data",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to raw OHLC data parquet file",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    default="data/processed/nq_features",
+    help="Output directory for precomputed features",
+)
+@click.option("--seed", default=None, type=int, help="Random seed (overrides config)")
+def precompute(cfg_dir, over, data, output_dir, seed):
+    """Precompute relativity features for large datasets.
+
+    Builds features once and saves to numpy arrays for fast loading,
+    eliminating the 1-3 hour computation bottleneck before training.
+
+    Output:
+        features_10d.npy      # [N_windows, K, D] float32 features
+        valid_mask.npy        # [N_windows, K] bool mask
+        metadata.json         # Feature info, config, timestamps
+        splits.json           # Time split indices for train/val/test
+    """
+    import json
+    import time
+    from pathlib import Path
+    from typing import Dict, Tuple
+
+    import numpy as np
+    import pandas as pd
+    import yaml
+    from pydantic import BaseModel
+
+    from .features.relativity import build_features, RelativityConfig
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+
+    # Override seed if provided
+    if seed is not None:
+        cfg.seed = seed
+
+    log.info("=" * 60)
+    log.info("FEATURE PRECOMPUTATION")
+    log.info("=" * 60)
+    log.info(f"Input data: {data}")
+    log.info(f"Output dir: {output_dir}")
+    log.info(f"Seed: {cfg.seed}")
+
+    start_time = time.time()
+
+    # Load data
+    data_path = Path(data)
+    if not data_path.exists():
+        log.error(f"Data file not found: {data_path}")
+        raise FileNotFoundError(f"Missing {data_path}")
+
+    df = pd.read_parquet(data_path)
+    log.info(f"Loaded {len(df)} rows from {data_path}")
+
+    # Create output directory
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build relativity features
+    relativity_cfg = RelativityConfig(
+        ohlc_eps=1.0e-6,
+        ohlc_ema_range_period=20,
+        atr_period=10,
+        zigzag_k=1.2,
+        zigzag_hybrid_confirm_lookback=5,
+        zigzag_hybrid_min_retrace_atr=0.5,
+        window_length=105,
+        window_overlap=0.5
+    )
+
+    log.info("Building relativity features...")
+    X, mask, meta = build_features(df, relativity_cfg)
+
+    log.info(f"Features shape: {X.shape}")
+    log.info(f"Mask shape: {mask.shape}")
+    log.info(f"Feature names: {meta['feature_names']}")
+
+    # Save features and mask
+    features_path = output_dir / "features_10d.npy"
+    mask_path = output_dir / "valid_mask.npy"
+
+    np.save(features_path, X.astype(np.float32))
+    np.save(mask_path, mask.astype(bool))
+
+    log.info(f"Saved features to {features_path}")
+    log.info(f"Saved mask to {mask_path}")
+
+    # Create simple splits (can be enhanced with temporal splits later)
+    n = len(X)
+    train_end = int(0.7 * n)
+    val_end = int(0.85 * n)
+    splits = {
+        "train_indices": list(range(train_end)),
+        "val_indices": list(range(train_end, val_end)),
+        "test_indices": list(range(val_end, n)),
+        "split_info": {"method": "simple_split"}
+    }
+
+    # Save splits
+    splits_path = output_dir / "splits.json"
+    with open(splits_path, 'w') as f:
+        json.dump(splits, f, indent=2)
+    log.info(f"Saved splits to {splits_path}")
+
+    # Save metadata
+    metadata = {
+        "created_at": time.time(),
+        "data_path": str(data_path),
+        "relativity_config": relativity_cfg.model_dump(),
+        "features_shape": X.shape,
+        "mask_shape": mask.shape,
+        "feature_names": meta['feature_names'],
+        "n_features": meta['n_features'],
+        "processing_time": time.time() - start_time
+    }
+
+    metadata_path = output_dir / "metadata.json"
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    log.info(f"Saved metadata to {metadata_path}")
+
+    log.info(".2f")
+    log.info("Precompute done")
+
+
+@app.command()
+@click.option("--cfg-dir", type=click.Path(exists=True, file_okay=False), default="configs")
+@click.option("--over", multiple=True)
+@click.option(
+    "--data",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to raw OHLC data parquet file",
+)
+@click.option(
+    "--split",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to temporal split JSON file",
+)
+@click.option(
+    "--model",
+    default="jade",
+    type=click.Choice(["jade"]),
+    help="Model to use for MVS pipeline",
+)
+@click.option(
+    "--device", default="cuda", type=click.Choice(["cpu", "cuda"]), help="Device for training"
+)
+@click.option("--seed", default=None, type=int, help="Random seed (overrides config)")
+def pipeline(cfg_dir, over, data, split, model, device, seed):
+    """Run the Minimal Viable System (MVS) pipeline: precompute → train → validate.
+
+    This command orchestrates the complete MVS workflow:
+    1. Precompute relativity features from raw data
+    2. Train Jade model with temporal validation
+    3. Run validation checks and metrics
+
+    Use this for end-to-end model development and testing.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    cfg = _load_cfg(Path(cfg_dir), list(over))
+    paths = resolve_paths()
+    log = setup_logging(paths.logs)
+
     log.info("=" * 70)
-    log.info("\nNext steps:")
-    log.info("  1. Load encoder in SimpleLSTM:")
-    log.info("     model.load_pretrained_encoder(encoder_path)")
-    log.info("  2. Train with encoder frozen (first 10 epochs)")
-    log.info("  3. Unfreeze and fine-tune (remaining epochs)")
-    log.info("\nExpected improvement: +8-12% accuracy")
-    log.info("Pretrain-BiLSTM done")
+    log.info("MINIMAL VIABLE SYSTEM (MVS) PIPELINE")
+    log.info("=" * 70)
+    log.info(f"Data: {data}")
+    log.info(f"Split: {split}")
+    log.info(f"Model: {model}")
+    log.info(f"Device: {device}")
+    log.info(f"Seed: {seed or cfg.seed}")
+
+    # Step 1: Precompute features
+    log.info("=" * 60)
+    log.info("STEP 1: PRECOMPUTE FEATURES")
+    log.info("=" * 60)
+
+    precompute_output = paths.data / "processed" / "mvs_features"
+    try:
+        # Call precompute command
+        cmd = [
+            sys.executable, "-m", "moola.cli", "precompute",
+            "--cfg-dir", cfg_dir,
+            "--data", data,
+            "--output-dir", str(precompute_output),
+        ]
+        if seed:
+            cmd.extend(["--seed", str(seed)])
+        for o in over:
+            cmd.extend(["--over", o])
+
+        log.info(f"Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        log.info("Precompute completed successfully")
+
+    except subprocess.CalledProcessError as e:
+        log.error(f"Precompute failed: {e}")
+        log.error(f"stdout: {e.stdout}")
+        log.error(f"stderr: {e.stderr}")
+        raise
+
+    # Step 2: Train model
+    log.info("=" * 60)
+    log.info("STEP 2: TRAIN MODEL")
+    log.info("=" * 60)
+
+    # For now, assume training data is prepared; in full pipeline would use precomputed features
+    train_data = paths.data / "processed" / "train_174.parquet"
+    if not train_data.exists():
+        log.warning(f"Training data {train_data} not found, using provided data as training data")
+        train_data = data
+
+    try:
+        cmd = [
+            sys.executable, "-m", "moola.cli", "train",
+            "--cfg-dir", cfg_dir,
+            "--model", model,
+            "--data", str(train_data),
+            "--split", split,
+            "--device", device,
+            "--predict-pointers",
+        ]
+        if seed:
+            cmd.extend(["--seed", str(seed)])
+        for o in over:
+            cmd.extend(["--over", o])
+
+        log.info(f"Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        log.info("Training completed successfully")
+
+    except subprocess.CalledProcessError as e:
+        log.error(f"Training failed: {e}")
+        log.error(f"stdout: {e.stdout}")
+        log.error(f"stderr: {e.stderr}")
+        raise
+
+    # Step 3: Validate
+    log.info("=" * 60)
+    log.info("STEP 3: VALIDATE MODEL")
+    log.info("=" * 60)
+
+    try:
+        # Run validation script
+        cmd = [
+            sys.executable, "scripts/validate_data.py",
+            "--data", str(train_data),
+        ]
+        log.info(f"Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        log.info("Validation completed successfully")
+
+    except subprocess.CalledProcessError as e:
+        log.error(f"Validation failed: {e}")
+        log.error(f"stdout: {e.stdout}")
+        log.error(f"stderr: {e.stderr}")
+        raise
+
+    log.info("=" * 70)
+    log.info("MVS PIPELINE COMPLETED SUCCESSFULLY")
+    log.info("=" * 70)
 
 
 @app.command()
@@ -2101,7 +2426,7 @@ def pretrain_multitask(
 
     Example:
         moola pretrain-multitask \\
-            --input data/processed/train.parquet \\
+            --input data/processed/train_174.parquet \\
             --output artifacts/pretrained/multitask_encoder.pt \\
             --device cuda \\
             --epochs 50
@@ -2445,7 +2770,7 @@ def audit(cfg_dir, over, section):
                 log.info(f"✅ Manifest verified: {len(verification)} files match")
 
         # Validate training data schema
-        train_path = paths.data / "processed" / "train.parquet"
+        train_path = paths.data / "processed" / "train_174.parquet"
         if train_path.exists():
             import pandas as pd
 
@@ -2465,7 +2790,7 @@ def audit(cfg_dir, over, section):
         log.info("=== Base Models Audit ===")
 
         # Check training data exists
-        train_path = paths.data / "processed" / "train.parquet"
+        train_path = paths.data / "processed" / "train_174.parquet"
         if not train_path.exists():
             log.error(f"❌ Training data missing: {train_path}")
             passed = False

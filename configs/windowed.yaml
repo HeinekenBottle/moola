@@ -1,0 +1,29 @@
+# Windowed Data Loader Configuration for Jade Pretraining
+
+window_length: 105              # Fixed sequence length K
+stride: 52                       # Window stride (~50% overlap)
+warmup_bars: 20                  # Warmup bars to mask at start
+mask_ratio: 0.15                 # Fraction of timesteps to mask for MAE
+
+# Relativity feature configuration
+feature_config:
+  ohlc_eps: 1.0e-6
+  ohlc_ema_range_period: 20
+  atr_period: 10
+  zigzag_k: 1.2
+  zigzag_hybrid_confirm_lookback: 5
+  zigzag_hybrid_min_retrace_atr: 0.5
+  window_length: 105
+  window_overlap: 0.5
+
+# Data splits
+splits:
+  train_end: "2024-12-31"        # Training period end (inclusive)
+  val_end: "2025-03-31"          # Validation period end (inclusive)
+  test_end: "2025-06-30"         # Test period end (inclusive)
+
+# Quality gates
+gates:
+  min_windows: 1000              # Minimum windows per split
+  max_mask_ratio: 0.2            # Maximum masking ratio
+  min_valid_ratio: 0.8           # Minimum valid (non-warmup) ratio

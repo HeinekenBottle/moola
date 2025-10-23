@@ -18,6 +18,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 import wandb
 from loguru import logger
@@ -257,7 +258,11 @@ def main():
     
     # Setup optimizer and scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    
+
+    # PERFORMANCE: Setup mixed precision training
+    scaler = GradScaler() if torch.cuda.is_available() else None
+    use_amp = scaler is not None
+
     # Setup scheduler based on Hit@±3
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='max', factor=0.5, patience=args.scheduler_patience, verbose=True
@@ -291,37 +296,71 @@ def main():
             y_ptr = batch['y_ptr'].to(device)
             y_cls = batch['y_cls'].to(device)
             
-            # Forward pass
+            # Forward pass with mixed precision
             optimizer.zero_grad()
-            outputs = model(X)
-            ptr_logits = outputs['pointer_logits']
-            cls_logits = outputs['classification_logits']
-            
-            # Compute losses
-            ptr_loss = nn.MSELoss()(ptr_logits.squeeze(), y_ptr.squeeze())
-            cls_loss = nn.CrossEntropyLoss()(cls_logits, y_cls)
-            
-            # Get learned uncertainties
-            log_sigma_ptr = getattr(model, 'log_sigma_ptr', torch.tensor(0.0, device=device))
-            log_sigma_cls = getattr(model, 'log_sigma_cls', torch.tensor(0.0, device=device))
-            
-            # Pointer-only warmup
-            if epoch < args.warmup_epochs:
-                # Zero out classification loss during warmup
-                combined_loss = compute_uncertainty_weighted_loss(
-                    ptr_loss, cls_loss * 0.0, log_sigma_ptr, log_sigma_cls
-                )
-                loss_type = "warmup"
+            if use_amp:
+                with autocast():
+                    outputs = model(X)
+                    ptr_logits = outputs['pointer_logits']
+                    cls_logits = outputs['classification_logits']
+
+                    # Compute losses (Huber for pointers with δ=0.08)
+                    ptr_loss = nn.HuberLoss(delta=0.08)(ptr_logits.squeeze(), y_ptr.squeeze())
+                    cls_loss = nn.CrossEntropyLoss()(cls_logits, y_cls)
+
+                    # Get learned uncertainties
+                    log_sigma_ptr = getattr(model, 'log_sigma_ptr', torch.tensor(0.0, device=device))
+                    log_sigma_cls = getattr(model, 'log_sigma_cls', torch.tensor(0.0, device=device))
+
+                    # Pointer-only warmup
+                    if epoch < args.warmup_epochs:
+                        # Zero out classification loss during warmup
+                        combined_loss = compute_uncertainty_weighted_loss(
+                            ptr_loss, cls_loss * 0.0, log_sigma_ptr, log_sigma_cls
+                        )
+                        loss_type = "warmup"
+                    else:
+                        combined_loss = compute_uncertainty_weighted_loss(
+                            ptr_loss, cls_loss, log_sigma_ptr, log_sigma_cls
+                        )
+                        loss_type = "full"
+
+                # Backward pass with scaler
+                scaler.scale(combined_loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                combined_loss = compute_uncertainty_weighted_loss(
-                    ptr_loss, cls_loss, log_sigma_ptr, log_sigma_cls
-                )
-                loss_type = "full"
-            
-            # Backward pass
-            combined_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+                outputs = model(X)
+                ptr_logits = outputs['pointer_logits']
+                cls_logits = outputs['classification_logits']
+
+                # Compute losses
+                ptr_loss = nn.MSELoss()(ptr_logits.squeeze(), y_ptr.squeeze())
+                cls_loss = nn.CrossEntropyLoss()(cls_logits, y_cls)
+
+                # Get learned uncertainties
+                log_sigma_ptr = getattr(model, 'log_sigma_ptr', torch.tensor(0.0, device=device))
+                log_sigma_cls = getattr(model, 'log_sigma_cls', torch.tensor(0.0, device=device))
+
+                # Pointer-only warmup
+                if epoch < args.warmup_epochs:
+                    # Zero out classification loss during warmup
+                    combined_loss = compute_uncertainty_weighted_loss(
+                        ptr_loss, cls_loss * 0.0, log_sigma_ptr, log_sigma_cls
+                    )
+                    loss_type = "warmup"
+                else:
+                    combined_loss = compute_uncertainty_weighted_loss(
+                        ptr_loss, cls_loss, log_sigma_ptr, log_sigma_cls
+                    )
+                    loss_type = "full"
+
+                # Backward pass
+                combined_loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
             
             total_loss += combined_loss.item()
             n_batches += 1

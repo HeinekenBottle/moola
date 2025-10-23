@@ -1,0 +1,22 @@
+# Base Quality Gates Configuration
+# AGENTS.md Section 18: Acceptance gates
+
+gates:
+  # Performance gates (minimum thresholds)
+  hit_at_3: 0.60      # ≥60% hit rate within ±3 bars
+  f1_macro: 0.50      # ≥0.50 macro F1 score
+  ece: 0.10          # <0.10 Expected Calibration Error
+  joint_success: 0.40 # ≥40% joint gate success rate
+  
+  # Training stability gates
+  overfit_threshold: 0.95  # ≥95% train accuracy for overfit test
+  parameter_validation: true  # Check parameter count ranges
+  
+  # Data quality gates  
+  no_future_leakage: true
+  causality_check: true
+  bounds_check: true
+  
+  # Feature gates
+  feature_invariance: 1e-6  # Price scaling invariance tolerance
+  missing_value_threshold: 0.05  # <5% missing values

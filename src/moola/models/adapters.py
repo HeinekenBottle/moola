@@ -4,10 +4,10 @@ Thin fit/predict/save wrappers to preserve old BaseModel contract.
 Provides fit(), predict(), save(), load() methods that legacy code expects.
 
 Usage:
-    >>> from moola.models.jade_core import JadeCore
+    >>> from moola.models.jade_core import JadeCompact
     >>> from moola.models.adapters import ModuleAdapter, TrainCfg
-    >>> 
-    >>> core = JadeCore(input_size=11, hidden_size=128)
+    >>>
+    >>> core = JadeCompact(input_size=10, hidden_size=96)
     >>> cfg = TrainCfg(epochs=60, lr=3e-4, device="cuda")
     >>> model = ModuleAdapter(core, cfg=cfg)
     >>> 
@@ -60,10 +60,10 @@ class ModuleAdapter:
     """Thin fit/predict/save wrapper to preserve old BaseModel contract.
     
     Provides fit(), predict(), save(), load() methods that legacy code expects.
-    Wraps a pure nn.Module (like JadeCore) with training logic.
-    
+    Wraps a pure nn.Module (like JadeCompact) with training logic.
+
     Args:
-        module: PyTorch nn.Module to wrap (e.g., JadeCore)
+        module: PyTorch nn.Module to wrap (e.g., JadeCompact)
         cfg: Training configuration (default: TrainCfg())
     """
     
@@ -268,17 +268,16 @@ class ModuleAdapter:
         Returns:
             ModuleAdapter instance with loaded model
         """
-        from .jade_core import JadeCore, JadeCompact
-        
+        from .jade_core import JadeCompact
+
         path = Path(path)
         checkpoint = torch.load(path, map_location="cpu")
-        
-        # Determine model class
-        model_class_name = checkpoint.get("model_class", "JadeCore")
-        if model_class_name == "JadeCompact":
-            model_cls = JadeCompact
-        else:
-            model_cls = JadeCore
+
+        # Only JadeCompact is supported
+        model_class_name = checkpoint.get("model_class", "JadeCompact")
+        if model_class_name != "JadeCompact":
+            raise ValueError(f"Unsupported model class: {model_class_name}. Only JadeCompact is supported.")
+        model_cls = JadeCompact
         
         # Build core with saved or overridden config
         saved_config = checkpoint.get("config", {})

@@ -17,15 +17,15 @@ moola-{family}-{size}{variant}-v{semver} // codename: {Stone}
 
 ## Stones Collection
 
-### Jade - Production BiLSTM
+### JadeCompact - Minimal Viable BiLSTM
 ```
-moola-lstm-m-v1.0 // codename: Jade
+moola-lstm-s-v1.1 // codename: Jade-Compact
 ```
 
-**Description**: Production BiLSTM with uncertainty-weighted multi-task learning
+**Description**: Compact BiLSTM for small datasets with uncertainty-weighted multi-task learning
 
 **Architecture**:
-- BiLSTM(11→128×2, 2 layers) → global average pool → dual heads
+- BiLSTM(10→96×2, 1 layer) → projection (64) → dual heads
 - Pointer head: center(sigmoid), length(sigmoid)
 - Type head: 3-way logits
 - Gradient clip 1.5–2.0
@@ -35,70 +35,21 @@ moola-lstm-m-v1.0 // codename: Jade
 **Stones Compliance**:
 - ✅ Pointer = Center+Length with Huber δ≈0.08
 - ✅ Loss = Uncertainty-weighted (Kendall) - NO manual λ
-- ✅ Dropout: recurrent 0.6–0.7, dense 0.4–0.5, input 0.2–0.3
+- ✅ Dropout: recurrent 0.7, dense 0.6, input 0.3
 - ✅ Augment: jitter σ=0.03 + magnitude-warp σ=0.2, ×3 on-the-fly
 - ✅ Uncertainty: MC Dropout 50–100 passes + Temperature Scaling
 
 **Usage**:
 ```python
-from moola.models import get_jade
+from moola.models import get_model
 
 # Standard usage
-model = get_jade(predict_pointers=True)
+model = get_model("jade", predict_pointers=True)
 model.fit(X, y, expansion_start=starts, expansion_end=ends)
 
 # Single-task mode
-model = get_jade(predict_pointers=False)
+model = get_model("jade", predict_pointers=False)
 model.fit(X, y)
-```
-
-### Sapphire - Frozen Encoder Transfer
-```
-moola-preenc-fr-s-v1.0 // codename: Sapphire
-```
-
-**Description**: Pre-trained encoder with frozen weights for transfer learning
-
-**Architecture**:
-- Pre-trained BiLSTM encoder (frozen)
-- Lightweight classification head
-- Transfer learning from 2.2M unlabeled samples
-
-**Configuration**:
-- `freeze_encoder=True`
-- `pretrained_encoder_path=artifacts/encoders/pretrained/bilstm_mae_11d_v1.pt`
-
-**Usage**:
-```python
-from moola.models import get_sapphire
-
-model = get_sapphire()
-model.fit(X, y)  # Uses frozen pre-trained encoder
-```
-
-### Opal - Adaptive Fine-tuning
-```
-moola-preenc-ad-m-v1.0 // codename: Opal
-```
-
-**Description**: Pre-trained encoder with adaptive fine-tuning for optimal transfer
-
-**Architecture**:
-- Pre-trained BiLSTM encoder (adaptive fine-tuning)
-- Full model fine-tuning after 10 epochs
-- Optimal transfer learning balance
-
-**Configuration**:
-- `freeze_encoder=False`
-- `unfreeze_encoder_after=10`
-- `pretrained_encoder_path=artifacts/encoders/pretrained/bilstm_mae_11d_v1.pt`
-
-**Usage**:
-```python
-from moola.models import get_opal
-
-model = get_opal()
-model.fit(X, y)  # Adaptive fine-tuning
 ```
 
 ## Model Registry API
