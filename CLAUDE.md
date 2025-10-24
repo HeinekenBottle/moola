@@ -219,7 +219,7 @@ src/moola/
 
 **Jade (Production Model):**
 - **Model ID**: `moola-lstm-m-v1.0` (codename: Jade)
-- **Input**: (batch, 105, 10) - **10 features** from relativity.py (NOT 11!)
+- **Input**: (batch, 105, 11) - **11 features** from relativity.py
 - **BiLSTM Encoder**: 128 hidden units × 2 directions = 256 total
 - **Architecture**: 2-layer BiLSTM with global average pooling
 - **Multi-task Learning**: Classification + pointer prediction (center, length)
@@ -260,9 +260,9 @@ model = EnhancedSimpleLSTMModel(
 
 **Jade Pre-training (Optional):**
 - **Model**: `JadePretrainer` - masked autoencoder for self-supervised learning
-- **Input**: (batch, 105, 10) - **10 features** from relativity.py
+- **Input**: (batch, 105, 11) - **11 features** from relativity.py
 - **BiLSTM Encoder**: 128 hidden × 2 directions (same as Jade core)
-- **Decoder**: Linear(256 → 10) for masked reconstruction
+- **Decoder**: Linear(256 → 11) for masked reconstruction
 - **Loss**: Huber (δ=1.0) on masked positions only
 - **Mask ratio**: 15% of timesteps
 - **Data**: 5-year NQ parquet file (1.8M bars → ~34K windows)
@@ -552,7 +552,7 @@ model.fit(X, y, expansion_start=starts, expansion_end=ends)
 
 ## Important Notes
 
-1. **✅ VERIFIED: Jade uses 10 features** (NOT 11!) - See `src/moola/features/relativity.py` for the current feature pipeline
+1. **✅ VERIFIED: Jade uses 11 features** - See `src/moola/features/relativity.py` for the current feature pipeline (6 candle + 4 swing + 1 expansion)
 2. **✅ VERIFIED: Model names** - "Jade" is the production model (`jade_core.py`), "JadePretrainer" is for pre-training (`jade_pretrain.py`)
 3. **Pre-training guide** - See `JADE_PRETRAINING_GUIDE.md` for complete instructions on pre-training Jade encoder on 5-year NQ data
 4. **Batch size recommendation** - Use 1024 for fastest training (all batch sizes 512-1024 fit comfortably in 24GB VRAM)
