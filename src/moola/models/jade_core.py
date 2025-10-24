@@ -118,6 +118,92 @@ class JadeCompact(nn.Module):
             self.log_sigma_ptr = None
             self.log_sigma_type = None
     
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_path: str,
+        num_classes: int = 3,
+        predict_pointers: bool = False,
+        freeze_encoder: bool = True,
+        **kwargs
+    ) -> "JadeCompact":
+        """Load JadeCompact with pre-trained encoder weights from JadePretrainer.
+
+        Args:
+            pretrained_path: Path to pretrained checkpoint (.pt file)
+            num_classes: Number of output classes (default 3)
+            predict_pointers: Enable pointer prediction head (default False)
+            freeze_encoder: Freeze encoder weights for fine-tuning (default True)
+            **kwargs: Additional model initialization arguments
+
+        Returns:
+            JadeCompact model with pre-trained encoder
+
+        Example:
+            >>> model = JadeCompact.from_pretrained(
+            ...     "artifacts/jade_pretrain_20ep/checkpoint_best.pt",
+            ...     predict_pointers=True,
+            ...     freeze_encoder=True
+            ... )
+        """
+        import torch
+        from pathlib import Path
+
+        # Load pretrained checkpoint
+        checkpoint_path = Path(pretrained_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Pretrained checkpoint not found: {pretrained_path}")
+
+        checkpoint = torch.load(pretrained_path, map_location="cpu")
+
+        # Extract encoder config from checkpoint
+        model_config = checkpoint.get("model_config", {})
+        input_size = model_config.get("input_size", 11)
+        hidden_size = model_config.get("hidden_size", 128)
+        num_layers = model_config.get("num_layers", 2)
+        dropout = model_config.get("dropout", 0.7)
+
+        # Create JadeCompact model with matching encoder architecture
+        # Note: JadePretrainer uses 2 layers, 128 hidden by default
+        # JadeCompact defaults to 1 layer, 96 hidden, so we override with checkpoint config
+        model = cls(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            num_classes=num_classes,
+            predict_pointers=predict_pointers,
+            **kwargs
+        )
+
+        # Load encoder weights (LSTM only)
+        # JadePretrainer structure: encoder.weight_ih_l0, encoder.weight_hh_l0, etc.
+        # JadeCompact structure: lstm.weight_ih_l0, lstm.weight_hh_l0, etc.
+
+        pretrained_state = checkpoint["model_state_dict"]
+        encoder_weights = {}
+
+        for key, value in pretrained_state.items():
+            if key.startswith("encoder."):
+                # Map encoder.* → lstm.*
+                new_key = key.replace("encoder.", "lstm.")
+                encoder_weights[new_key] = value
+
+        # Load encoder weights with strict=False (ignore decoder, classification head)
+        model.load_state_dict(encoder_weights, strict=False)
+
+        # Freeze encoder if requested (recommended for small datasets)
+        if freeze_encoder:
+            for param in model.lstm.parameters():
+                param.requires_grad = False
+
+        print(f"✓ Loaded pre-trained encoder from {pretrained_path}")
+        print(f"  - Encoder: {num_layers} layer BiLSTM, {hidden_size} hidden × 2 directions")
+        print(f"  - Frozen: {freeze_encoder}")
+        print(f"  - Trainable params: {model.get_num_parameters()['trainable']:,}")
+
+        return model
+
     def forward(self, x: torch.Tensor) -> dict:
         """Forward pass with Jade-Compact architecture."""
         # Input dropout
