@@ -314,7 +314,7 @@ class JadeTrainer:
         # Update top_k symbolic links
         for i, (_, _, path) in enumerate(self.checkpoints):
             new_path = self.output_dir / f'checkpoint_top_{i+1}.pt'
-            if new_path.exists():
+            if new_path.exists() or new_path.is_symlink():
                 new_path.unlink()
             new_path.symlink_to(path.name)
     
