@@ -23,6 +23,7 @@ class WindowedConfig(BaseModel):
     warmup_bars: int = Field(20, description="Warmup bars to mask")
     mask_ratio: float = Field(0.15, description="Fraction of timesteps to mask")
     padding_bars: int = Field(20, description="Number of bars to pad at start of each window")
+    jitter_sigma: float = Field(0.03, description="Gaussian jitter sigma for augmentation (PDF: 0.03)")
     feature_config: Optional[Dict[str, Any]] = Field(None, description="Relativity feature config")
     splits: Optional[Dict[str, str]] = Field(None, description="Date-based splits (train_end, val_end, test_end)")
     gates: Optional[Dict[str, Any]] = Field(None, description="Quality gates")
@@ -42,9 +43,9 @@ class WindowedConfig(BaseModel):
 
 class WindowedDataset(Dataset):
     """Dataset for sliding windows with masked reconstruction.
-    
+
     Each sample returns:
-    - X: Feature tensor [K, D] with D=10 features
+    - X: Feature tensor [K, D] with D=11 features (6 candle + 4 swing + 1 expansion)
     - mask: Boolean mask [K] indicating which timesteps are masked for reconstruction
     - valid_mask: Boolean mask [K] indicating valid timesteps (False for warmup)
     """
@@ -103,12 +104,20 @@ class WindowedDataset(Dataset):
         window_start = self.window_indices[idx]
 
         # Get features for this window
-        X = self.X_full[window_start]  # [K, D]
+        X = self.X_full[window_start].copy()  # [K, D] - copy for augmentation
         valid_mask = self.valid_mask_full[window_start]  # [K]
 
         # Apply padding if configured
         if self.config.padding_bars > 0:
             X, valid_mask = self._apply_padding(X, valid_mask, window_start)
+
+        # Apply jitter augmentation (PDF: σ=0.03 for small-sample robustness)
+        # Only apply to valid positions to preserve causality
+        if self.config.jitter_sigma > 0:
+            jitter_noise = np.random.normal(0, self.config.jitter_sigma, X.shape)
+            # Mask out jitter for invalid positions (warmup/padding)
+            jitter_noise = jitter_noise * valid_mask[:, np.newaxis]
+            X = X + jitter_noise
 
         # Create reconstruction mask (15% random masking)
         mask = torch.zeros(len(X), dtype=torch.bool)

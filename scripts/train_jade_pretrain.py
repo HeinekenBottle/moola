@@ -43,10 +43,10 @@ class TrainingConfig(BaseModel):
     """Training configuration."""
     # Model config
     model: JadeConfig = JadeConfig(
-        input_size=10,
+        input_size=11,  # 6 candle + 4 swing + 1 expansion_proxy
         hidden_size=128,
         num_layers=2,
-        dropout=0.2,
+        dropout=0.65,  # PDF: High dropout for <200 sample regime
         huber_delta=1.0
     )
     
@@ -318,18 +318,101 @@ class JadeTrainer:
                 new_path.unlink()
             new_path.symlink_to(path.name)
     
+    def _validate_features(self, df: pd.DataFrame):
+        """Validate feature quality gates (PDF requirements).
+
+        Args:
+            df: OHLC DataFrame to validate
+
+        Raises:
+            ValueError: If feature quality gates fail
+        """
+        print("\n=== Feature Quality Validation ===")
+
+        # Note: Features are built on-the-fly in windowed_loader
+        # So we build a small sample here just for validation
+        from moola.features.relativity import build_relativity_features, RelativityConfig
+
+        # Sample first 1000 bars for quick validation
+        df_sample = df.head(1000)
+        cfg = RelativityConfig()
+        X_sample, valid_mask, _ = build_relativity_features(df_sample, cfg.dict())
+
+        # Feature names (11 total from relativity.py)
+        feature_names = [
+            'open_norm', 'close_norm', 'body_pct', 'upper_wick_pct', 'lower_wick_pct',
+            'range_z', 'dist_to_prev_SH', 'dist_to_prev_SL', 'bars_since_SH_norm',
+            'bars_since_SL_norm', 'expansion_proxy'
+        ]
+
+        # Flatten to [N, D] for analysis
+        X_flat = X_sample.reshape(-1, X_sample.shape[-1])
+        valid_flat = valid_mask.reshape(-1)
+        X_valid = X_flat[valid_flat]  # Only valid positions
+
+        # Check for NaNs (hard fail)
+        n_nans = np.isnan(X_valid).sum()
+        if n_nans > 0:
+            raise ValueError(f"Found {n_nans} NaN values in features! This will crash training.")
+        print(f"✓ No NaNs found in features")
+
+        # Check non-zero percentages for sparse features
+        # Sparse: Can have zeros when no swing detected or just at swing point
+        sparse_features = ['dist_to_prev_SH', 'dist_to_prev_SL', 'bars_since_SH_norm',
+                          'bars_since_SL_norm', 'expansion_proxy']
+        sparse_indices = [6, 7, 8, 9, 10]  # Indices in feature vector (11 total)
+
+        print("\nSparse feature analysis (may have zeros):")
+        for feat_name, feat_idx in zip(sparse_features, sparse_indices):
+            feat_values = X_valid[:, feat_idx]
+            non_zero_pct = (feat_values != 0).mean()
+            mean_val = feat_values.mean()
+            std_val = feat_values.std()
+
+            print(f"  {feat_name:20s}: non-zero={non_zero_pct:.1%}, mean={mean_val:+.4f}, std={std_val:.4f}")
+
+            # PDF requirement: >50% non-zero for sparse features
+            if non_zero_pct < 0.50:
+                print(f"    ⚠️  WARNING: Non-zero % below 50% threshold (PDF requirement)")
+            else:
+                print(f"    ✓ Passed non-zero threshold")
+
+        # Check dense features (should be mostly non-zero)
+        dense_features = ['open_norm', 'close_norm', 'body_pct', 'upper_wick_pct',
+                         'lower_wick_pct', 'range_z']
+        dense_indices = [0, 1, 2, 3, 4, 5]
+
+        print("\nDense feature analysis (should be mostly non-zero):")
+        for feat_name, feat_idx in zip(dense_features, dense_indices):
+            feat_values = X_valid[:, feat_idx]
+            non_zero_pct = (feat_values != 0).mean()
+            mean_val = feat_values.mean()
+            std_val = feat_values.std()
+
+            print(f"  {feat_name:20s}: non-zero={non_zero_pct:.1%}, mean={mean_val:+.4f}, std={std_val:.4f}")
+
+        print("\n✓ Feature validation complete\n")
+
     def train(self, data_path: str):
         """Main training loop."""
         print(f"Starting Jade pretraining with seed {self.current_seed}")
         print(f"Output directory: {self.output_dir}")
-        
+
         # Set seed
         set_seed(self.current_seed)
-        
+
+        # Load and validate data
+        print(f"Loading data from {data_path}")
+        df = pd.read_parquet(data_path)
+        print(f"Data shape: {df.shape}")
+
+        # Validate feature quality (PDF requirements)
+        self._validate_features(df)
+
         # Create dataloaders
         print("Creating dataloaders...")
         train_loader, val_loader, test_loader = create_dataloaders(
-            pd.read_parquet(data_path),
+            df,
             self.windowed_config,
             batch_size=self.config.batch_size,
             num_workers=self.config.num_workers,
