@@ -5,7 +5,7 @@ Implements:
 - Uncertainty-weighted multi-task loss (Kendall et al., CVPR 2018)
 - Focal loss for class imbalance (γ=2)
 - WeightedRandomSampler for balanced batch exposure
-- Data preprocessing: Raw OHLC → 11-D relativity features
+- Data preprocessing: Raw OHLC → 12-D relativity features (incl. consol_proxy)
 - Pointer encoding: expansion_start/end → normalized center/length [0,1]
 
 Usage:
@@ -27,7 +27,7 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -36,14 +36,192 @@ import torch.nn as nn
 import torch.nn.functional as F
 from rich.console import Console
 from rich.progress import track
+from rich.table import Table
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import classification_report
+from sklearn.metrics import (
+    classification_report,
+    precision_recall_fscore_support,
+    roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    confusion_matrix,
+)
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from moola.features.relativity import build_relativity_features, RelativityConfig
 from moola.models.jade_core import JadeCompact
 
 console = Console()
+
+
+class GradientConflictMonitor:
+    """Monitor gradient conflicts between tasks during multi-task learning.
+
+    Tracks:
+    - Cosine similarity between task gradients
+    - Conflict frequency (% of updates with cos < threshold)
+    - Average gradient magnitudes per task
+    - PCGrad projection frequency
+    """
+
+    def __init__(self, log_interval: int = 100):
+        self.log_interval = log_interval
+        self.reset()
+
+    def reset(self):
+        """Reset all monitoring statistics."""
+        self.step_count = 0
+        self.conflict_count = 0
+        self.projection_count = 0
+        self.cos_similarities = []
+        self.grad_mag_task1 = []
+        self.grad_mag_task2 = []
+
+    def record(
+        self,
+        cos_sim: float,
+        grad_mag_1: float,
+        grad_mag_2: float,
+        was_projected: bool,
+        is_conflict: bool,
+    ):
+        """Record gradient statistics for a single step."""
+        self.step_count += 1
+        self.cos_similarities.append(cos_sim)
+        self.grad_mag_task1.append(grad_mag_1)
+        self.grad_mag_task2.append(grad_mag_2)
+
+        if is_conflict:
+            self.conflict_count += 1
+        if was_projected:
+            self.projection_count += 1
+
+    def should_log(self) -> bool:
+        """Check if we should log statistics."""
+        return self.step_count > 0 and self.step_count % self.log_interval == 0
+
+    def get_summary(self) -> Dict[str, float]:
+        """Get summary statistics."""
+        if self.step_count == 0:
+            return {}
+
+        return {
+            "conflict_rate": self.conflict_count / self.step_count,
+            "projection_rate": self.projection_count / self.step_count,
+            "avg_cos_sim": np.mean(self.cos_similarities),
+            "min_cos_sim": np.min(self.cos_similarities),
+            "avg_grad_mag_task1": np.mean(self.grad_mag_task1),
+            "avg_grad_mag_task2": np.mean(self.grad_mag_task2),
+            "total_steps": self.step_count,
+        }
+
+    def log_summary(self):
+        """Log summary statistics with rich formatting."""
+        summary = self.get_summary()
+        if not summary:
+            return
+
+        table = Table(
+            title="Gradient Conflict Analysis",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Total Steps", f"{summary['total_steps']}")
+        table.add_row("Conflict Rate", f"{summary['conflict_rate']:.2%}")
+        table.add_row("Projection Rate", f"{summary['projection_rate']:.2%}")
+        table.add_row("Avg Cos Similarity", f"{summary['avg_cos_sim']:.4f}")
+        table.add_row("Min Cos Similarity", f"{summary['min_cos_sim']:.4f}")
+        table.add_row("Avg |∇L_type|", f"{summary['avg_grad_mag_task1']:.6f}")
+        table.add_row("Avg |∇L_ptr|", f"{summary['avg_grad_mag_task2']:.6f}")
+
+        console.print(table)
+
+
+def project_conflicting_gradients(
+    grads_task1: List[torch.Tensor],
+    grads_task2: List[torch.Tensor],
+) -> Tuple[List[torch.Tensor], List[torch.Tensor], bool, float, float, float]:
+    """Project gradients orthogonally if they conflict (negative dot product).
+
+    Implements PCGrad (Yu et al., NeurIPS 2020):
+    When two task gradients conflict (cos < 0), project each gradient onto
+    the normal plane of the other to remove the conflicting component.
+
+    Args:
+        grads_task1: List of gradients for task 1 (classification)
+        grads_task2: List of gradients for task 2 (pointer regression)
+
+    Returns:
+        Tuple of:
+        - projected_grads_task1: Projected gradients for task 1
+        - projected_grads_task2: Projected gradients for task 2
+        - conflict_detected: True if gradients conflict (cos < 0)
+        - cos_similarity: Cosine similarity between gradients
+        - grad_mag_1: Magnitude of task 1 gradient
+        - grad_mag_2: Magnitude of task 2 gradient
+    """
+    # Flatten gradients to 1D vectors
+    flat_grad1 = torch.cat([g.flatten() for g in grads_task1 if g is not None])
+    flat_grad2 = torch.cat([g.flatten() for g in grads_task2 if g is not None])
+
+    # Compute gradient magnitudes
+    grad_mag_1 = torch.norm(flat_grad1).item()
+    grad_mag_2 = torch.norm(flat_grad2).item()
+
+    # Compute cosine similarity
+    dot_product = torch.dot(flat_grad1, flat_grad2)
+    cos_similarity = (dot_product / (grad_mag_1 * grad_mag_2 + 1e-8)).item()
+
+    # Check for conflict
+    conflict_detected = cos_similarity < 0
+
+    if not conflict_detected:
+        # No conflict - return original gradients
+        return grads_task1, grads_task2, False, cos_similarity, grad_mag_1, grad_mag_2
+
+    # Project gradients orthogonally
+    # g1_proj = g1 - (g1 · g2 / ||g2||²) * g2
+    # g2_proj = g2 - (g2 · g1 / ||g1||²) * g1
+
+    # Compute projection coefficients
+    coef_1_on_2 = dot_product / (torch.norm(flat_grad2) ** 2 + 1e-8)
+    coef_2_on_1 = dot_product / (torch.norm(flat_grad1) ** 2 + 1e-8)
+
+    # Project flat gradients
+    flat_grad1_proj = flat_grad1 - coef_1_on_2 * flat_grad2
+    flat_grad2_proj = flat_grad2 - coef_2_on_1 * flat_grad1
+
+    # Reshape back to original gradient structure
+    projected_grads_task1 = []
+    projected_grads_task2 = []
+
+    offset = 0
+    for g1, g2 in zip(grads_task1, grads_task2):
+        if g1 is not None:
+            numel = g1.numel()
+            projected_grads_task1.append(
+                flat_grad1_proj[offset : offset + numel].reshape_as(g1)
+            )
+            projected_grads_task2.append(
+                flat_grad2_proj[offset : offset + numel].reshape_as(g2)
+            )
+            offset += numel
+        else:
+            projected_grads_task1.append(None)
+            projected_grads_task2.append(None)
+
+    return (
+        projected_grads_task1,
+        projected_grads_task2,
+        True,
+        cos_similarity,
+        grad_mag_1,
+        grad_mag_2,
+    )
 
 
 class OHLCAugmenter:
@@ -53,7 +231,7 @@ class OHLCAugmenter:
         self.sigma = jitter_sigma
 
     def __call__(self, feats: torch.Tensor) -> torch.Tensor:
-        """Apply jitter to features [105, 11]."""
+        """Apply jitter to features [105, 12]."""
         noise = torch.randn_like(feats) * self.sigma
         return feats + noise
 
@@ -86,7 +264,7 @@ class FocalLoss(nn.Module):
 
 
 class JadeDataset(Dataset):
-    """Dataset for Jade fine-tuning with 11-D relativity features."""
+    """Dataset for Jade fine-tuning with 12-D relativity features (incl. consol_proxy)."""
 
     def __init__(
         self,
@@ -120,15 +298,15 @@ class JadeDataset(Dataset):
         self.augmenter = OHLCAugmenter(jitter_sigma=0.03) if use_augmentation else None
 
         # Build relativity features for all samples
-        console.print(f"[blue]Building 11-D relativity features for {len(df)} samples...[/blue]")
+        console.print(f"[blue]Building 12-D relativity features for {len(df)} samples...[/blue]")
         if use_augmentation:
             console.print(f"[blue]  Augmentation enabled: {augmentation_multiplier}x multiplier (σ=0.03 jitter)[/blue]")
-        self.features_11d = self._build_all_features()
+        self.features_12d = self._build_all_features()
 
-        console.print(f"[green]✓ Dataset ready: {len(self)} samples, feature shape: {self.features_11d[0].shape}[/green]")
+        console.print(f"[green]✓ Dataset ready: {len(self)} samples, feature shape: {self.features_12d[0].shape}[/green]")
 
     def _build_all_features(self) -> List[np.ndarray]:
-        """Build 11-D relativity features from raw OHLC."""
+        """Build 12-D relativity features from raw OHLC (incl. consol_proxy)."""
         features_list = []
 
         for idx in track(range(len(self.df)), description="Building features"):
@@ -145,12 +323,12 @@ class JadeDataset(Dataset):
                 columns=["open", "high", "low", "close"]
             )
 
-            # Build 11-D relativity features
+            # Build 12-D relativity features (incl. consol_proxy)
             relativity_cfg = RelativityConfig()
-            X_11d, valid_mask, _ = build_relativity_features(ohlc_df, relativity_cfg.dict())
+            X_12d, valid_mask, _ = build_relativity_features(ohlc_df, relativity_cfg.dict())
 
-            # X_11d shape: [1, K, 11] (only 1 window from this OHLC)
-            features_list.append(X_11d[0])  # Extract [K, 11]
+            # X_12d shape: [1, K, 12] (only 1 window from this OHLC)
+            features_list.append(X_12d[0])  # Extract [K, 12]
 
         return features_list
 
@@ -161,7 +339,7 @@ class JadeDataset(Dataset):
         """Get sample (features, label, pointer_targets).
 
         Returns:
-            features: [K, 11] relativity features
+            features: [K, 12] relativity features (incl. consol_proxy)
             label: Class index
             pointer_targets: [2] normalized (center, length) in [0, 1]
         """
@@ -169,8 +347,8 @@ class JadeDataset(Dataset):
         original_idx = idx % len(self.df)
         row = self.df.iloc[original_idx]
 
-        # Features [K, 11]
-        features = torch.from_numpy(self.features_11d[original_idx]).float()
+        # Features [K, 12]
+        features = torch.from_numpy(self.features_12d[original_idx]).float()
 
         # Apply augmentation if not first replica (idx % multiplier != 0)
         if self.use_augmentation and (idx % self.multiplier != 0):
@@ -207,6 +385,183 @@ def create_weighted_sampler(labels: np.ndarray) -> WeightedRandomSampler:
     console.print(f"[blue]Class weights: {dict(zip(unique, class_weights))}[/blue]")
 
     return sampler
+
+
+def compute_pointer_metrics(
+    pred_centers: np.ndarray,
+    pred_lengths: np.ndarray,
+    true_centers: np.ndarray,
+    true_lengths: np.ndarray,
+    window_length: int = 105,
+) -> Dict[str, float]:
+    """Compute pointer regression metrics.
+
+    Args:
+        pred_centers: Predicted centers (normalized [0, 1])
+        pred_lengths: Predicted lengths (normalized [0, 1])
+        true_centers: True centers (normalized [0, 1])
+        true_lengths: True lengths (normalized [0, 1])
+        window_length: Window length for denormalization (default 105)
+
+    Returns:
+        Dictionary of pointer metrics
+    """
+    # Denormalize to timestep units
+    pred_centers_ts = pred_centers * window_length
+    pred_lengths_ts = pred_lengths * window_length
+    true_centers_ts = true_centers * window_length
+    true_lengths_ts = true_lengths * window_length
+
+    # MAE for center and length
+    center_mae = np.mean(np.abs(pred_centers_ts - true_centers_ts))
+    length_mae = np.mean(np.abs(pred_lengths_ts - true_lengths_ts))
+
+    # Hit@±3 and Hit@±5 (center within ±N bars)
+    center_errors = np.abs(pred_centers_ts - true_centers_ts)
+    hit_at_3 = np.mean(center_errors <= 3.0)
+    hit_at_5 = np.mean(center_errors <= 5.0)
+
+    return {
+        "center_mae": center_mae,
+        "length_mae": length_mae,
+        "hit_at_3": hit_at_3,
+        "hit_at_5": hit_at_5,
+    }
+
+
+def compute_calibration_metrics(probs: np.ndarray, labels: np.ndarray, n_bins: int = 10) -> Dict[str, float]:
+    """Compute calibration metrics (ECE, MCE, Brier score).
+
+    Args:
+        probs: Predicted probabilities for positive class [N]
+        labels: Binary labels [N]
+        n_bins: Number of bins for ECE computation
+
+    Returns:
+        Dictionary of calibration metrics
+    """
+    # Brier score
+    brier = brier_score_loss(labels, probs)
+
+    # ECE and MCE
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_boundaries[:-1]
+    bin_uppers = bin_boundaries[1:]
+
+    ece = 0.0
+    mce = 0.0
+
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        # Find samples in this bin
+        in_bin = (probs > bin_lower) & (probs <= bin_upper)
+        prop_in_bin = np.mean(in_bin)
+
+        if prop_in_bin > 0:
+            # Compute accuracy and confidence in this bin
+            accuracy_in_bin = np.mean(labels[in_bin])
+            avg_confidence_in_bin = np.mean(probs[in_bin])
+
+            # Calibration error for this bin
+            bin_error = np.abs(avg_confidence_in_bin - accuracy_in_bin)
+
+            # ECE: weighted by proportion of samples in bin
+            ece += prop_in_bin * bin_error
+
+            # MCE: maximum calibration error
+            mce = max(mce, bin_error)
+
+    return {
+        "ece": ece,
+        "mce": mce,
+        "brier": brier,
+    }
+
+
+def compute_joint_success(
+    preds: np.ndarray,
+    labels: np.ndarray,
+    pred_centers: np.ndarray,
+    true_centers: np.ndarray,
+    window_length: int = 105,
+    center_tolerance: int = 3,
+) -> float:
+    """Compute joint success rate (correct classification AND correct pointer).
+
+    Args:
+        preds: Predicted class labels
+        labels: True class labels
+        pred_centers: Predicted centers (normalized [0, 1])
+        true_centers: True centers (normalized [0, 1])
+        window_length: Window length for denormalization
+        center_tolerance: Tolerance in timesteps for center prediction (default ±3)
+
+    Returns:
+        Joint success rate (fraction of samples with both tasks correct)
+    """
+    # Classification correct
+    classification_correct = (preds == labels)
+
+    # Pointer correct (center within tolerance)
+    pred_centers_ts = pred_centers * window_length
+    true_centers_ts = true_centers * window_length
+    center_errors = np.abs(pred_centers_ts - true_centers_ts)
+    pointer_correct = (center_errors <= center_tolerance)
+
+    # Both correct
+    joint_correct = classification_correct & pointer_correct
+
+    return np.mean(joint_correct)
+
+
+def create_metrics_table(metrics: Dict[str, float], title: str = "Validation Metrics") -> Table:
+    """Create a rich Table for displaying metrics.
+
+    Args:
+        metrics: Dictionary of metric name -> value
+        title: Table title
+
+    Returns:
+        Rich Table object
+    """
+    table = Table(title=title, show_header=True, header_style="bold cyan")
+    table.add_column("Metric", style="cyan", width=25)
+    table.add_column("Value", style="green", justify="right", width=15)
+
+    # Organize metrics by category
+    categories = {
+        "Classification": ["accuracy", "f1_macro", "precision_cons", "recall_cons", "f1_cons",
+                          "precision_retr", "recall_retr", "f1_retr", "auroc", "auprc"],
+        "Pointer Regression": ["center_mae", "length_mae", "hit_at_3", "hit_at_5"],
+        "Calibration": ["ece", "mce", "brier"],
+        "Multi-Task": ["joint_success_at_3", "joint_success_at_5"],
+        "Loss": ["loss", "loss_type", "loss_ptr"],
+    }
+
+    for category, metric_keys in categories.items():
+        # Add category header
+        table.add_row(f"[bold yellow]{category}[/bold yellow]", "")
+
+        # Add metrics in this category
+        for key in metric_keys:
+            if key in metrics:
+                value = metrics[key]
+
+                # Format based on metric type
+                if "mae" in key or "loss" in key:
+                    formatted_value = f"{value:.4f}"
+                elif "hit" in key or "success" in key or key in ["accuracy", "precision", "recall", "f1", "auroc", "auprc"]:
+                    formatted_value = f"{value:.3f} ({value*100:.1f}%)"
+                elif key in ["ece", "mce", "brier"]:
+                    formatted_value = f"{value:.4f}"
+                else:
+                    formatted_value = f"{value:.4f}"
+
+                table.add_row(f"  {key}", formatted_value)
+
+        # Add spacing between categories
+        table.add_row("", "")
+
+    return table
 
 
 def compute_multi_task_loss(
@@ -269,8 +624,26 @@ def train_epoch(
     device: str,
     focal_gamma: float = 0.0,
     use_uncertainty_weighting: bool = True,
+    use_pcgrad: bool = True,
+    pcgrad_threshold: float = -0.3,
+    conflict_monitor: Optional[GradientConflictMonitor] = None,
 ) -> Dict[str, float]:
-    """Train for one epoch."""
+    """Train for one epoch with optional PCGrad projection.
+
+    Args:
+        model: JadeCompact model
+        dataloader: Training data loader
+        optimizer: Optimizer
+        device: Device (cuda/cpu)
+        focal_gamma: Focal loss gamma parameter
+        use_uncertainty_weighting: Use Kendall uncertainty weighting
+        use_pcgrad: Apply PCGrad when gradients conflict
+        pcgrad_threshold: Apply PCGrad when cos similarity < threshold (default -0.3)
+        conflict_monitor: Optional monitor for gradient conflict statistics
+
+    Returns:
+        Dictionary of training metrics
+    """
     model.train()
 
     total_loss = 0.0
@@ -290,21 +663,130 @@ def train_epoch(
         sigma_ptr = output.get("sigma_ptr", torch.tensor(1.0))
         sigma_type = output.get("sigma_type", torch.tensor(1.0))
 
-        # Compute loss
-        loss, metrics_dict = compute_multi_task_loss(
-            logits, pointers, labels, pointer_targets,
-            sigma_ptr, sigma_type,
-            focal_gamma=focal_gamma,
-            use_uncertainty_weighting=use_uncertainty_weighting
-        )
+        # Compute individual task losses
+        focal_loss_fn = FocalLoss(gamma=focal_gamma)
+        loss_type = focal_loss_fn(logits, labels)
+        loss_ptr = F.huber_loss(pointers, pointer_targets, delta=0.08)
 
-        # Backward pass
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if use_pcgrad:
+            # Compute gradients for each task separately
+            optimizer.zero_grad()
+
+            # Task 1: Classification gradients
+            loss_type.backward(retain_graph=True)
+            # Collect only SHARED encoder gradients (not task-specific heads)
+            grads_task1 = []
+            for name, p in model.named_parameters():
+                if 'lstm' in name or 'projection' in name or 'input_dropout' in name:
+                    grads_task1.append(p.grad.clone() if p.grad is not None else None)
+
+            # Clear gradients
+            optimizer.zero_grad()
+
+            # Task 2: Pointer gradients
+            loss_ptr.backward(retain_graph=True)
+            # Collect only SHARED encoder gradients (not task-specific heads)
+            grads_task2 = []
+            for name, p in model.named_parameters():
+                if 'lstm' in name or 'projection' in name or 'input_dropout' in name:
+                    grads_task2.append(p.grad.clone() if p.grad is not None else None)
+
+            # Clear gradients again
+            optimizer.zero_grad()
+
+            # Apply PCGrad projection
+            (
+                proj_grads_task1,
+                proj_grads_task2,
+                was_projected,
+                cos_sim,
+                grad_mag_1,
+                grad_mag_2,
+            ) = project_conflicting_gradients(grads_task1, grads_task2)
+
+            # Decide whether to apply projection based on threshold
+            should_project = use_pcgrad and cos_sim < pcgrad_threshold
+            is_conflict = cos_sim < 0
+
+            # Record conflict statistics
+            if conflict_monitor is not None:
+                conflict_monitor.record(
+                    cos_sim, grad_mag_1, grad_mag_2, should_project, is_conflict
+                )
+
+            # Use projected gradients if conflict is strong enough
+            if should_project:
+                # Combine projected gradients with uncertainty weighting
+                if use_uncertainty_weighting:
+                    weight_type = 1.0 / (2 * sigma_type**2)
+                    weight_ptr = 1.0 / (2 * sigma_ptr**2)
+                else:
+                    weight_type = 0.7
+                    weight_ptr = 0.3
+
+                # Apply projected gradients to encoder, standard gradients to task heads
+                # First, set encoder gradients to projected values
+                encoder_params = [
+                    (name, p) for name, p in model.named_parameters()
+                    if 'lstm' in name or 'projection' in name or 'input_dropout' in name
+                ]
+                for (name, param), g1, g2 in zip(encoder_params, proj_grads_task1, proj_grads_task2):
+                    if param.requires_grad and g1 is not None and g2 is not None:
+                        param.grad = weight_type * g1 + weight_ptr * g2
+
+                # Then compute standard combined loss for task-specific heads
+                combined_loss = weight_type * loss_type + weight_ptr * loss_ptr
+                combined_loss.backward()  # Adds gradients for classifier + pointer heads
+            else:
+                # No strong conflict - use standard combined loss
+                loss, _ = compute_multi_task_loss(
+                    logits,
+                    pointers,
+                    labels,
+                    pointer_targets,
+                    sigma_ptr,
+                    sigma_type,
+                    focal_gamma=focal_gamma,
+                    use_uncertainty_weighting=use_uncertainty_weighting,
+                )
+                loss.backward()
+
+            # Update parameters
+            optimizer.step()
+
+            # Compute metrics for logging
+            metrics_dict = {
+                "loss_type": loss_type.item(),
+                "loss_ptr": loss_ptr.item(),
+                "sigma_ptr": sigma_ptr.item()
+                if use_uncertainty_weighting
+                else 1.0,
+                "sigma_type": sigma_type.item()
+                if use_uncertainty_weighting
+                else 1.0,
+            }
+            total_loss += (loss_type.item() + loss_ptr.item()) * len(labels)
+
+        else:
+            # Standard training without PCGrad
+            loss, metrics_dict = compute_multi_task_loss(
+                logits,
+                pointers,
+                labels,
+                pointer_targets,
+                sigma_ptr,
+                sigma_type,
+                focal_gamma=focal_gamma,
+                use_uncertainty_weighting=use_uncertainty_weighting,
+            )
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item() * len(labels)
 
         # Metrics
-        total_loss += loss.item() * len(labels)
         preds = logits.argmax(dim=1)
         total_correct += (preds == labels).sum().item()
         total_samples += len(labels)
@@ -312,22 +794,53 @@ def train_epoch(
         # Per-task monitoring every 10 batches
         batch_count += 1
         if batch_count % 10 == 0:
+            pcgrad_status = ""
+            if use_pcgrad and conflict_monitor is not None:
+                rate = (
+                    conflict_monitor.projection_count / conflict_monitor.step_count
+                )
+                pcgrad_status = f" | PCGrad: {conflict_monitor.projection_count}/{conflict_monitor.step_count} ({rate:.1%})"
+
             console.print(
                 f"[blue]Batch {batch_count}: L_ptr={metrics_dict['loss_ptr']:.4f}, "
                 f"L_type={metrics_dict['loss_type']:.4f}, "
                 f"σ_ptr={metrics_dict['sigma_ptr']:.2f}, "
-                f"σ_type={metrics_dict['sigma_type']:.2f}[/blue]"
+                f"σ_type={metrics_dict['sigma_type']:.2f}{pcgrad_status}[/blue]"
             )
             # Collapse detection
-            if metrics_dict['loss_ptr'] < 1e-4 or metrics_dict['sigma_ptr'] > 10:
-                console.print("[yellow]⚠️ Ptr collapse: L_ptr near 0 or σ_ptr >10[/yellow]")
-            if metrics_dict['loss_type'] < 1e-4 or metrics_dict['sigma_type'] > 10:
-                console.print("[yellow]⚠️ Type collapse: L_type near 0 or σ_type >10[/yellow]")
+            if metrics_dict["loss_ptr"] < 1e-4 or metrics_dict["sigma_ptr"] > 10:
+                console.print(
+                    "[yellow]⚠️ Ptr collapse: L_ptr near 0 or σ_ptr >10[/yellow]"
+                )
+            if metrics_dict["loss_type"] < 1e-4 or metrics_dict["sigma_type"] > 10:
+                console.print(
+                    "[yellow]⚠️ Type collapse: L_type near 0 or σ_type >10[/yellow]"
+                )
+
+        # Log conflict analysis periodically
+        if (
+            use_pcgrad
+            and conflict_monitor is not None
+            and conflict_monitor.should_log()
+        ):
+            conflict_monitor.log_summary()
 
     metrics = {
         "loss": total_loss / total_samples,
         "accuracy": total_correct / total_samples,
     }
+
+    # Add conflict statistics to final metrics
+    if use_pcgrad and conflict_monitor is not None:
+        conflict_summary = conflict_monitor.get_summary()
+        if conflict_summary:
+            metrics.update(
+                {
+                    "conflict_rate": conflict_summary["conflict_rate"],
+                    "projection_rate": conflict_summary["projection_rate"],
+                    "avg_cos_sim": conflict_summary["avg_cos_sim"],
+                }
+            )
 
     return metrics
 
@@ -339,16 +852,25 @@ def evaluate(
     device: str,
     focal_gamma: float = 0.0,
     use_uncertainty_weighting: bool = True,
+    window_length: int = 105,
 ) -> Dict[str, float]:
-    """Evaluate model on validation set."""
+    """Evaluate model on validation set with comprehensive metrics."""
     model.eval()
 
     total_loss = 0.0
+    total_loss_type = 0.0
+    total_loss_ptr = 0.0
     total_correct = 0
     total_samples = 0
 
+    # Collect predictions and targets
     all_preds = []
     all_labels = []
+    all_probs = []  # For calibration metrics
+    all_pred_centers = []
+    all_pred_lengths = []
+    all_true_centers = []
+    all_true_lengths = []
 
     for features, labels, pointer_targets in dataloader:
         features = features.to(device)
@@ -363,41 +885,134 @@ def evaluate(
         sigma_type = output.get("sigma_type", torch.tensor(1.0))
 
         # Compute loss
-        loss, _ = compute_multi_task_loss(
+        loss, loss_dict = compute_multi_task_loss(
             logits, pointers, labels, pointer_targets,
             sigma_ptr, sigma_type,
             focal_gamma=focal_gamma,
             use_uncertainty_weighting=use_uncertainty_weighting
         )
 
-        # Metrics
+        # Accumulate losses
         total_loss += loss.item() * len(labels)
+        total_loss_type += loss_dict["loss_type"] * len(labels)
+        total_loss_ptr += loss_dict["loss_ptr"] * len(labels)
+
+        # Predictions
         preds = logits.argmax(dim=1)
+        probs = F.softmax(logits, dim=1)[:, 1]  # Probability of retracement (class 1)
+
         total_correct += (preds == labels).sum().item()
         total_samples += len(labels)
 
+        # Collect for metrics
         all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
+        all_probs.extend(probs.cpu().numpy())
+        all_pred_centers.extend(pointers[:, 0].cpu().numpy())
+        all_pred_lengths.extend(pointers[:, 1].cpu().numpy())
+        all_true_centers.extend(pointer_targets[:, 0].cpu().numpy())
+        all_true_lengths.extend(pointer_targets[:, 1].cpu().numpy())
 
-    # Compute F1 scores
-    from sklearn.metrics import f1_score
+    # Convert to numpy arrays
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    all_probs = np.array(all_probs)
+    all_pred_centers = np.array(all_pred_centers)
+    all_pred_lengths = np.array(all_pred_lengths)
+    all_true_centers = np.array(all_true_centers)
+    all_true_lengths = np.array(all_true_lengths)
 
-    f1_macro = f1_score(all_labels, all_preds, average="macro")
+    # === Classification Metrics ===
+    accuracy = total_correct / total_samples
+    f1_macro = f1_score(all_labels, all_preds, average="macro", zero_division=0)
 
-    # Per-class report
-    report = classification_report(
-        all_labels, all_preds,
-        labels=[0, 1],
-        target_names=["consolidation", "retracement"],
-        zero_division=0
+    # Per-class precision, recall, F1
+    precision, recall, f1, support = precision_recall_fscore_support(
+        all_labels, all_preds, labels=[0, 1], zero_division=0
     )
-    console.print(f"[blue]Per-class Report:\n{report}[/blue]")
 
+    # Confusion matrix
+    cm = confusion_matrix(all_labels, all_preds, labels=[0, 1])
+
+    # AUROC and AUPRC (if both classes present)
+    try:
+        auroc = roc_auc_score(all_labels, all_probs)
+        auprc = average_precision_score(all_labels, all_probs)
+    except ValueError:
+        # Only one class in validation set
+        auroc = 0.0
+        auprc = 0.0
+
+    # === Pointer Regression Metrics ===
+    pointer_metrics = compute_pointer_metrics(
+        all_pred_centers, all_pred_lengths,
+        all_true_centers, all_true_lengths,
+        window_length=window_length
+    )
+
+    # === Calibration Metrics ===
+    calibration_metrics = compute_calibration_metrics(all_probs, all_labels)
+
+    # === Joint Success Metrics ===
+    joint_success_at_3 = compute_joint_success(
+        all_preds, all_labels,
+        all_pred_centers, all_true_centers,
+        window_length=window_length,
+        center_tolerance=3
+    )
+
+    joint_success_at_5 = compute_joint_success(
+        all_preds, all_labels,
+        all_pred_centers, all_true_centers,
+        window_length=window_length,
+        center_tolerance=5
+    )
+
+    # Compile all metrics
     metrics = {
+        # Loss
         "loss": total_loss / total_samples,
-        "accuracy": total_correct / total_samples,
+        "loss_type": total_loss_type / total_samples,
+        "loss_ptr": total_loss_ptr / total_samples,
+
+        # Classification
+        "accuracy": accuracy,
         "f1_macro": f1_macro,
+        "precision_cons": precision[0],
+        "recall_cons": recall[0],
+        "f1_cons": f1[0],
+        "precision_retr": precision[1],
+        "recall_retr": recall[1],
+        "f1_retr": f1[1],
+        "auroc": auroc,
+        "auprc": auprc,
+
+        # Pointer regression
+        "center_mae": pointer_metrics["center_mae"],
+        "length_mae": pointer_metrics["length_mae"],
+        "hit_at_3": pointer_metrics["hit_at_3"],
+        "hit_at_5": pointer_metrics["hit_at_5"],
+
+        # Calibration
+        "ece": calibration_metrics["ece"],
+        "mce": calibration_metrics["mce"],
+        "brier": calibration_metrics["brier"],
+
+        # Multi-task joint success
+        "joint_success_at_3": joint_success_at_3,
+        "joint_success_at_5": joint_success_at_5,
     }
+
+    # Print comprehensive metrics table
+    table = create_metrics_table(metrics)
+    console.print(table)
+
+    # Print confusion matrix
+    console.print(f"\n[blue]Confusion Matrix:[/blue]")
+    console.print(f"  True Cons / Pred Cons: {cm[0, 0]}")
+    console.print(f"  True Cons / Pred Retr: {cm[0, 1]}")
+    console.print(f"  True Retr / Pred Cons: {cm[1, 0]}")
+    console.print(f"  True Retr / Pred Retr: {cm[1, 1]}")
 
     return metrics
 
@@ -414,6 +1029,8 @@ def train_with_cv(
     learning_rate: float = 3e-4,
     focal_gamma: float = 0.0,
     use_augmentation: bool = False,
+    use_pcgrad: bool = True,
+    pcgrad_threshold: float = -0.3,
     device: str = "cuda",
     output_dir: str = "artifacts/jade_finetuned",
     n_folds: int = 5,
@@ -479,7 +1096,7 @@ def train_with_cv(
         else:
             console.print("[yellow]Training from scratch (no pre-training)[/yellow]")
             model = JadeCompact(
-                input_size=11,
+                input_size=12,
                 hidden_size=96,
                 num_layers=1,
                 predict_pointers=True,
@@ -494,8 +1111,15 @@ def train_with_cv(
             weight_decay=1e-4
         )
 
+        # Create gradient conflict monitor for PCGrad
+        conflict_monitor = None
+        if use_pcgrad:
+            conflict_monitor = GradientConflictMonitor(log_interval=100)
+            console.print(f"[blue]PCGrad enabled: threshold={pcgrad_threshold}[/blue]")
+
         # Training loop
         best_f1 = 0.0
+        best_metrics = None
         patience_counter = 0
         patience = 5
 
@@ -521,7 +1145,16 @@ def train_with_cv(
                 console.print(f"  [green]Encoder LR: {lr_unfrozen}, weight_decay: {l2_encoder}[/green]")
                 console.print(f"  [green]Heads LR: {learning_rate}, weight_decay: 1e-4[/green]")
 
-            train_metrics = train_epoch(model, train_loader, optimizer, device, focal_gamma=focal_gamma)
+            train_metrics = train_epoch(
+                model,
+                train_loader,
+                optimizer,
+                device,
+                focal_gamma=focal_gamma,
+                use_pcgrad=use_pcgrad,
+                pcgrad_threshold=pcgrad_threshold,
+                conflict_monitor=conflict_monitor,
+            )
             val_metrics = evaluate(model, val_loader, device, focal_gamma=focal_gamma)
 
             console.print(
@@ -529,12 +1162,14 @@ def train_with_cv(
                 f"train_loss={train_metrics['loss']:.4f}, "
                 f"val_loss={val_metrics['loss']:.4f}, "
                 f"val_acc={val_metrics['accuracy']:.3f}, "
-                f"val_f1={val_metrics['f1_macro']:.3f}"
+                f"val_f1={val_metrics['f1_macro']:.3f}, "
+                f"joint@3={val_metrics['joint_success_at_3']:.3f}"
             )
 
             # Early stopping
             if val_metrics["f1_macro"] > best_f1:
                 best_f1 = val_metrics["f1_macro"]
+                best_metrics = val_metrics.copy()
                 patience_counter = 0
 
                 # Save best checkpoint
@@ -550,22 +1185,57 @@ def train_with_cv(
                     console.print(f"[yellow]Early stopping at epoch {epoch+1}[/yellow]")
                     break
 
-        # Store fold results
-        fold_results.append({
+        # Log final conflict analysis for this fold
+        if use_pcgrad and conflict_monitor is not None:
+            console.print(f"\n[bold yellow]Final Gradient Conflict Analysis - Fold {fold_idx + 1}[/bold yellow]")
+            conflict_monitor.log_summary()
+
+        # Store fold results with comprehensive metrics
+        fold_result = {
             "fold": fold_idx + 1,
-            "best_f1": best_f1,
-            "final_val_metrics": val_metrics,
-        })
+            "best_metrics": best_metrics,
+        }
 
-        console.print(f"[green]✓ Fold {fold_idx + 1} best F1: {best_f1:.3f}[/green]")
+        # Add conflict statistics if PCGrad was used
+        if use_pcgrad and conflict_monitor is not None:
+            conflict_summary = conflict_monitor.get_summary()
+            fold_result["conflict_stats"] = conflict_summary
 
-    # Average results
-    avg_f1 = np.mean([r["best_f1"] for r in fold_results])
-    console.print(f"\n[bold green]Average F1 across {n_folds} folds: {avg_f1:.3f}[/bold green]")
+        fold_results.append(fold_result)
 
-    # Save summary
+        console.print(f"[green]✓ Fold {fold_idx + 1} complete[/green]")
+        console.print(f"[green]  Best F1: {best_metrics['f1_macro']:.3f}, Joint@3: {best_metrics['joint_success_at_3']:.3f}[/green]")
+
+    # Compute average metrics across all folds
+    metric_keys = list(fold_results[0]["best_metrics"].keys())
+    avg_metrics = {}
+
+    for key in metric_keys:
+        values = [r["best_metrics"][key] for r in fold_results]
+        avg_metrics[key] = np.mean(values)
+        avg_metrics[f"{key}_std"] = np.std(values)
+
+    # Print comprehensive cross-validation summary
+    console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+    console.print(f"[bold cyan]Cross-Validation Summary ({n_folds} folds)[/bold cyan]")
+    console.print(f"[bold cyan]{'='*60}[/bold cyan]\n")
+
+    summary_table = create_metrics_table(avg_metrics, title="Average Metrics Across Folds")
+    console.print(summary_table)
+
+    # Highlight key metrics
+    console.print(f"\n[bold green]Key Metrics (mean ± std):[/bold green]")
+    console.print(f"  F1 Macro: {avg_metrics['f1_macro']:.3f} ± {avg_metrics['f1_macro_std']:.3f}")
+    console.print(f"  Accuracy: {avg_metrics['accuracy']:.3f} ± {avg_metrics['accuracy_std']:.3f}")
+    console.print(f"  Joint Success@3: {avg_metrics['joint_success_at_3']:.3f} ± {avg_metrics['joint_success_at_3_std']:.3f}")
+    console.print(f"  Center MAE: {avg_metrics['center_mae']:.2f} ± {avg_metrics['center_mae_std']:.2f} bars")
+    console.print(f"  Hit@±3: {avg_metrics['hit_at_3']:.3f} ± {avg_metrics['hit_at_3_std']:.3f}")
+    console.print(f"  AUROC: {avg_metrics['auroc']:.3f} ± {avg_metrics['auroc_std']:.3f}")
+    console.print(f"  ECE: {avg_metrics['ece']:.4f} ± {avg_metrics['ece_std']:.4f}")
+
+    # Save comprehensive summary
     summary = {
-        "avg_f1_macro": avg_f1,
+        "avg_metrics": avg_metrics,
         "fold_results": fold_results,
         "config": {
             "pretrained_encoder": pretrained_encoder,
@@ -575,6 +1245,8 @@ def train_with_cv(
             "learning_rate": learning_rate,
             "focal_gamma": focal_gamma,
             "use_augmentation": use_augmentation,
+            "use_pcgrad": use_pcgrad,
+            "pcgrad_threshold": pcgrad_threshold,
         }
     }
 
@@ -582,7 +1254,7 @@ def train_with_cv(
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
 
-    console.print(f"[green]✓ Saved summary to {summary_path}[/green]")
+    console.print(f"\n[green]✓ Saved comprehensive summary to {summary_path}[/green]")
 
 
 def main():
@@ -598,6 +1270,9 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=3e-4, help="Learning rate")
     parser.add_argument("--focal-gamma", type=float, default=0.0, help="Focal loss gamma (0=CE)")
     parser.add_argument("--use-augmentation", action="store_true", help="Enable jitter augmentation (σ=0.03, 3x multiplier)")
+    parser.add_argument("--use-pcgrad", action="store_true", default=True, help="Enable PCGrad (Projecting Conflicting Gradients) for multi-task learning (default: True)")
+    parser.add_argument("--no-pcgrad", dest="use_pcgrad", action="store_false", help="Disable PCGrad")
+    parser.add_argument("--pcgrad-threshold", type=float, default=-0.3, help="Apply PCGrad when cosine similarity < threshold (default: -0.3)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--output-dir", default="artifacts/jade_finetuned", help="Output directory")
     parser.add_argument("--n-folds", type=int, default=5, help="Number of CV folds")
@@ -616,6 +1291,8 @@ def main():
         learning_rate=args.learning_rate,
         focal_gamma=args.focal_gamma,
         use_augmentation=args.use_augmentation,
+        use_pcgrad=args.use_pcgrad,
+        pcgrad_threshold=args.pcgrad_threshold,
         device=args.device,
         output_dir=args.output_dir,
         n_folds=args.n_folds,

@@ -80,7 +80,7 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
         cfg: Relativity configuration
 
     Returns:
-        X: Feature tensor [N, K, D] with float32 dtype, D=11 (includes expansion_proxy)
+        X: Feature tensor [N, K, D] with float32 dtype, D=12 (includes expansion_proxy and consol_proxy)
         mask: Boolean mask [N, K] (False for warmup period)
         meta: Metadata dictionary
     """
@@ -89,15 +89,15 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
-    
+
     n_bars = len(df)
     window_length = cfg.window_length
-    
+
     if n_bars < window_length:
         raise ValueError(f"Data length {n_bars} less than window length {window_length}")
-    
-    # Initialize outputs (11 core features + expansion_proxy)
-    n_features = 11
+
+    # Initialize outputs (11 core features + expansion_proxy + consol_proxy)
+    n_features = 12
     n_windows = n_bars - window_length + 1
     X = np.zeros((n_windows, window_length, n_features), dtype=np.float32)
     mask = np.ones((n_windows, window_length), dtype=bool)
@@ -136,51 +136,61 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
         # Calculate bars since swings
         bars_since_SH = i - state['prev_SH'][0] if state['prev_SH'] else 0
         bars_since_SL = i - state['prev_SL'][0] if state['prev_SL'] else 0
-        
-        # Calculate features if we have enough data
-        if i >= window_length - 1:
-            # This bar can be part of a window
-            window_idx = i - window_length + 1
-            
-            # Candle shape features (6 dims)
-            open_norm, close_norm, body_pct, upper_wick_pct, lower_wick_pct, range_z = candle_shape(
-                o, h, l, c, ema_range, cfg.ohlc_eps
-            )
-            
-            # Swing-relative features (4 dims)
-            from .zigzag import swing_relative
-            dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm = swing_relative(
-                c,
-                state['prev_SH'][1] if state['prev_SH'] else None,
-                state['prev_SL'][1] if state['prev_SL'] else None,
-                atr,
-                bars_since_SH,
-                bars_since_SL,
-                K=window_length  # Normalize by window length
-            )
 
-            # Expansion proxy (1 dim): Synthetic surge detector
-            # expansion_proxy = range_z × leg_dir × body_pct
-            # Flags ICT expansions (5-6 bar surges) without absolute prices
-            current_trend = state.get('current_trend')
-            leg_dir = 1.0 if current_trend == 'up' else (-1.0 if current_trend == 'down' else 0.0)
-            expansion_proxy = range_z * leg_dir * body_pct
-            expansion_proxy = np.clip(expansion_proxy, -2.0, 2.0)  # Bounded ~[-2, 2]
+        # Calculate features for EVERY bar (not just bars >= window_length - 1)
+        # Candle shape features (6 dims)
+        open_norm, close_norm, body_pct, upper_wick_pct, lower_wick_pct, range_z = candle_shape(
+            o, h, l, c, ema_range, cfg.ohlc_eps
+        )
 
-            # Store core features in window (11 features max)
-            timestep_idx = window_length - 1  # Current bar is last in window
-            base_features = [
-                open_norm, close_norm, body_pct, upper_wick_pct, lower_wick_pct, range_z,
-                dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm,
-                expansion_proxy
-            ]
+        # Swing-relative features (4 dims)
+        from .zigzag import swing_relative
+        dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm = swing_relative(
+            c,
+            state['prev_SH'][1] if state['prev_SH'] else None,
+            state['prev_SL'][1] if state['prev_SL'] else None,
+            atr,
+            bars_since_SH,
+            bars_since_SL,
+            K=window_length  # Normalize by window length
+        )
 
-            X[window_idx, timestep_idx, :] = base_features
-            
-            # Set mask for warmup period (first 15 bars)
+        # Expansion proxy (1 dim): Synthetic surge detector
+        # expansion_proxy = range_z × leg_dir × body_pct
+        # Flags ICT expansions (5-6 bar surges) without absolute prices
+        current_trend = state.get('current_trend')
+        leg_dir = 1.0 if current_trend == 'up' else (-1.0 if current_trend == 'down' else 0.0)
+        expansion_proxy = range_z * leg_dir * body_pct
+        expansion_proxy = np.clip(expansion_proxy, -2.0, 2.0)  # Bounded ~[-2, 2]
+
+        # Consolidation proxy (1 dim): Low-volatility consolidation detector
+        # consol_proxy = (1 - range_z) × (1 - |body_pct|) × bars_since_swing_norm
+        # HIGH values during consolidations (low volatility, small bodies, time since swing)
+        bars_since_swing_norm = (bars_since_SH_norm + bars_since_SL_norm) / 2.0
+        consol_proxy = (1.0 - range_z / 3.0) * (1.0 - abs(body_pct)) * bars_since_swing_norm
+        consol_proxy = np.clip(consol_proxy, 0.0, 3.0)  # Bounded [0, 3]
+
+        # Store core features (12 features)
+        base_features = [
+            open_norm, close_norm, body_pct, upper_wick_pct, lower_wick_pct, range_z,
+            dist_to_prev_SH, dist_to_prev_SL, bars_since_SH_norm, bars_since_SL_norm,
+            expansion_proxy, consol_proxy
+        ]
+
+        # Populate ALL windows that contain this bar
+        # Bar i appears in windows that have started (first_window >= 0) and contain bar i
+        first_window = max(0, i - window_length + 1)
+        last_window = min(i, n_windows - 1)
+
+        for win_idx in range(first_window, last_window + 1):
+            # Position of bar i within window win_idx
+            timestep_in_window = i - win_idx
+            X[win_idx, timestep_in_window, :] = base_features
+
+            # Set mask for warmup period (first 15 bars of each window)
             warmup_bars = 15
-            if i < warmup_bars:
-                mask[window_idx, timestep_idx] = False
+            if timestep_in_window < warmup_bars:
+                mask[win_idx, timestep_in_window] = False
     
     # Shift features to align with causal structure
     # Each window should contain features for bars [i-window_length+1, i]
@@ -190,7 +200,7 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
     feature_names = [
         'open_norm', 'close_norm', 'body_pct', 'upper_wick_pct', 'lower_wick_pct', 'range_z',
         'dist_to_prev_SH', 'dist_to_prev_SL', 'bars_since_SH_norm', 'bars_since_SL_norm',
-        'expansion_proxy'
+        'expansion_proxy', 'consol_proxy'
     ]
     feature_ranges = {
         'open_norm': '[0, 1]',
@@ -203,7 +213,8 @@ def build_features(df: pd.DataFrame, cfg: RelativityConfig) -> Tuple[np.ndarray,
         'dist_to_prev_SL': '[-3, 3]',
         'bars_since_SH_norm': '[0, 3]',
         'bars_since_SL_norm': '[0, 3]',
-        'expansion_proxy': '[-2, 2]'
+        'expansion_proxy': '[-2, 2]',
+        'consol_proxy': '[0, 3]'
     }
 
     meta = {

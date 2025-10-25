@@ -66,7 +66,7 @@ def load_checkpoint(checkpoint_path: str) -> Tuple[JadePretrainer, Dict]:
     # Reconstruct config
     model_config = checkpoint.get("model_config", {})
     config = JadeConfig(
-        input_size=model_config.get("input_size", 11),
+        input_size=model_config.get("input_size", 12),  # Default to 12 (new consol_proxy)
         hidden_size=model_config.get("hidden_size", 128),
         num_layers=model_config.get("num_layers", 2),
         dropout=model_config.get("dropout", 0.65),
@@ -142,11 +142,11 @@ def sample_contiguous_windows(
         if start + window_len > len(df):
             continue  # Edge case
         window_df = df.iloc[start:start + window_len][["open", "high", "low", "close"]].copy()
-        X_11d, valid_mask, _ = build_relativity_features(window_df, relativity_cfg.dict())
+        X_12d, valid_mask, _ = build_relativity_features(window_df, relativity_cfg.dict())
         # Ensure proper array indexing and conversion to tensor
-        X_np = X_11d[0] if (isinstance(X_11d, np.ndarray) and X_11d.ndim > 2) else X_11d
+        X_np = X_12d[0] if (isinstance(X_12d, np.ndarray) and X_12d.ndim > 2) else X_12d
         mask_np = valid_mask[0] if (isinstance(valid_mask, np.ndarray) and valid_mask.ndim > 1) else valid_mask
-        X_list.append(torch.as_tensor(X_np, dtype=torch.float32))  # [window_len, 11]
+        X_list.append(torch.as_tensor(X_np, dtype=torch.float32))  # [window_len, 12]
         valid_mask_list.append(torch.as_tensor(mask_np, dtype=torch.float32))  # [window_len]
 
     X = torch.stack(X_list)

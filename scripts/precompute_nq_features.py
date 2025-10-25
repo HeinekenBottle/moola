@@ -12,7 +12,7 @@ Usage:
 
 Output:
     data/processed/nq_features/
-        features_11d.npy      # [N_windows, K, D] float32 features (D=11 with expansion_proxy)
+        features_12d.npy      # [N_windows, K, D] float32 features (D=12 with expansion_proxy + consol_proxy)
         valid_mask.npy        # [N_windows, K] bool mask
         metadata.json         # Feature info, config, timestamps
         splits.json           # Time split indices for train/val/test

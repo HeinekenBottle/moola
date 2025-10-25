@@ -43,7 +43,7 @@ class JadeCompact(nn.Module):
     
     def __init__(
         self,
-        input_size: int = 11,
+        input_size: int = 12,
         hidden_size: int = 96,
         num_layers: int = 1,
         dropout: float = 0.7,
@@ -157,7 +157,13 @@ class JadeCompact(nn.Module):
         checkpoint = torch.load(pretrained_path, map_location="cpu")
 
         # Extract encoder config from checkpoint
-        model_config = checkpoint.get("model_config", {})
+        # Handle both legacy (model_config) and new (config.model) checkpoint formats
+        if "model_config" in checkpoint:
+            model_config = checkpoint["model_config"]
+        elif "config" in checkpoint and "model" in checkpoint["config"]:
+            model_config = checkpoint["config"]["model"]
+        else:
+            model_config = {}
         input_size = model_config.get("input_size", 11)
         hidden_size = model_config.get("hidden_size", 128)
         num_layers = model_config.get("num_layers", 2)

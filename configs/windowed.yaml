@@ -4,6 +4,7 @@ window_length: 105              # Fixed sequence length K
 stride: 52                       # Window stride (~50% overlap)
 warmup_bars: 20                  # Warmup bars to mask at start
 mask_ratio: 0.15                 # Fraction of timesteps to mask for MAE
+padding_bars: 0                  # Disable padding (bug in windowed_loader.py)
 
 # Relativity feature configuration
 feature_config:

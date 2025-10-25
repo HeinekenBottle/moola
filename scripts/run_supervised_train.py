@@ -190,7 +190,7 @@ def main():
         def __init__(self):
             self.name = args.model
             self.pointer_head = MockPointerHead()
-            self.input_size = 11
+            self.input_size = 12  # Updated for consol_proxy
             self.hidden_size = 64
             self.num_layers = 1
             self.bidirectional = True
@@ -444,7 +444,7 @@ def main():
         'model_state_dict': model.state_dict(),
         'config': {
             'model_name': args.model,
-            'input_size': 11,
+            'input_size': 12,  # Updated for consol_proxy
             'hidden_size': 64,
             'num_layers': 1,
             'bidirectional': True,

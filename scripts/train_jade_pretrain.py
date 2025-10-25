@@ -43,7 +43,7 @@ class TrainingConfig(BaseModel):
     """Training configuration."""
     # Model config
     model: JadeConfig = JadeConfig(
-        input_size=11,  # 6 candle + 4 swing + 1 expansion_proxy
+        input_size=12,  # 6 candle + 4 swing + 1 expansion_proxy + 1 consol_proxy
         hidden_size=128,
         num_layers=2,
         dropout=0.65,  # PDF: High dropout for <200 sample regime
