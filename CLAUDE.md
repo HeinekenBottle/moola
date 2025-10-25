@@ -584,3 +584,57 @@ Format: "💡 Context optimization: Consider compacting now - [reason]. Continue
 - **GitHub** = Code only (src/, tests/, configs, docs) - fast clone
 - **SCP** = Data & artifacts (data/, artifacts/) - transfer only what's needed for that training run
 - Never commit data/model files to GitHub
+
+## Claude Code Skills & Workflow
+
+**IMPORTANT: Claude Code is configured with the Superpowers plugin for systematic workflows.**
+
+### Skills Protocol (Enforced via SessionStart Hook)
+
+The Superpowers plugin automatically injects skills protocol at session start. **Claude MUST follow this checklist before EVERY response:**
+
+1. ☐ List available skills in your mind
+2. ☐ Ask yourself: "Does ANY skill match this request?"
+3. ☐ If yes → Use the Skill tool to invoke the skill (e.g., `/systematic-debugging`)
+4. ☐ Announce which skill you're using
+5. ☐ Follow the skill instructions exactly
+
+### When to Use Skills
+
+**Mandatory skill usage scenarios:**
+- **Debugging issues** → Use `/systematic-debugging` skill
+- **Implementing features** → Use `/test-driven-development` skill (RED-GREEN-REFACTOR)
+- **Designing solutions** → Use `/brainstorming` skill before coding
+- **Executing plans** → Use `/executing-plans` skill with batch checkpoints
+- **Writing plans** → Use `/writing-plans` skill for structured task breakdown
+
+**Key principle:** If a skill exists for your task, using it is MANDATORY, not optional. Skills document proven workflows that prevent common errors.
+
+### Available Skills
+
+Core skills in `~/.claude/plugins/cache/superpowers/skills/`:
+- `using-superpowers` - Meta-skill about skill usage (auto-injected)
+- `systematic-debugging` - Structured debugging with hypothesis testing
+- `test-driven-development` - RED-GREEN-REFACTOR discipline
+- `brainstorming` - Socratic design refinement before coding
+- `executing-plans` - Batch execution with review checkpoints
+- `writing-plans` - Detailed implementation planning
+- `verification-before-completion` - Quality gates before finishing
+- Plus 13 more specialized skills
+
+### Skills with Checklists
+
+**If a skill contains a checklist, you MUST:**
+- Create TodoWrite todos for EACH checklist item
+- Mark items in_progress → completed as you work
+- Never skip steps or batch items together
+
+**Why:** Checklists without TodoWrite = steps get skipped. Every time.
+
+### Hook Status
+
+- ✅ **SessionStart hook** - Active and working (injects using-superpowers at session start)
+- ✅ **Skills location** - `~/.claude/plugins/cache/superpowers/skills/*/SKILL.md`
+- ✅ **Episodic-memory hook** - Active (syncs conversations on startup/resume)
+
+**Verification:** You should see `<EXTREMELY_IMPORTANT>You have superpowers...</EXTREMELY_IMPORTANT>` in system context at session start.
