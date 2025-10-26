@@ -4,14 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Moola is a production ML pipeline for binary classification of financial patterns (consolidation vs. retracement) in NQ futures using BiLSTM pre-training. Designed for small datasets (33-200 labeled samples) with strict workflow constraints.
+Moola is a production ML pipeline for **expansion detection** in NQ futures using BiLSTM architecture with expansion-focused multi-task learning. Designed for small datasets (174 labeled samples) with strict workflow constraints.
 
 **Key Characteristics:**
-- Small labeled dataset (33-200 samples) requiring careful validation
-- Large unlabeled dataset (2.2M samples) for self-supervised pre-training
-- Adversarial class imbalance (consolidation >> retracement)
+- Small labeled dataset (174 samples) requiring careful validation
+- Large unlabeled dataset (1.8M bars) for self-supervised pre-training
+- **Primary goal**: Predict expansion boundaries (start/end points)
+- **Secondary context**: Pattern type (consolidation vs retracement) as auxiliary feature
 - RunPod GPU training via SSH/SCP (no Docker, no MLflow, no shell scripts)
 - Human annotation integration via Candlesticks project
+
+**Critical Understanding (2025-10-25):**
+- Labels mark **expansion regions**, not consolidation/retracement regions
+- `expansion_start` = first bar of expansion (overlaps with last bar of consol/retr)
+- `expansion_end` = last bar of expansion
+- Pattern classification (consol/retr) describes the **pre-expansion state**, not the goal
+- Model should prioritize expansion detection (70% loss weight) over pattern type (10%)
 
 ## Critical Workflow Constraints (Non-negotiable)
 
