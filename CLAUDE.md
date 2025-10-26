@@ -649,3 +649,4 @@ Core skills in `~/.claude/plugins/cache/superpowers/skills/`:
 - remember scripts for training
 - REmember pythonpath in future
 - RSYNC and dependencies to be validated in future
+- Remember script dependencies
