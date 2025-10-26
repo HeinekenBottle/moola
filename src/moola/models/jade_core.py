@@ -51,21 +51,23 @@ class JadeCompact(nn.Module):
         dense_dropout: float = 0.6,
         num_classes: int = 3,
         predict_pointers: bool = False,
+        predict_expansion_sequence: bool = False,
         proj_head: bool = True,
         head_width: int = 64,
         seed: Optional[int] = None,
     ):
         super().__init__()
-        
+
         if seed is not None:
             torch.manual_seed(seed)
-        
+
         self.seed = seed
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.num_classes = num_classes
         self.predict_pointers = predict_pointers
+        self.predict_expansion_sequence = predict_expansion_sequence
         
         # Input dropout (stronger for small dataset)
         self.input_dropout = nn.Dropout(input_dropout)
@@ -117,6 +119,33 @@ class JadeCompact(nn.Module):
             self.pointer_head = None
             self.log_sigma_ptr = None
             self.log_sigma_type = None
+
+        # Optional per-timestep expansion detection heads
+        if predict_expansion_sequence:
+            # Binary head: Per-timestep classification (is this bar part of expansion?)
+            # Input: lstm_out (batch, 105, lstm_output_size)
+            # Output: (batch, 105, 1) sigmoid probabilities
+            self.expansion_binary_head = nn.Sequential(
+                nn.Dropout(dense_dropout),
+                nn.Linear(lstm_output_size, 1),
+            )
+
+            # Countdown head: Per-timestep regression (bars until expansion starts)
+            # Input: lstm_out (batch, 105, lstm_output_size)
+            # Output: (batch, 105, 1) continuous countdown values
+            self.expansion_countdown_head = nn.Sequential(
+                nn.Dropout(dense_dropout),
+                nn.Linear(lstm_output_size, 1),
+            )
+
+            # Uncertainty parameters for expansion tasks
+            self.log_sigma_binary = nn.Parameter(torch.tensor(0.00, dtype=torch.float32))
+            self.log_sigma_countdown = nn.Parameter(torch.tensor(0.00, dtype=torch.float32))
+        else:
+            self.expansion_binary_head = None
+            self.expansion_countdown_head = None
+            self.log_sigma_binary = None
+            self.log_sigma_countdown = None
     
     @classmethod
     def from_pretrained(
@@ -226,13 +255,13 @@ class JadeCompact(nn.Module):
 
         # Global average pooling
         pooled = lstm_out.mean(dim=1)
-        
+
         # Projection
         features = self.projection(pooled)
-        
+
         # Classification
         logits = self.classifier(features)
-        
+
         output = {"logits": logits}
 
         # Optional pointer prediction
@@ -246,6 +275,21 @@ class JadeCompact(nn.Module):
             output["sigma_type"] = torch.exp(self.log_sigma_type)
             output["log_sigma_ptr"] = self.log_sigma_ptr
             output["log_sigma_type"] = self.log_sigma_type
+
+        # Optional per-timestep expansion detection
+        if self.predict_expansion_sequence:
+            # Binary head: (batch, 105, 1) -> (batch, 105)
+            expansion_binary_logits = self.expansion_binary_head(lstm_out).squeeze(-1)
+            output["expansion_binary_logits"] = expansion_binary_logits
+            output["expansion_binary"] = torch.sigmoid(expansion_binary_logits)
+
+            # Countdown head: (batch, 105, 1) -> (batch, 105)
+            expansion_countdown = self.expansion_countdown_head(lstm_out).squeeze(-1)
+            output["expansion_countdown"] = expansion_countdown
+
+            # Uncertainty parameters for expansion tasks
+            output["sigma_binary"] = torch.exp(self.log_sigma_binary)
+            output["sigma_countdown"] = torch.exp(self.log_sigma_countdown)
 
         return output
     

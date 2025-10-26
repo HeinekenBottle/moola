@@ -638,3 +638,6 @@ Core skills in `~/.claude/plugins/cache/superpowers/skills/`:
 - ✅ **Episodic-memory hook** - Active (syncs conversations on startup/resume)
 
 **Verification:** You should see `<EXTREMELY_IMPORTANT>You have superpowers...</EXTREMELY_IMPORTANT>` in system context at session start.
+- remember scripts for training
+- REmember pythonpath in future
+- RSYNC and dependencies to be validated in future
