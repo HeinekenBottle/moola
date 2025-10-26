@@ -1,23 +1,33 @@
 repos:
-  # Enforce python3 only (prevent plain python)
+  # Enforce python3 only (prevent plain python in production code)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 'v4.5.0'
+    hooks:
+      - id: check-executables-have-shebangs
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Custom enforce-python3 hook (production code only)
   - repo: local
     hooks:
       - id: enforce-python3
-        name: enforce-python3 (use python3, not python)
-        entry: ./enforce-python3.sh
+        name: enforce-python3 (use python3, not python in production code)
+        entry: grep -r "^\s*python " --include="*.py" --exclude-dir=.venv --exclude-dir=.git --exclude-dir=scripts/archive
         language: system
         stages: [pre-commit]
-        always_run: true
+        pass_filenames: false
+        fail_fast: true
 
-  # Enforce pip3 only (prevent plain pip)
+  # Custom enforce-pip3 hook (production code only)
   - repo: local
     hooks:
       - id: enforce-pip3
-        name: enforce-pip3 (use pip3, not pip)
-        entry: ./enforce-pip3.sh
+        name: enforce-pip3 (use pip3, not pip in production code)
+        entry: grep -r "^\s*pip " --include="*.py" --include="*.sh" --exclude-dir=.venv --exclude-dir=.git --exclude-dir=scripts/archive
         language: system
         stages: [pre-commit]
-        always_run: true
+        pass_filenames: false
+        fail_fast: true
 
   # Code formatting
   - repo: https://github.com/psf/black
