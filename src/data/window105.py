@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -114,7 +114,7 @@ class Window105Dataset:
         """Return the number of windows in the dataset."""
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         """
         Get window data by sequential index.
 
@@ -246,7 +246,7 @@ class Window105Dataset:
             # Fallback: current time
             return datetime.now().isoformat()
 
-    def _get_priority_info(self, window_id: str) -> Optional[Dict[str, Any]]:
+    def _get_priority_info(self, window_id: str) -> Optional[dict[str, Any]]:
         """
         Get CleanLab priority information for a window.
 
@@ -282,7 +282,7 @@ class Window105Dataset:
         """Get sequential index by original window_id."""
         return self.window_id_to_index.get(window_id)
 
-    def get_available_window_ids(self) -> List[str]:
+    def get_available_window_ids(self) -> list[str]:
         """Get list of all available window_ids."""
         return list(self.index_to_window_id.values())
 
@@ -292,7 +292,7 @@ class Window105Dataset:
             return False
         return window_id in set(self.priority_samples["id"])
 
-    def get_summary_stats(self) -> Dict[str, Any]:
+    def get_summary_stats(self) -> dict[str, Any]:
         """Get dataset summary statistics."""
         label_counts = self.samples["label"].value_counts().to_dict()
 

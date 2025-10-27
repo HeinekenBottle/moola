@@ -5,16 +5,16 @@ Quick validation of new architecture before full training run.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path.cwd() / "src"))
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
+from moola.features.relativity import RelativityConfig, build_relativity_features
 from moola.models.jade_core import JadeCompact
-from moola.features.relativity import build_relativity_features, RelativityConfig
 
 
 def create_expansion_labels(expansion_start: int, expansion_end: int, window_length: int = 105):
@@ -31,7 +31,7 @@ def create_expansion_labels(expansion_start: int, expansion_end: int, window_len
     """
     # Binary mask: 1 for bars inside expansion, 0 otherwise
     binary_mask = np.zeros(window_length, dtype=np.float32)
-    binary_mask[expansion_start:expansion_end+1] = 1.0
+    binary_mask[expansion_start : expansion_end + 1] = 1.0
 
     # Countdown: positive before expansion, 0 at start, negative after
     countdown = np.arange(window_length, dtype=np.float32) - expansion_start
@@ -55,7 +55,9 @@ def test_label_generation():
     print(f"\nExpansion: bars {expansion_start} to {expansion_end}")
     print(f"\nBinary mask shape: {binary.shape}")
     print(f"Binary mask values: {np.unique(binary, return_counts=True)}")
-    print(f"Expansion bars marked: {binary.sum()} (expected: {expansion_end - expansion_start + 1})")
+    print(
+        f"Expansion bars marked: {binary.sum()} (expected: {expansion_end - expansion_start + 1})"
+    )
 
     print(f"\nCountdown shape: {countdown.shape}")
     print(f"Countdown at expansion_start (bar {expansion_start}): {countdown[expansion_start]}")
@@ -63,9 +65,15 @@ def test_label_generation():
     print(f"Countdown 5 bars after: {countdown[expansion_start+5]}")
 
     # Verify countdown crosses zero at expansion_start
-    assert countdown[expansion_start] == 0, f"Countdown should be 0 at expansion_start, got {countdown[expansion_start]}"
-    assert countdown[expansion_start-1] == 1, f"Countdown should be 1 at expansion_start-1, got {countdown[expansion_start-1]}"
-    assert countdown[expansion_start+1] == -1, f"Countdown should be -1 at expansion_start+1, got {countdown[expansion_start+1]}"
+    assert (
+        countdown[expansion_start] == 0
+    ), f"Countdown should be 0 at expansion_start, got {countdown[expansion_start]}"
+    assert (
+        countdown[expansion_start - 1] == 1
+    ), f"Countdown should be 1 at expansion_start-1, got {countdown[expansion_start-1]}"
+    assert (
+        countdown[expansion_start + 1] == -1
+    ), f"Countdown should be -1 at expansion_start+1, got {countdown[expansion_start+1]}"
 
     print("\n✓ Label generation validated")
     return binary, countdown
@@ -104,14 +112,18 @@ def test_model_architecture():
     print(f"\nOutput keys: {list(output.keys())}")
     print(f"\nlogits shape: {output['logits'].shape} (expect: [{batch_size}, 3])")
     print(f"pointers shape: {output['pointers'].shape} (expect: [{batch_size}, 2])")
-    print(f"expansion_binary shape: {output['expansion_binary'].shape} (expect: [{batch_size}, {window_length}])")
-    print(f"expansion_countdown shape: {output['expansion_countdown'].shape} (expect: [{batch_size}, {window_length}])")
+    print(
+        f"expansion_binary shape: {output['expansion_binary'].shape} (expect: [{batch_size}, {window_length}])"
+    )
+    print(
+        f"expansion_countdown shape: {output['expansion_countdown'].shape} (expect: [{batch_size}, {window_length}])"
+    )
 
     # Verify shapes
-    assert output['logits'].shape == (batch_size, 3)
-    assert output['pointers'].shape == (batch_size, 2)
-    assert output['expansion_binary'].shape == (batch_size, window_length)
-    assert output['expansion_countdown'].shape == (batch_size, window_length)
+    assert output["logits"].shape == (batch_size, 3)
+    assert output["pointers"].shape == (batch_size, 2)
+    assert output["expansion_binary"].shape == (batch_size, window_length)
+    assert output["expansion_countdown"].shape == (batch_size, window_length)
 
     print("\n✓ Model architecture validated")
     return model
@@ -151,13 +163,13 @@ def test_loss_computation():
     lambda_type = 0.1
 
     total_loss = (
-        lambda_type * loss_type +
-        lambda_ptr * loss_ptr +
-        lambda_binary * loss_binary +
-        lambda_countdown * loss_countdown
+        lambda_type * loss_type
+        + lambda_ptr * loss_ptr
+        + lambda_binary * loss_binary
+        + lambda_countdown * loss_countdown
     )
 
-    print(f"\nIndividual losses:")
+    print("\nIndividual losses:")
     print(f"  Classification: {loss_type.item():.4f} (weight: {lambda_type})")
     print(f"  Pointers: {loss_ptr.item():.4f} (weight: {lambda_ptr})")
     print(f"  Binary: {loss_binary.item():.4f} (weight: {lambda_binary})")
@@ -172,7 +184,7 @@ def test_loss_computation():
         "countdown": lambda_countdown * loss_countdown.item() / total_loss.item() * 100,
     }
 
-    print(f"\nLoss contributions:")
+    print("\nLoss contributions:")
     for task, pct in contributions.items():
         print(f"  {task}: {pct:.1f}%")
 
@@ -198,8 +210,8 @@ def test_on_real_data():
     print(f"  expansion_end: {row['expansion_end']}")
 
     # Build features
-    ohlc = row['features']  # 105 arrays of [O, H, L, C]
-    ohlc_df = pd.DataFrame([arr for arr in ohlc], columns=['open', 'high', 'low', 'close'])
+    ohlc = row["features"]  # 105 arrays of [O, H, L, C]
+    ohlc_df = pd.DataFrame([arr for arr in ohlc], columns=["open", "high", "low", "close"])
 
     cfg = RelativityConfig()
     X_12d, valid_mask, _ = build_relativity_features(ohlc_df, cfg.dict())
@@ -208,9 +220,7 @@ def test_on_real_data():
 
     # Generate labels
     binary, countdown = create_expansion_labels(
-        row['expansion_start'],
-        row['expansion_end'],
-        window_length=105
+        row["expansion_start"], row["expansion_end"], window_length=105
     )
 
     print(f"  Binary mask: {binary.sum():.0f} expansion bars")
@@ -230,7 +240,7 @@ def test_on_real_data():
     with torch.no_grad():
         output = model(x)
 
-    print(f"\nModel outputs:")
+    print("\nModel outputs:")
     print(f"  Classification logits: {output['logits'].shape}")
     print(f"  Pointers: {output['pointers'].shape}")
     print(f"  Binary probs: {output['expansion_binary'].shape}")

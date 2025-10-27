@@ -1,7 +1,5 @@
 """Unit tests for strict pretrained weight loading."""
 
-from pathlib import Path
-
 import pytest
 import torch
 import torch.nn as nn

@@ -5,7 +5,6 @@ and calibration metrics on small datasets.
 """
 
 import numpy as np
-import pytest
 
 from moola.utils.metrics.bootstrap import (
     bootstrap_accuracy,

@@ -25,7 +25,7 @@ import pandas as pd
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from moola.features.relativity import build_relativity_features, RelativityConfig
+from moola.features.relativity import build_relativity_features
 
 
 def verify_file_integrity(feature_dir: str) -> bool:
@@ -42,12 +42,7 @@ def verify_file_integrity(feature_dir: str) -> bool:
     print("=" * 80)
 
     feature_path = Path(feature_dir)
-    required_files = [
-        "features_10d.npy",
-        "valid_mask.npy",
-        "metadata.json",
-        "splits.json"
-    ]
+    required_files = ["features_10d.npy", "valid_mask.npy", "metadata.json", "splits.json"]
 
     all_exist = True
     for filename in required_files:
@@ -74,7 +69,7 @@ def verify_file_integrity(feature_dir: str) -> bool:
         return False
 
     if features.shape[:2] != valid_mask.shape:
-        print(f"\n  FAILED: Feature and mask shapes mismatch")
+        print("\n  FAILED: Feature and mask shapes mismatch")
         return False
 
     if features.shape[2] != 10:
@@ -102,11 +97,11 @@ def verify_feature_ranges(feature_dir: str) -> bool:
 
     # Load features and metadata
     features = np.load(feature_path / "features_10d.npy")
-    with open(feature_path / "metadata.json", 'r') as f:
+    with open(feature_path / "metadata.json") as f:
         metadata = json.load(f)
 
-    feature_names = metadata['feature_names']
-    feature_ranges = metadata['feature_ranges']
+    feature_names = metadata["feature_names"]
+    feature_ranges = metadata["feature_ranges"]
 
     # Check each feature
     all_valid = True
@@ -120,25 +115,26 @@ def verify_feature_ranges(feature_dir: str) -> bool:
         expected_range = feature_ranges[name]
 
         # Parse expected range
-        if expected_range == '[0, 1]':
+        if expected_range == "[0, 1]":
             expected_min, expected_max = 0.0, 1.0
-        elif expected_range == '[-1, 1]':
+        elif expected_range == "[-1, 1]":
             expected_min, expected_max = -1.0, 1.0
-        elif expected_range == '[0, 3]':
+        elif expected_range == "[0, 3]":
             expected_min, expected_max = 0.0, 3.0
-        elif expected_range == '[-3, 3]':
+        elif expected_range == "[-3, 3]":
             expected_min, expected_max = -3.0, 3.0
         else:
             expected_min, expected_max = -np.inf, np.inf
 
         # Allow small violations due to clipping
         tolerance = 0.01
-        is_valid = (min_val >= expected_min - tolerance and
-                   max_val <= expected_max + tolerance)
+        is_valid = min_val >= expected_min - tolerance and max_val <= expected_max + tolerance
 
         status = "✓" if is_valid else "✗"
-        print(f"  {status} {name:20s} range=[{min_val:6.3f}, {max_val:6.3f}] "
-              f"mean={mean_val:6.3f} std={std_val:6.3f} (expected {expected_range})")
+        print(
+            f"  {status} {name:20s} range=[{min_val:6.3f}, {max_val:6.3f}] "
+            f"mean={mean_val:6.3f} std={std_val:6.3f} (expected {expected_range})"
+        )
 
         all_valid = all_valid and is_valid
 
@@ -167,33 +163,33 @@ def verify_mask_consistency(feature_dir: str) -> bool:
 
     # Load mask and metadata
     valid_mask = np.load(feature_path / "valid_mask.npy")
-    with open(feature_path / "metadata.json", 'r') as f:
+    with open(feature_path / "metadata.json") as f:
         metadata = json.load(f)
 
     # Check valid ratio
     valid_ratio = valid_mask.mean()
-    expected_ratio = metadata['valid_ratio']
+    expected_ratio = metadata["valid_ratio"]
 
     print(f"  Valid ratio: {valid_ratio:.4f} (metadata: {expected_ratio:.4f})")
 
     if abs(valid_ratio - expected_ratio) > 0.001:
-        print(f"\n  FAILED: Valid ratio mismatch")
+        print("\n  FAILED: Valid ratio mismatch")
         return False
 
     # Check that first few timesteps are typically masked (warmup period)
-    warmup_bars = metadata['config'].get('warmup_bars', 20)
+    warmup_bars = metadata["config"].get("warmup_bars", 20)
     first_timesteps_valid = valid_mask[:, :warmup_bars].mean()
 
     print(f"  First {warmup_bars} timesteps valid ratio: {first_timesteps_valid:.4f}")
-    print(f"  (Should be low due to warmup period)")
+    print("  (Should be low due to warmup period)")
 
     # Check that later timesteps are mostly valid
     later_timesteps_valid = valid_mask[:, warmup_bars:].mean()
     print(f"  Later timesteps valid ratio: {later_timesteps_valid:.4f}")
-    print(f"  (Should be high, ~1.0)")
+    print("  (Should be high, ~1.0)")
 
     if later_timesteps_valid < 0.95:
-        print(f"\n  WARNING: Later timesteps have low valid ratio")
+        print("\n  WARNING: Later timesteps have low valid ratio")
 
     print("\n  PASSED: Mask consistency checks")
     return True
@@ -215,12 +211,12 @@ def verify_split_integrity(feature_dir: str) -> bool:
     feature_path = Path(feature_dir)
 
     # Load splits
-    with open(feature_path / "splits.json", 'r') as f:
+    with open(feature_path / "splits.json") as f:
         splits = json.load(f)
 
-    train_start, train_end = splits['train_indices']
-    val_start, val_end = splits['val_indices']
-    test_start, test_end = splits['test_indices']
+    train_start, train_end = splits["train_indices"]
+    val_start, val_end = splits["val_indices"]
+    test_start, test_end = splits["test_indices"]
 
     print(f"  Train: [{train_start:6d}, {train_end:6d}) = {train_end - train_start:,} windows")
     print(f"  Val:   [{val_start:6d}, {val_end:6d}) = {val_end - val_start:,} windows")
@@ -230,16 +226,16 @@ def verify_split_integrity(feature_dir: str) -> bool:
     all_valid = True
 
     if train_end > val_start:
-        print(f"\n  FAILED: Train overlaps with val")
+        print("\n  FAILED: Train overlaps with val")
         all_valid = False
 
     if val_end > test_start:
-        print(f"\n  FAILED: Val overlaps with test")
+        print("\n  FAILED: Val overlaps with test")
         all_valid = False
 
     # Check time ordering
     if not (train_start < train_end <= val_start < val_end <= test_start < test_end):
-        print(f"\n  FAILED: Splits not in time order")
+        print("\n  FAILED: Splits not in time order")
         all_valid = False
 
     if all_valid:
@@ -269,7 +265,7 @@ def verify_reproducibility(feature_dir: str, data_path: str, n_samples: int = 5)
     features_precomputed = np.load(feature_path / "features_10d.npy")
 
     # Load metadata to get config
-    with open(feature_path / "metadata.json", 'r') as f:
+    with open(feature_path / "metadata.json") as f:
         metadata = json.load(f)
 
     # Load original data
@@ -277,18 +273,17 @@ def verify_reproducibility(feature_dir: str, data_path: str, n_samples: int = 5)
     df = pd.read_parquet(data_path)
 
     # Reconstruct config
-    relativity_config = metadata['relativity_config']
+    relativity_config = metadata["relativity_config"]
 
     # Build features on-the-fly for comparison
-    print(f"  Rebuilding features on-the-fly for comparison...")
+    print("  Rebuilding features on-the-fly for comparison...")
     features_rebuilt, _, _ = build_relativity_features(
-        df[['open', 'high', 'low', 'close']],
-        relativity_config
+        df[["open", "high", "low", "close"]], relativity_config
     )
 
     # Check shapes match
     if features_precomputed.shape != features_rebuilt.shape:
-        print(f"\n  FAILED: Shape mismatch")
+        print("\n  FAILED: Shape mismatch")
         print(f"    Pre-computed: {features_precomputed.shape}")
         print(f"    Rebuilt: {features_rebuilt.shape}")
         return False
@@ -329,12 +324,13 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Verify pre-computed features",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--feature-dir", required=True, help="Pre-computed feature directory")
     parser.add_argument("--data", help="Original OHLC parquet file (for reproducibility check)")
-    parser.add_argument("--skip-reproducibility", action="store_true",
-                       help="Skip reproducibility check (faster)")
+    parser.add_argument(
+        "--skip-reproducibility", action="store_true", help="Skip reproducibility check (faster)"
+    )
 
     args = parser.parse_args()
 
@@ -363,6 +359,7 @@ def main():
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

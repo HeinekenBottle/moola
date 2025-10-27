@@ -17,13 +17,13 @@ Performance:
     - Speedup: 720-2160x faster iteration
 """
 
-from typing import Dict, List, Optional, Tuple
 import json
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 
 class FastWindowedDataset(Dataset):
@@ -41,7 +41,7 @@ class FastWindowedDataset(Dataset):
         valid_mask: np.ndarray,
         window_indices: np.ndarray,
         mask_ratio: float = 0.15,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
     ):
         """Initialize fast dataset.
 
@@ -66,7 +66,7 @@ class FastWindowedDataset(Dataset):
     def __len__(self) -> int:
         return len(self.window_indices)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get a windowed sample.
 
         Returns:
@@ -95,11 +95,11 @@ class FastWindowedDataset(Dataset):
         return (
             torch.from_numpy(X).float(),  # [K, D]
             torch.from_numpy(mask),  # [K]
-            torch.from_numpy(valid)  # [K]
+            torch.from_numpy(valid),  # [K]
         )
 
 
-def load_precomputed_features(feature_dir: str) -> Tuple[np.ndarray, np.ndarray, Dict]:
+def load_precomputed_features(feature_dir: str) -> tuple[np.ndarray, np.ndarray, dict]:
     """Load pre-computed features from directory.
 
     Args:
@@ -117,7 +117,7 @@ def load_precomputed_features(feature_dir: str) -> Tuple[np.ndarray, np.ndarray,
     valid_mask = np.load(feature_path / "valid_mask.npy")
 
     # Load metadata
-    with open(feature_path / "metadata.json", 'r') as f:
+    with open(feature_path / "metadata.json") as f:
         metadata = json.load(f)
 
     print(f"Loaded pre-computed features from {feature_dir}")
@@ -134,8 +134,8 @@ def create_fast_dataloaders(
     mask_ratio: float = 0.15,
     num_workers: int = 4,
     pin_memory: bool = True,
-    seed: Optional[int] = None
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    seed: Optional[int] = None,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Create train/val/test dataloaders from pre-computed features.
 
     Args:
@@ -154,34 +154,28 @@ def create_fast_dataloaders(
 
     # Load split indices
     splits_path = Path(feature_dir) / "splits.json"
-    with open(splits_path, 'r') as f:
+    with open(splits_path) as f:
         splits = json.load(f)
 
     # Extract split indices
-    train_start, train_end = splits['train_indices']
-    val_start, val_end = splits['val_indices']
-    test_start, test_end = splits['test_indices']
+    train_start, train_end = splits["train_indices"]
+    val_start, val_end = splits["val_indices"]
+    test_start, test_end = splits["test_indices"]
 
     # Create window index arrays for each split
     train_indices = np.arange(train_start, train_end)
     val_indices = np.arange(val_start, val_end)
     test_indices = np.arange(test_start, test_end)
 
-    print(f"\nSplit info:")
+    print("\nSplit info:")
     print(f"  Train: {len(train_indices):,} windows")
     print(f"  Val:   {len(val_indices):,} windows")
     print(f"  Test:  {len(test_indices):,} windows")
 
     # Create datasets
-    train_dataset = FastWindowedDataset(
-        features, valid_mask, train_indices, mask_ratio, seed
-    )
-    val_dataset = FastWindowedDataset(
-        features, valid_mask, val_indices, mask_ratio, seed
-    )
-    test_dataset = FastWindowedDataset(
-        features, valid_mask, test_indices, mask_ratio, seed
-    )
+    train_dataset = FastWindowedDataset(features, valid_mask, train_indices, mask_ratio, seed)
+    val_dataset = FastWindowedDataset(features, valid_mask, val_indices, mask_ratio, seed)
+    test_dataset = FastWindowedDataset(features, valid_mask, test_indices, mask_ratio, seed)
 
     # Create dataloaders
     train_loader = DataLoader(
@@ -190,7 +184,7 @@ def create_fast_dataloaders(
         shuffle=True,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=True
+        drop_last=True,
     )
 
     val_loader = DataLoader(
@@ -199,7 +193,7 @@ def create_fast_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=False
+        drop_last=False,
     )
 
     test_loader = DataLoader(
@@ -208,10 +202,10 @@ def create_fast_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=False
+        drop_last=False,
     )
 
-    print(f"\nDataloader info:")
+    print("\nDataloader info:")
     print(f"  Train batches: {len(train_loader)}")
     print(f"  Val batches:   {len(val_loader)}")
     print(f"  Test batches:  {len(test_loader)}")
@@ -226,8 +220,8 @@ def create_strided_dataloaders(
     mask_ratio: float = 0.15,
     num_workers: int = 4,
     pin_memory: bool = True,
-    seed: Optional[int] = None
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    seed: Optional[int] = None,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Create dataloaders with strided windows (for training efficiency).
 
     This creates overlapping windows with a specified stride, which can help
@@ -250,13 +244,13 @@ def create_strided_dataloaders(
 
     # Load split indices
     splits_path = Path(feature_dir) / "splits.json"
-    with open(splits_path, 'r') as f:
+    with open(splits_path) as f:
         splits = json.load(f)
 
     # Extract split indices
-    train_start, train_end = splits['train_indices']
-    val_start, val_end = splits['val_indices']
-    test_start, test_end = splits['test_indices']
+    train_start, train_end = splits["train_indices"]
+    val_start, val_end = splits["val_indices"]
+    test_start, test_end = splits["test_indices"]
 
     # Create strided window indices
     train_indices = np.arange(train_start, train_end, stride)
@@ -269,15 +263,9 @@ def create_strided_dataloaders(
     print(f"  Test:  {len(test_indices):,} windows (reduced from {test_end - test_start:,})")
 
     # Create datasets
-    train_dataset = FastWindowedDataset(
-        features, valid_mask, train_indices, mask_ratio, seed
-    )
-    val_dataset = FastWindowedDataset(
-        features, valid_mask, val_indices, mask_ratio, seed
-    )
-    test_dataset = FastWindowedDataset(
-        features, valid_mask, test_indices, mask_ratio, seed
-    )
+    train_dataset = FastWindowedDataset(features, valid_mask, train_indices, mask_ratio, seed)
+    val_dataset = FastWindowedDataset(features, valid_mask, val_indices, mask_ratio, seed)
+    test_dataset = FastWindowedDataset(features, valid_mask, test_indices, mask_ratio, seed)
 
     # Create dataloaders
     train_loader = DataLoader(
@@ -286,7 +274,7 @@ def create_strided_dataloaders(
         shuffle=True,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=True
+        drop_last=True,
     )
 
     val_loader = DataLoader(
@@ -295,7 +283,7 @@ def create_strided_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=False
+        drop_last=False,
     )
 
     test_loader = DataLoader(
@@ -304,10 +292,10 @@ def create_strided_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=False
+        drop_last=False,
     )
 
-    print(f"\nDataloader info:")
+    print("\nDataloader info:")
     print(f"  Train batches: {len(train_loader)}")
     print(f"  Val batches:   {len(val_loader)}")
     print(f"  Test batches:  {len(test_loader)}")
@@ -342,14 +330,11 @@ def main():
 
         if args.stride:
             train_loader, val_loader, test_loader = create_strided_dataloaders(
-                args.feature_dir,
-                stride=args.stride,
-                batch_size=args.batch_size
+                args.feature_dir, stride=args.stride, batch_size=args.batch_size
             )
         else:
             train_loader, val_loader, test_loader = create_fast_dataloaders(
-                args.feature_dir,
-                batch_size=args.batch_size
+                args.feature_dir, batch_size=args.batch_size
             )
 
         load_time = time.time() - start_time
@@ -376,6 +361,7 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

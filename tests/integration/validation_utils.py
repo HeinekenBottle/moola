@@ -7,12 +7,11 @@ and performance regression detection.
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 import torch
-from loguru import logger
 
 
 class PerformanceBenchmark:
@@ -23,7 +22,7 @@ class PerformanceBenchmark:
 
     def benchmark_model_training(
         self, model_name: str, X: np.ndarray, y: np.ndarray, n_epochs: int = 5
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark model training performance."""
         from moola.models import get_model
 
@@ -73,7 +72,7 @@ class PerformanceBenchmark:
 
     def benchmark_feature_engineering(
         self, X_ohlc: np.ndarray, iterations: int = 10
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Benchmark feature engineering performance."""
         from moola.features import AdvancedFeatureEngineer, FeatureConfig
 
@@ -98,11 +97,11 @@ class PerformanceBenchmark:
 
         return result
 
-    def benchmark_data_augmentation(self, X: np.ndarray, iterations: int = 50) -> Dict[str, Any]:
+    def benchmark_data_augmentation(self, X: np.ndarray, iterations: int = 50) -> dict[str, Any]:
         """Benchmark data augmentation performance."""
         from moola.utils.augmentation import mixup_cutmix
-        # from moola.utils.temporal_augmentation import TemporalAugmentation  # Purged
 
+        # from moola.utils.temporal_augmentation import TemporalAugmentation  # Purged
         # Benchmark mixup/cutmix
         start_time = time.time()
         for _ in range(iterations):
@@ -135,8 +134,8 @@ class ArchitectureValidator:
         self.validation_results = {}
 
     def validate_parameter_count(
-        self, model: torch.nn.Module, expected_range: Tuple[int, int], model_name: str
-    ) -> Dict[str, Any]:
+        self, model: torch.nn.Module, expected_range: tuple[int, int], model_name: str
+    ) -> dict[str, Any]:
         """Validate model parameter count meets expectations."""
         param_count = sum(p.numel() for p in model.parameters())
 
@@ -153,7 +152,7 @@ class ArchitectureValidator:
 
     def validate_gradient_flow(
         self, model: torch.nn.Module, X: torch.Tensor, y: torch.Tensor, threshold: float = 1e-8
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Validate gradient flow through model architecture."""
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -192,7 +191,7 @@ class ArchitectureValidator:
 
     def validate_model_consistency(
         self, model1: torch.nn.Module, model2: torch.nn.Module, X_test: torch.Tensor
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Validate model consistency between two instances."""
         model1.eval()
         model2.eval()
@@ -214,8 +213,8 @@ class ArchitectureValidator:
         return result
 
     def validate_data_compatibility(
-        self, model: torch.nn.Module, test_inputs: List[np.ndarray]
-    ) -> Dict[str, Any]:
+        self, model: torch.nn.Module, test_inputs: list[np.ndarray]
+    ) -> dict[str, Any]:
         """Validate model compatibility with different data configurations."""
         results = []
 
@@ -266,14 +265,14 @@ class PerformanceRegressionDetector:
         self.baseline_file = baseline_file
         self.baseline_data = self._load_baseline()
 
-    def _load_baseline(self) -> Optional[Dict[str, Any]]:
+    def _load_baseline(self) -> Optional[dict[str, Any]]:
         """Load baseline performance metrics."""
         if self.baseline_file and self.baseline_file.exists():
-            with open(self.baseline_file, "r") as f:
+            with open(self.baseline_file) as f:
                 return json.load(f)
         return None
 
-    def detect_regressions(self, current_results: Dict[str, Any]) -> Dict[str, Any]:
+    def detect_regressions(self, current_results: dict[str, Any]) -> dict[str, Any]:
         """Detect performance regressions compared to baseline."""
         if not self.baseline_data:
             return {"regressions": [], "warnings": []}
@@ -339,7 +338,7 @@ class PerformanceRegressionDetector:
             "has_warnings": len(warnings) > 0,
         }
 
-    def save_current_baseline(self, results: Dict[str, Any], path: Path):
+    def save_current_baseline(self, results: dict[str, Any], path: Path):
         """Save current results as new baseline."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
@@ -351,7 +350,7 @@ class SmallDatasetValidator:
 
     def validate_small_dataset_training(
         self, model_name: str, n_samples: int = 98
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Validate training with small dataset size."""
         from moola.models import get_model
 
@@ -388,7 +387,7 @@ class SmallDatasetValidator:
 
         return result
 
-    def validate_class_balance_robustness(self, model_name: str) -> Dict[str, Any]:
+    def validate_class_balance_robustness(self, model_name: str) -> dict[str, Any]:
         """Validate robustness to class imbalance."""
         imbalance_ratios = [0.1, 0.2, 0.3]  # Minority class ratios
         results = []
@@ -439,9 +438,9 @@ class ValidationReporter:
 
     @staticmethod
     def generate_comprehensive_report(
-        validation_results: Dict[str, Any],
-        benchmark_results: Dict[str, Any],
-        regression_results: Dict[str, Any],
+        validation_results: dict[str, Any],
+        benchmark_results: dict[str, Any],
+        regression_results: dict[str, Any],
     ) -> str:
         """Generate comprehensive validation report."""
         report = []
@@ -562,7 +561,7 @@ def main():
     ValidationReporter.save_validation_report(report, Path("validation_report.md"))
 
     print("✅ Validation completed successfully")
-    print(f"📄 Report saved to: validation_report.md")
+    print("📄 Report saved to: validation_report.md")
 
     return {
         "results": all_results,

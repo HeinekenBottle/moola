@@ -18,26 +18,26 @@ Usage:
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import json
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
-import pandas as pd
 
 from moola.models.jade_core import JadeCompact
 from moola.utils.seeds import set_seed
 
-
 # =============================================================================
 # Sanity Check 1: Feature Statistics
 # =============================================================================
+
 
 def test_feature_statistics(X: np.ndarray, verbose: bool = True) -> bool:
     """Verify relativity features are properly normalized.
@@ -53,21 +53,21 @@ def test_feature_statistics(X: np.ndarray, verbose: bool = True) -> bool:
         AssertionError: If any check fails
     """
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("CHECK 1: Feature Statistics")
-        print("="*80)
+        print("=" * 80)
 
     X_flat = X.reshape(-1, X.shape[-1])  # (N*T, F)
 
     # Check 1: No NaN values
     has_nan = np.isnan(X_flat).any()
-    assert not has_nan, f"Found NaN values in features"
+    assert not has_nan, "Found NaN values in features"
     if verbose:
         print("✅ No NaN values")
 
     # Check 2: No Inf values
     has_inf = np.isinf(X_flat).any()
-    assert not has_inf, f"Found Inf values in features"
+    assert not has_inf, "Found Inf values in features"
     if verbose:
         print("✅ No Inf values")
 
@@ -82,14 +82,24 @@ def test_feature_statistics(X: np.ndarray, verbose: bool = True) -> bool:
     if verbose:
         print("\nFeature statistics (10 relativity features):")
         feature_names = [
-            'open_norm', 'close_norm', 'body_pct', 'upper_wick_pct', 'lower_wick_pct', 'range_z',
-            'dist_to_prev_SH', 'dist_to_prev_SL', 'bars_since_SH_norm', 'bars_since_SL_norm'
+            "open_norm",
+            "close_norm",
+            "body_pct",
+            "upper_wick_pct",
+            "lower_wick_pct",
+            "range_z",
+            "dist_to_prev_SH",
+            "dist_to_prev_SL",
+            "bars_since_SH_norm",
+            "bars_since_SL_norm",
         ]
         for i in range(min(10, X.shape[-1])):
             feat = X_flat[:, i]
             name = feature_names[i] if i < len(feature_names) else f"feat_{i}"
-            print(f"  {name:20s}: mean={feat.mean():7.3f}, std={feat.std():7.3f}, "
-                  f"min={feat.min():7.3f}, max={feat.max():7.3f}")
+            print(
+                f"  {name:20s}: mean={feat.mean():7.3f}, std={feat.std():7.3f}, "
+                f"min={feat.min():7.3f}, max={feat.max():7.3f}"
+            )
 
     return True
 
@@ -98,11 +108,9 @@ def test_feature_statistics(X: np.ndarray, verbose: bool = True) -> bool:
 # Sanity Check 2: Class Balance in Batches
 # =============================================================================
 
+
 def test_class_balance_in_batches(
-    train_loader: DataLoader,
-    n_classes: int = 2,
-    num_batches: int = 10,
-    verbose: bool = True
+    train_loader: DataLoader, n_classes: int = 2, num_batches: int = 10, verbose: bool = True
 ) -> bool:
     """Verify WeightedRandomSampler produces balanced batches.
 
@@ -119,9 +127,9 @@ def test_class_balance_in_batches(
         AssertionError: If batches are severely imbalanced
     """
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("CHECK 2: Class Balance in Batches")
-        print("="*80)
+        print("=" * 80)
 
     class_counts = []
 
@@ -150,7 +158,7 @@ def test_class_balance_in_batches(
     nonzero_means = mean_balance[mean_balance > 0]
     if len(nonzero_means) == 0:
         if verbose:
-            print(f"❌ No samples found in batches")
+            print("❌ No samples found in batches")
         return False
 
     ratio = nonzero_means.min() / nonzero_means.max() if nonzero_means.max() > 0 else 0
@@ -174,12 +182,13 @@ def test_class_balance_in_batches(
 # Sanity Check 3: Gradient Flow
 # =============================================================================
 
+
 def test_gradient_flow(
     model: nn.Module,
     X_batch: torch.Tensor,
     y_batch: torch.Tensor,
     criterion: nn.Module,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> bool:
     """Verify gradients flow to all trainable parameters.
 
@@ -197,9 +206,9 @@ def test_gradient_flow(
         AssertionError: If any trainable parameter has no gradient
     """
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("CHECK 3: Gradient Flow")
-        print("="*80)
+        print("=" * 80)
 
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -207,7 +216,7 @@ def test_gradient_flow(
     # Forward and backward pass
     optimizer.zero_grad()
     output = model(X_batch)
-    logits = output['logits'] if isinstance(output, dict) else output
+    logits = output["logits"] if isinstance(output, dict) else output
     loss = criterion(logits, y_batch)
     loss.backward()
 
@@ -224,7 +233,9 @@ def test_gradient_flow(
     assert len(no_grad_params) == 0, f"No gradients for: {no_grad_params}"
 
     if verbose:
-        print(f"✅ Gradient flow check passed: all {total_trainable} trainable params have gradients")
+        print(
+            f"✅ Gradient flow check passed: all {total_trainable} trainable params have gradients"
+        )
 
         # Show gradient statistics
         grad_norms = []
@@ -233,8 +244,10 @@ def test_gradient_flow(
                 grad_norms.append(param.grad.norm().item())
 
         if grad_norms:
-            print(f"   Gradient norms: mean={np.mean(grad_norms):.4f}, "
-                  f"min={np.min(grad_norms):.4f}, max={np.max(grad_norms):.4f}")
+            print(
+                f"   Gradient norms: mean={np.mean(grad_norms):.4f}, "
+                f"min={np.min(grad_norms):.4f}, max={np.max(grad_norms):.4f}"
+            )
 
     return True
 
@@ -242,6 +255,7 @@ def test_gradient_flow(
 # =============================================================================
 # Sanity Check 4: Tiny Train Overfit
 # =============================================================================
+
 
 def test_tiny_train_overfit(
     X_train: np.ndarray,
@@ -251,7 +265,7 @@ def test_tiny_train_overfit(
     batch_size: int = 16,
     device: str = "cpu",
     seed: int = 1337,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> bool:
     """Model should overfit to 50 samples to >80% accuracy.
 
@@ -278,9 +292,9 @@ def test_tiny_train_overfit(
         AssertionError: If model fails to overfit
     """
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("CHECK 4: Tiny Train Overfit")
-        print("="*80)
+        print("=" * 80)
 
     set_seed(seed)
 
@@ -293,7 +307,9 @@ def test_tiny_train_overfit(
         # Check data sparsity
         nonzero_pct = (X_tiny != 0).sum() / X_tiny.size * 100
         print(f"Training on {n_tiny} samples for {epochs} epochs...")
-        print(f"Data sparsity: {100 - nonzero_pct:.1f}% zeros (expected ~99% for relativity features)")
+        print(
+            f"Data sparsity: {100 - nonzero_pct:.1f}% zeros (expected ~99% for relativity features)"
+        )
 
     # Create model
     model = JadeCompact(
@@ -302,7 +318,7 @@ def test_tiny_train_overfit(
         num_layers=1,
         num_classes=n_classes,
         predict_pointers=False,
-        seed=seed
+        seed=seed,
     )
     model = model.to(device)
 
@@ -343,7 +359,7 @@ def test_tiny_train_overfit(
         for X_batch, y_batch in loader:
             optimizer.zero_grad()
             output = model(X_batch)
-            logits = output['logits'] if isinstance(output, dict) else output
+            logits = output["logits"] if isinstance(output, dict) else output
             loss = criterion(logits, y_batch)
             loss.backward()
             optimizer.step()
@@ -361,15 +377,17 @@ def test_tiny_train_overfit(
             model.eval()
             with torch.no_grad():
                 output = model(X_tensor)
-                logits = output['logits'] if isinstance(output, dict) else output
+                logits = output["logits"] if isinstance(output, dict) else output
                 preds = logits.argmax(dim=1).cpu().numpy()
                 last_predictions = preds
 
                 pred_counts = np.bincount(preds, minlength=n_classes)
 
                 if verbose:
-                    print(f"  Epoch {epoch+1:3d}/{epochs}: loss={total_loss/len(loader):.4f}, "
-                          f"acc={acc:.2%}, pred_dist={pred_counts}")
+                    print(
+                        f"  Epoch {epoch+1:3d}/{epochs}: loss={total_loss/len(loader):.4f}, "
+                        f"acc={acc:.2%}, pred_dist={pred_counts}"
+                    )
 
     # Check: should overfit to >65% (above majority baseline)
     # With 99% zero features and class imbalance, even 65% is meaningful overfitting
@@ -385,18 +403,23 @@ def test_tiny_train_overfit(
         if verbose:
             if pred_diversity == 1:
                 print(f"  ⚠️  Model collapsed to single class: {pred_counts}")
-                print(f"  ⚠️  This suggests training instability with sparse features")
+                print("  ⚠️  This suggests training instability with sparse features")
 
-    assert best_acc > target_acc, \
-        f"Tiny train only achieved {best_acc:.2%}, expected >{target_acc:.2%} " \
+    assert best_acc > target_acc, (
+        f"Tiny train only achieved {best_acc:.2%}, expected >{target_acc:.2%} "
         f"(majority baseline: {majority_baseline:.2%})"
+    )
 
     if verbose:
         if best_acc > majority_baseline + 0.15:
-            print(f"✅ Tiny train test passed: {best_acc:.2%} accuracy (expected >{target_acc:.2%})")
+            print(
+                f"✅ Tiny train test passed: {best_acc:.2%} accuracy (expected >{target_acc:.2%})"
+            )
         else:
-            print(f"⚠️  Tiny train test passed (marginal): {best_acc:.2%} accuracy (expected >{target_acc:.2%})")
-            print(f"    Note: Sparse features (99% zeros) limit overfitting capacity")
+            print(
+                f"⚠️  Tiny train test passed (marginal): {best_acc:.2%} accuracy (expected >{target_acc:.2%})"
+            )
+            print("    Note: Sparse features (99% zeros) limit overfitting capacity")
 
     return True
 
@@ -404,6 +427,7 @@ def test_tiny_train_overfit(
 # =============================================================================
 # Sanity Check 5: Shuffle Labels
 # =============================================================================
+
 
 def test_shuffle_labels(
     X_train: np.ndarray,
@@ -415,7 +439,7 @@ def test_shuffle_labels(
     batch_size: int = 16,
     device: str = "cpu",
     seed: int = 1337,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> bool:
     """Model with shuffled labels should plateau at random accuracy (50% for 2 classes, 33% for 3 classes).
 
@@ -439,9 +463,9 @@ def test_shuffle_labels(
         AssertionError: If model achieves unreasonably high accuracy on shuffled labels
     """
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("CHECK 5: Shuffle Labels (Ceiling Check)")
-        print("="*80)
+        print("=" * 80)
 
     set_seed(seed)
 
@@ -458,7 +482,7 @@ def test_shuffle_labels(
         num_layers=1,
         num_classes=n_classes,
         predict_pointers=False,
-        seed=seed
+        seed=seed,
     )
     model = model.to(device)
 
@@ -482,7 +506,7 @@ def test_shuffle_labels(
         for X_batch, y_batch in train_loader:
             optimizer.zero_grad()
             output = model(X_batch)
-            logits = output['logits'] if isinstance(output, dict) else output
+            logits = output["logits"] if isinstance(output, dict) else output
             loss = criterion(logits, y_batch)
             loss.backward()
             optimizer.step()
@@ -491,7 +515,7 @@ def test_shuffle_labels(
         model.eval()
         with torch.no_grad():
             output = model(X_val_tensor)
-            logits = output['logits'] if isinstance(output, dict) else output
+            logits = output["logits"] if isinstance(output, dict) else output
             preds = logits.argmax(dim=1)
             val_acc = (preds == y_val_tensor).float().mean().item()
             val_accs.append(val_acc)
@@ -518,13 +542,16 @@ def test_shuffle_labels(
         print(f"Val set class distribution: {val_class_counts / len(y_val) * 100}")
         print(f"Majority class: {majority_class_pct:.2%}")
 
-    assert lower_bound <= avg_val_acc <= upper_bound, \
-        f"Shuffled labels gave {avg_val_acc:.2%}, expected {lower_bound:.2%}-{upper_bound:.2%} " \
+    assert lower_bound <= avg_val_acc <= upper_bound, (
+        f"Shuffled labels gave {avg_val_acc:.2%}, expected {lower_bound:.2%}-{upper_bound:.2%} "
         f"(random ~{random_acc:.2%}, class imbalance allows {1-majority_class_pct:.2%}-{majority_class_pct:.2%})"
+    )
 
     if verbose:
-        print(f"✅ Shuffle test passed: {avg_val_acc:.2%} accuracy "
-              f"(expected {lower_bound:.2%}-{upper_bound:.2%}, random ~{random_acc:.2%})")
+        print(
+            f"✅ Shuffle test passed: {avg_val_acc:.2%} accuracy "
+            f"(expected {lower_bound:.2%}-{upper_bound:.2%}, random ~{random_acc:.2%})"
+        )
 
     return True
 
@@ -532,6 +559,7 @@ def test_shuffle_labels(
 # =============================================================================
 # Sanity Check 6: Scale Invariance
 # =============================================================================
+
 
 def test_scale_invariance(X: np.ndarray, verbose: bool = True) -> bool:
     """Verify relativity features are scale-invariant.
@@ -550,9 +578,9 @@ def test_scale_invariance(X: np.ndarray, verbose: bool = True) -> bool:
         AssertionError: If features are not normalized
     """
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("CHECK 6: Scale Invariance")
-        print("="*80)
+        print("=" * 80)
 
     X_flat = X.reshape(-1, X.shape[-1])  # (N*T, F)
 
@@ -563,7 +591,7 @@ def test_scale_invariance(X: np.ndarray, verbose: bool = True) -> bool:
 
     if verbose:
         print(f"✅ Feature scale check passed: mean_abs={mean_abs.mean():.3f} (expected < 5)")
-        print(f"   All features have mean absolute value < 5")
+        print("   All features have mean absolute value < 5")
 
     return True
 
@@ -572,11 +600,12 @@ def test_scale_invariance(X: np.ndarray, verbose: bool = True) -> bool:
 # Main Test Runner
 # =============================================================================
 
+
 def run_all_sanity_checks(
     data_path: str = "data/processed/train_174.parquet",
     splits_path: str = "data/splits/temporal_split.json",
     device: str = "cpu",
-    verbose: bool = True
+    verbose: bool = True,
 ) -> bool:
     """Run all sanity checks before full training.
 
@@ -589,13 +618,13 @@ def run_all_sanity_checks(
     Returns:
         True if all checks pass, False otherwise
     """
-    print("="*80)
+    print("=" * 80)
     print("JADE FINE-TUNING SANITY CHECKS")
-    print("="*80)
+    print("=" * 80)
     print(f"Data: {data_path}")
     print(f"Splits: {splits_path}")
     print(f"Device: {device}")
-    print("="*80)
+    print("=" * 80)
 
     try:
         # Load data
@@ -605,12 +634,12 @@ def run_all_sanity_checks(
         df = pd.read_parquet(data_path)
 
         # Load splits
-        with open(splits_path, 'r') as f:
+        with open(splits_path) as f:
             splits = json.load(f)
 
         # Extract train/val indices
-        train_start, train_end = splits['train_indices']
-        val_start, val_end = splits['val_indices']
+        train_start, train_end = splits["train_indices"]
+        val_start, val_end = splits["val_indices"]
 
         # Get train/val data
         df_train = df.iloc[train_start:train_end]
@@ -622,26 +651,34 @@ def run_all_sanity_checks(
 
         # Extract features and labels
         # Features are stored as array of shape (105, 10) in 'features' column
-        if 'features' not in df.columns:
-            raise ValueError(f"Expected 'features' column in data. Available: {df.columns.tolist()}")
+        if "features" not in df.columns:
+            raise ValueError(
+                f"Expected 'features' column in data. Available: {df.columns.tolist()}"
+            )
 
         # Properly unpack nested feature arrays
         # Each row has features as (105,) array where each element is (10,) array
         features_train_list = []
-        for row in df_train['features'].values:
+        for row in df_train["features"].values:
             timesteps = np.stack([ts for ts in row])  # Stack 105 timesteps, each with 10 features
             features_train_list.append(timesteps)
         X_train = np.stack(features_train_list).astype(np.float32)
 
         features_val_list = []
-        for row in df_val['features'].values:
+        for row in df_val["features"].values:
             timesteps = np.stack([ts for ts in row])
             features_val_list.append(timesteps)
         X_val = np.stack(features_val_list).astype(np.float32)
 
         # Extract labels
-        y_train = df_train['label'].values if 'label' in df_train.columns else df_train['window_type'].values
-        y_val = df_val['label'].values if 'label' in df_val.columns else df_val['window_type'].values
+        y_train = (
+            df_train["label"].values
+            if "label" in df_train.columns
+            else df_train["window_type"].values
+        )
+        y_val = (
+            df_val["label"].values if "label" in df_val.columns else df_val["window_type"].values
+        )
 
         # Convert labels to integers if needed
         # Determine number of classes dynamically
@@ -684,24 +721,47 @@ def run_all_sanity_checks(
             num_layers=1,
             num_classes=n_classes,
             predict_pointers=False,
-            seed=1337
+            seed=1337,
         ).to(device)
         criterion = nn.CrossEntropyLoss()
 
     except Exception as e:
         print(f"❌ Failed to load data: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
     # Run all checks
     tests = [
         ("Feature Statistics", lambda: test_feature_statistics(X_train, verbose)),
-        ("Class Balance in Batches", lambda: test_class_balance_in_batches(train_loader, n_classes=n_classes, num_batches=10, verbose=verbose)),
+        (
+            "Class Balance in Batches",
+            lambda: test_class_balance_in_batches(
+                train_loader, n_classes=n_classes, num_batches=10, verbose=verbose
+            ),
+        ),
         ("Gradient Flow", lambda: test_gradient_flow(model, X_batch, y_batch, criterion, verbose)),
         ("Scale Invariance", lambda: test_scale_invariance(X_train, verbose)),
-        ("Tiny Train Overfit", lambda: test_tiny_train_overfit(X_train, y_train, n_classes=n_classes, epochs=100, device=device, verbose=verbose)),
-        ("Shuffle Labels", lambda: test_shuffle_labels(X_train, y_train, X_val, y_val, n_classes=n_classes, epochs=20, device=device, verbose=verbose)),
+        (
+            "Tiny Train Overfit",
+            lambda: test_tiny_train_overfit(
+                X_train, y_train, n_classes=n_classes, epochs=100, device=device, verbose=verbose
+            ),
+        ),
+        (
+            "Shuffle Labels",
+            lambda: test_shuffle_labels(
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                n_classes=n_classes,
+                epochs=20,
+                device=device,
+                verbose=verbose,
+            ),
+        ),
     ]
 
     passed = 0
@@ -717,15 +777,16 @@ def run_all_sanity_checks(
         except Exception as e:
             print(f"\n❌ {name} ERROR: {e}")
             import traceback
+
             traceback.print_exc()
             failed_tests.append(name)
 
     # Print summary
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(f"RESULTS: {passed}/{len(tests)} checks passed")
     if failed_tests:
         print(f"Failed tests: {', '.join(failed_tests)}")
-    print("="*80)
+    print("=" * 80)
 
     return passed == len(tests)
 
@@ -734,42 +795,29 @@ def run_all_sanity_checks(
 # CLI Entry Point
 # =============================================================================
 
+
 def main():
     """CLI entry point for sanity checks."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Run sanity checks for Jade fine-tuning pipeline"
-    )
+    parser = argparse.ArgumentParser(description="Run sanity checks for Jade fine-tuning pipeline")
     parser.add_argument(
-        "--data",
-        default="data/processed/train_174.parquet",
-        help="Path to training data parquet"
+        "--data", default="data/processed/train_174.parquet", help="Path to training data parquet"
     )
     parser.add_argument(
         "--splits",
         default="data/splits/temporal_split.json",
-        help="Path to train/val/test splits JSON"
+        help="Path to train/val/test splits JSON",
     )
     parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=["cpu", "cuda"],
-        help="Device to run tests on"
+        "--device", default="cpu", choices=["cpu", "cuda"], help="Device to run tests on"
     )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Reduce verbosity"
-    )
+    parser.add_argument("--quiet", action="store_true", help="Reduce verbosity")
 
     args = parser.parse_args()
 
     success = run_all_sanity_checks(
-        data_path=args.data,
-        splits_path=args.splits,
-        device=args.device,
-        verbose=not args.quiet
+        data_path=args.data, splits_path=args.splits, device=args.device, verbose=not args.quiet
     )
 
     sys.exit(0 if success else 1)

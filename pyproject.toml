@@ -19,12 +19,13 @@ dependencies = [
   "xgboost>=2.0,<3.0",
   "imbalanced-learn==0.14.0",
 
-  # PyTorch Ecosystem
-  "torch>=2.0,<2.3; platform_machine != 'x86_64' or sys_platform != 'darwin'",
-  "torch>=2.0,<2.2.3; platform_machine == 'x86_64' and sys_platform == 'darwin'",
-  "torchvision>=0.17,<0.19",
+  # PyTorch Ecosystem (RunPod 2025: PyTorch 2.4.1 + CUDA 12.4)
+  "torch==2.4.1; sys_platform != 'darwin'",
+  "torch==2.4.1; sys_platform == 'darwin'",
+  "torchvision==0.19.1; sys_platform != 'darwin'",
+  "torchvision==0.19.1; sys_platform == 'darwin'",
   "pytorch-lightning>=2.4.0,<3.0",
-  "torchmetrics>=1.8,<2.0",
+  "torchmetrics>=1.8.2,<2.0",
 
   # Data Handling & Validation
   "pyarrow==17.0.0",          # Upgraded from 16.1.0 (backward compatible, bug fixes)

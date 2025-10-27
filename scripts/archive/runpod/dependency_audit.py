@@ -11,14 +11,15 @@ Usage:
     python dependency_audit.py --version-compatibility
 """
 
-import sys
-import subprocess
-import importlib
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional
 import argparse
+import importlib
 import json
-from dataclasses import dataclass, asdict
+import subprocess
+import sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Optional
+
 
 @dataclass
 class DependencyStatus:
@@ -28,14 +29,16 @@ class DependencyStatus:
     expected_version: Optional[str] = None
     error_message: Optional[str] = None
 
+
 @dataclass
 class AuditReport:
     total_dependencies: int
     passed: int
     failed: int
     warnings: int
-    dependencies: List[DependencyStatus]
-    environment_info: Dict[str, str]
+    dependencies: list[DependencyStatus]
+    environment_info: dict[str, str]
+
 
 class DependencyAuditor:
     """Comprehensive dependency auditing for Moola RunPod deployments."""
@@ -85,26 +88,31 @@ class DependencyAuditor:
 
     def get_python_version(self) -> str:
         """Get Python version information."""
-        return sys.version.replace('\n', ' ')
+        return sys.version.replace("\n", " ")
 
     def get_installed_version(self, package_name: str) -> Optional[str]:
         """Get installed version of a package."""
         try:
             import importlib.metadata
+
             return importlib.metadata.version(package_name)
         except importlib.metadata.PackageNotFoundError:
             return None
         except Exception as e:
             return f"Error: {e}"
 
-    def check_version_compatibility(self, package_name: str, installed_version: str,
-                                  required_version: str) -> Tuple[bool, str]:
+    def check_version_compatibility(
+        self, package_name: str, installed_version: str, required_version: str
+    ) -> tuple[bool, str]:
         """Check if installed version meets requirements."""
         # Simple version checking - could be enhanced with packaging.version
         try:
             if "==" in required_version:
                 expected = required_version.split("==")[1]
-                return installed_version == expected, f"Expected {expected}, got {installed_version}"
+                return (
+                    installed_version == expected,
+                    f"Expected {expected}, got {installed_version}",
+                )
             elif ">=" in required_version and "<" in required_version:
                 # Simple range check - could be improved
                 return True, f"Version {installed_version} in range {required_version}"
@@ -113,7 +121,7 @@ class DependencyAuditor:
         except Exception as e:
             return False, f"Version check failed: {e}"
 
-    def check_import(self, module_name: str) -> Tuple[bool, str]:
+    def check_import(self, module_name: str) -> tuple[bool, str]:
         """Check if a module can be imported."""
         try:
             importlib.import_module(module_name)
@@ -123,7 +131,7 @@ class DependencyAuditor:
         except Exception as e:
             return False, f"Unexpected error: {e}"
 
-    def audit_dependencies(self) -> List[DependencyStatus]:
+    def audit_dependencies(self) -> list[DependencyStatus]:
         """Audit all critical dependencies."""
         results = []
 
@@ -136,7 +144,7 @@ class DependencyAuditor:
                     name=dep_name,
                     status="MISSING",
                     expected_version=version_req,
-                    error_message=f"Package not installed. Expected: {version_req}"
+                    error_message=f"Package not installed. Expected: {version_req}",
                 )
             else:
                 # Check version compatibility
@@ -149,14 +157,14 @@ class DependencyAuditor:
                     status="OK" if compatible else "VERSION_MISMATCH",
                     version=installed_version,
                     expected_version=version_req,
-                    error_message=None if compatible else message
+                    error_message=None if compatible else message,
                 )
 
             results.append(status)
 
         return results
 
-    def audit_moola_modules(self) -> List[DependencyStatus]:
+    def audit_moola_modules(self) -> list[DependencyStatus]:
         """Audit Moola-specific modules."""
         results = []
 
@@ -170,14 +178,14 @@ class DependencyAuditor:
             status = DependencyStatus(
                 name=module_name,
                 status="OK" if can_import else "IMPORT_ERROR",
-                error_message=None if can_import else message
+                error_message=None if can_import else message,
             )
 
             results.append(status)
 
         return results
 
-    def check_environment(self) -> Dict[str, str]:
+    def check_environment(self) -> dict[str, str]:
         """Check environment information."""
         env_info = {}
 
@@ -187,6 +195,7 @@ class DependencyAuditor:
         # PyTorch CUDA availability
         try:
             import torch
+
             env_info["pytorch_version"] = torch.__version__
             env_info["cuda_available"] = str(torch.cuda.is_available())
             if torch.cuda.is_available():
@@ -234,8 +243,14 @@ class DependencyAuditor:
 
         # Count status
         passed = sum(1 for r in all_results if r.status == "OK")
-        failed = sum(1 for r in all_results if r.status in ["MISSING", "VERSION_MISMATCH", "IMPORT_ERROR"])
-        warnings = sum(1 for r in all_results if r.status not in ["OK", "MISSING", "VERSION_MISMATCH", "IMPORT_ERROR"])
+        failed = sum(
+            1 for r in all_results if r.status in ["MISSING", "VERSION_MISMATCH", "IMPORT_ERROR"]
+        )
+        warnings = sum(
+            1
+            for r in all_results
+            if r.status not in ["OK", "MISSING", "VERSION_MISMATCH", "IMPORT_ERROR"]
+        )
 
         report = AuditReport(
             total_dependencies=len(all_results),
@@ -243,19 +258,25 @@ class DependencyAuditor:
             failed=failed,
             warnings=warnings,
             dependencies=all_results,
-            environment_info=self.environment_info
+            environment_info=self.environment_info,
         )
 
         return report
 
     def print_report(self, report: AuditReport, verbose: bool = False):
         """Print audit report."""
-        print(f"\n📋 AUDIT SUMMARY")
-        print(f"Total: {report.total_dependencies} | ✅ Passed: {report.passed} | ❌ Failed: {report.failed} | ⚠️ Warnings: {report.warnings}")
+        print("\n📋 AUDIT SUMMARY")
+        print(
+            f"Total: {report.total_dependencies} | ✅ Passed: {report.passed} | ❌ Failed: {report.failed} | ⚠️ Warnings: {report.warnings}"
+        )
         print()
 
         # Group results by status
-        failed_deps = [r for r in report.dependencies if r.status in ["MISSING", "VERSION_MISMATCH", "IMPORT_ERROR"]]
+        failed_deps = [
+            r
+            for r in report.dependencies
+            if r.status in ["MISSING", "VERSION_MISMATCH", "IMPORT_ERROR"]
+        ]
 
         if failed_deps:
             print("❌ FAILED DEPENDENCIES:")
@@ -280,7 +301,7 @@ class DependencyAuditor:
     def save_report(self, report: AuditReport, filepath: Path):
         """Save audit report to JSON file."""
         report_dict = asdict(report)
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(report_dict, f, indent=2, default=str)
         print(f"📄 Report saved to: {filepath}")
 
@@ -329,14 +350,21 @@ class DependencyAuditor:
             print("ℹ️ No fixes needed or possible")
             return False
 
+
 def main():
     parser = argparse.ArgumentParser(description="Moola RunPod Dependency Audit")
     parser.add_argument("--fix", action="store_true", help="Attempt to fix common issues")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--check-imports-only", action="store_true", help="Only check module imports")
-    parser.add_argument("--version-compatibility", action="store_true", help="Only check version compatibility")
+    parser.add_argument(
+        "--check-imports-only", action="store_true", help="Only check module imports"
+    )
+    parser.add_argument(
+        "--version-compatibility", action="store_true", help="Only check version compatibility"
+    )
     parser.add_argument("--save-report", type=str, help="Save report to JSON file")
-    parser.add_argument("--load-pretrained", type=str, help="Test specific pretrained model loading")
+    parser.add_argument(
+        "--load-pretrained", type=str, help="Test specific pretrained model loading"
+    )
 
     args = parser.parse_args()
 
@@ -390,6 +418,7 @@ def main():
                 print(f"\n🎯 Testing pretrained model loading: {args.load_pretrained}")
                 try:
                     from moola.models.pretrained_utils import load_pretrained_strict
+
                     model = load_pretrained_strict(args.load_pretrained)
                     print(f"✅ Successfully loaded model: {type(model).__name__}")
                 except Exception as e:
@@ -400,7 +429,7 @@ def main():
                 print(f"\n❌ Audit completed with {report.failed} failures")
                 sys.exit(1)
             else:
-                print(f"\n✅ All dependencies verified successfully!")
+                print("\n✅ All dependencies verified successfully!")
                 sys.exit(0)
 
     except KeyboardInterrupt:
@@ -409,6 +438,7 @@ def main():
     except Exception as e:
         print(f"\n💥 Unexpected error during audit: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

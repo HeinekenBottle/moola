@@ -7,13 +7,12 @@ feature engineering, model training, and pre-training transfer learning.
 import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from moola.cli import evaluate, ingest, train
+from moola.cli import ingest, train
 from moola.features import AdvancedFeatureEngineer, FeatureConfig
 from moola.models import get_model
 from moola.utils.seeds import set_seed
@@ -63,7 +62,7 @@ class IntegrationTestSuite:
 
         return data_path
 
-    def test_parameter_count_validation(self) -> Dict[str, Any]:
+    def test_parameter_count_validation(self) -> dict[str, Any]:
         """Test that parameter counts meet expected specifications."""
         print("\n=== Testing Parameter Count Validation ===")
 
@@ -105,7 +104,7 @@ class IntegrationTestSuite:
         self.results["parameter_count"] = result
         return result
 
-    def test_feature_engineering_integration(self) -> Dict[str, Any]:
+    def test_feature_engineering_integration(self) -> dict[str, Any]:
         """Test feature engineering pipeline integration."""
         print("\n=== Testing Feature Engineering Integration ===")
 
@@ -139,7 +138,7 @@ class IntegrationTestSuite:
         self.results["feature_engineering"] = result
         return result
 
-    def test_data_pipeline_integration(self) -> Dict[str, Any]:
+    def test_data_pipeline_integration(self) -> dict[str, Any]:
         """Test complete data pipeline integration."""
         print("\n=== Testing Data Pipeline Integration ===")
 
@@ -177,7 +176,7 @@ class IntegrationTestSuite:
         self.results["data_pipeline"] = result
         return result
 
-    def test_simple_lstm_enhanced_architecture(self) -> Dict[str, Any]:
+    def test_simple_lstm_enhanced_architecture(self) -> dict[str, Any]:
         """Test enhanced SimpleLSTM architecture."""
         print("\n=== Testing Enhanced SimpleLSTM Architecture ===")
 
@@ -239,7 +238,7 @@ class IntegrationTestSuite:
         self.results["simple_lstm"] = result
         return result
 
-    def test_pretraining_integration(self) -> Dict[str, Any]:
+    def test_pretraining_integration(self) -> dict[str, Any]:
         """Test pre-training integration with SimpleLSTM."""
         print("\n=== Testing Pre-training Integration ===")
 
@@ -261,7 +260,7 @@ class IntegrationTestSuite:
         self.results["pretraining"] = result
         return result
 
-    def test_backward_compatibility(self) -> Dict[str, Any]:
+    def test_backward_compatibility(self) -> dict[str, Any]:
         """Test backward compatibility with existing models."""
         print("\n=== Testing Backward Compatibility ===")
 
@@ -304,7 +303,7 @@ class IntegrationTestSuite:
         self.results["backward_compatibility"] = result
         return result
 
-    def run_all_tests(self) -> Dict[str, Any]:
+    def run_all_tests(self) -> dict[str, Any]:
         """Run all integration tests and return comprehensive results."""
         print("🚀 Starting comprehensive integration test suite...")
 
@@ -337,7 +336,7 @@ class IntegrationTestSuite:
             "test_timestamp": pd.Timestamp.now().isoformat(),
         }
 
-        print(f"\n📊 Integration Test Summary:")
+        print("\n📊 Integration Test Summary:")
         print(f"   Total Tests: {total_tests}")
         print(f"   Passed: {passed_tests}")
         print(f"   Success Rate: {summary['success_rate']:.2%}")

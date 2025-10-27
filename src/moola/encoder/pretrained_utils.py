@@ -1,7 +1,7 @@
 """Pretrained weight loading with strict validation and reporting."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -14,7 +14,7 @@ def load_pretrained_strict(
     freeze_encoder: bool = True,
     min_match_ratio: float = 0.20,  # Lower for encoder-only loading (multi-task models have extra heads)
     allow_shape_mismatch: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load pretrained weights with strict validation.
 
     Args:

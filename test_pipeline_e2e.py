@@ -12,10 +12,12 @@ Usage:
     python3 test_pipeline_e2e.py
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
-from pathlib import Path
+
 
 def test_data_loading():
     """Test 1: Load and validate 5-year NQ data."""
@@ -33,18 +35,20 @@ def test_data_loading():
     print(f"   Total bars: {len(df):,}")
 
     # Validate OHLC consistency
-    ohlc = df[['open', 'high', 'low', 'close']].values
-    high_valid = (ohlc[:, 1] >= ohlc[:, 0]) & (ohlc[:, 1] >= ohlc[:, 2]) & (ohlc[:, 1] >= ohlc[:, 3])
+    ohlc = df[["open", "high", "low", "close"]].values
+    high_valid = (
+        (ohlc[:, 1] >= ohlc[:, 0]) & (ohlc[:, 1] >= ohlc[:, 2]) & (ohlc[:, 1] >= ohlc[:, 3])
+    )
     low_valid = (ohlc[:, 2] <= ohlc[:, 0]) & (ohlc[:, 2] <= ohlc[:, 1]) & (ohlc[:, 2] <= ohlc[:, 3])
 
     assert (~high_valid).sum() == 0, f"Invalid high values: {(~high_valid).sum()}"
     assert (~low_valid).sum() == 0, f"Invalid low values: {(~low_valid).sum()}"
-    print(f"✅ OHLC consistency validated")
+    print("✅ OHLC consistency validated")
 
     # Check for NaN/inf
     assert df.isna().sum().sum() == 0, f"NaN values found: {df.isna().sum().sum()}"
     assert np.isinf(df.select_dtypes(include=[np.number])).sum().sum() == 0, "Inf values found"
-    print(f"✅ No NaN/Inf values")
+    print("✅ No NaN/Inf values")
 
     return df
 
@@ -55,17 +59,17 @@ def test_feature_engineering(df):
     print("TEST 2: Building RelativeTransform features (10D)")
     print("=" * 60)
 
-    from moola.features.relativity import build_features, RelativityConfig
+    from moola.features.relativity import RelativityConfig, build_features
 
     # Use sample for speed (first 50K bars)
-    df_sample = df[['open', 'high', 'low', 'close']].iloc[:50000].copy()
+    df_sample = df[["open", "high", "low", "close"]].iloc[:50000].copy()
     print(f"Sample size: {len(df_sample):,} bars")
 
     # Build features with default config
     cfg = RelativityConfig(window_length=105)
     X, mask, meta = build_features(df_sample, cfg)
 
-    print(f"\n✅ Features built successfully")
+    print("\n✅ Features built successfully")
     print(f"   X shape: {X.shape}")
     print(f"   Mask shape: {mask.shape}")
     print(f"   Feature count: {meta['n_features']}")
@@ -76,15 +80,17 @@ def test_feature_engineering(df):
     assert X.dtype == np.float32, f"Expected float32, got {X.dtype}"
     assert np.isnan(X).sum() == 0, f"NaN values in features: {np.isnan(X).sum()}"
     assert np.isinf(X).sum() == 0, f"Inf values in features: {np.isinf(X).sum()}"
-    print(f"✅ Feature quality validated (no NaN/Inf)")
+    print("✅ Feature quality validated (no NaN/Inf)")
 
     # Check feature ranges
     print("\nFeature statistics (first 1000 windows):")
-    for i, name in enumerate(meta['feature_names']):
+    for i, name in enumerate(meta["feature_names"]):
         vals = X[:1000, :, i]
-        expected_range = meta['feature_ranges'][name]
-        print(f"   {name:20s}: min={vals.min():.3f}, max={vals.max():.3f}, "
-              f"mean={vals.mean():.3f}, range={expected_range}")
+        expected_range = meta["feature_ranges"][name]
+        print(
+            f"   {name:20s}: min={vals.min():.3f}, max={vals.max():.3f}, "
+            f"mean={vals.mean():.3f}, range={expected_range}"
+        )
 
     return X, mask, meta
 
@@ -104,11 +110,11 @@ def test_model_compatibility(X):
         num_layers=2,
         num_classes=3,
         predict_pointers=True,
-        seed=42
+        seed=42,
     )
 
     param_stats = model.get_num_parameters()
-    print(f"✅ Model created: JadeCore")
+    print("✅ Model created: JadeCore")
     print(f"   Total params: {param_stats['total']:,}")
     print(f"   Trainable params: {param_stats['trainable']:,}")
 
@@ -121,18 +127,24 @@ def test_model_compatibility(X):
     with torch.no_grad():
         output = model(x_test)
 
-    print(f"\n✅ Forward pass successful")
+    print("\n✅ Forward pass successful")
     print(f"   Input shape: {x_test.shape}")
     print(f"   Logits shape: {output['logits'].shape}")
-    if 'pointers' in output:
+    if "pointers" in output:
         print(f"   Pointers shape: {output['pointers'].shape}")
 
     # Validate output shapes
-    assert output['logits'].shape == (batch_size, 3), f"Unexpected logits shape: {output['logits'].shape}"
-    if 'pointers' in output:
-        assert output['pointers'].shape == (batch_size, 2), f"Unexpected pointers shape: {output['pointers'].shape}"
+    assert output["logits"].shape == (
+        batch_size,
+        3,
+    ), f"Unexpected logits shape: {output['logits'].shape}"
+    if "pointers" in output:
+        assert output["pointers"].shape == (
+            batch_size,
+            2,
+        ), f"Unexpected pointers shape: {output['pointers'].shape}"
 
-    print(f"✅ Output shapes validated")
+    print("✅ Output shapes validated")
 
     return model
 
@@ -143,8 +155,9 @@ def test_config_compatibility():
     print("TEST 4: Testing config compatibility")
     print("=" * 60)
 
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     # Check Jade config
     jade_config = Path("configs/model/jade.yaml")
@@ -153,7 +166,7 @@ def test_config_compatibility():
     with open(jade_config) as f:
         cfg = yaml.safe_load(f)
 
-    print(f"✅ Jade config loaded successfully")
+    print("✅ Jade config loaded successfully")
     print(f"   Model name: {cfg['model']['name']}")
     print(f"   Hidden size: {cfg['model']['hidden_size']}")
     print(f"   Num layers: {cfg['model']['num_layers']}")
@@ -161,10 +174,10 @@ def test_config_compatibility():
     print(f"   Uncertainty weighting: {cfg['loss']['kendall_uncertainty']}")
 
     # Validate critical settings
-    assert cfg['model']['name'] == 'jade', "Model name should be 'jade'"
-    assert cfg['loss']['kendall_uncertainty'] == True, "Uncertainty weighting should be enabled"
+    assert cfg["model"]["name"] == "jade", "Model name should be 'jade'"
+    assert cfg["loss"]["kendall_uncertainty"] == True, "Uncertainty weighting should be enabled"
 
-    print(f"✅ Config validated")
+    print("✅ Config validated")
 
 
 def test_runpod_readiness():
@@ -200,24 +213,26 @@ def test_runpod_readiness():
         p = Path(file_path)
         assert p.exists(), f"Required file missing: {file_path}"
 
-    print(f"\n✅ All required files present")
+    print("\n✅ All required files present")
 
     # Check CLI commands
     print("\n📋 Available CLI commands:")
     import subprocess
+
     result = subprocess.run(
-        ["python3", "-m", "moola.cli", "--help"],
-        capture_output=True,
-        text=True
+        ["python3", "-m", "moola.cli", "--help"], capture_output=True, text=True
     )
-    commands = [line.strip() for line in result.stdout.split('\n')
-                if line.strip() and not line.startswith(' ') and not line.startswith('Options')]
+    commands = [
+        line.strip()
+        for line in result.stdout.split("\n")
+        if line.strip() and not line.startswith(" ") and not line.startswith("Options")
+    ]
 
     print("   - train (main training command)")
     print("   - pretrain-multitask (optional pre-training)")
     print("   - doctor (environment validation)")
 
-    print(f"\n✅ CLI operational")
+    print("\n✅ CLI operational")
 
 
 def print_runpod_instructions():
@@ -336,6 +351,7 @@ def main():
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

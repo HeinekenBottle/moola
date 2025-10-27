@@ -37,11 +37,11 @@ def start_end_to_center_length(start: torch.Tensor, end: torch.Tensor, seq_len: 
     PAPER-STRICT FORMULAS:
         center = 0.5 * (start + end) / (W-1)  # Center position in [0, 1]
         length = (end - start + 1) / W        # Span length in [0, 1]
-    
+
     Where W = 105 (window size), so seq_len = W-1 = 104 for 0-based indices.
 
     Args:
-        start: Start indices [B] or [B, 1] 
+        start: Start indices [B] or [B, 1]
         end: End indices [B] or [B, 1]
         seq_len: Sequence length for normalization (PAPER-STRICT: must be 104)
 
@@ -61,16 +61,16 @@ def start_end_to_center_length(start: torch.Tensor, end: torch.Tensor, seq_len: 
     # PAPER-STRICT: Validate seq_len
     if seq_len != 104:
         raise ValueError(f"PAPER-STRICT: seq_len must be 104 (W-1 for W=105), got {seq_len}")
-    
+
     # PAPER-STRICT: Use exact paper formulas
     W = seq_len + 1  # W = 105
     center = 0.5 * (start + end) / seq_len  # (W-1) in denominator
-    length = (end - start + 1) / W          # W in denominator
-    
+    length = (end - start + 1) / W  # W in denominator
+
     # PAPER-STRICT: Clip to [0, 1]
     center = torch.clamp(center, 0.0, 1.0)
     length = torch.clamp(length, 0.0, 1.0)
-    
+
     return center, length
 
 
@@ -119,7 +119,7 @@ def numpy_start_end_to_center_length(
     PAPER-STRICT FORMULAS:
         center = 0.5 * (start + end) / (W-1)  # Center position in [0, 1]
         length = (end - start + 1) / W        # Span length in [0, 1]
-    
+
     Where W = 105 (window size), so seq_len = W-1 = 104 for 0-based indices.
 
     Args:
@@ -139,16 +139,16 @@ def numpy_start_end_to_center_length(
     # PAPER-STRICT: Validate seq_len
     if seq_len != 104:
         raise ValueError(f"PAPER-STRICT: seq_len must be 104 (W-1 for W=105), got {seq_len}")
-    
+
     # PAPER-STRICT: Use exact paper formulas
     W = seq_len + 1  # W = 105
     center = 0.5 * (start + end) / seq_len  # (W-1) in denominator
-    length = (end - start + 1) / W          # W in denominator
-    
+    length = (end - start + 1) / W  # W in denominator
+
     # PAPER-STRICT: Clip to [0, 1]
     center = np.clip(center, 0.0, 1.0)
     length = np.clip(length, 0.0, 1.0)
-    
+
     return center, length
 
 

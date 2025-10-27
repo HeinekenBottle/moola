@@ -29,26 +29,26 @@ from loguru import logger
 
 def price_relevance(X: np.ndarray, *, ohlc_channels: int = 4) -> np.ndarray:
     """Apply price relevance scaling to OHLC columns.
-    
+
     Normalizes OHLC (first N channels) to [0, 1] within each window
     to improve cross-period generalization.
-    
+
     Formula:
         X_norm = (X - X_min) / (X_max - X_min + eps)
-    
+
     Where min/max are computed per window (axis=1) for OHLC channels only.
-    
+
     Args:
         X: Input array of shape (N, T, D) where D >= ohlc_channels
            First `ohlc_channels` are OHLC
         ohlc_channels: Number of OHLC channels to normalize (default: 4)
-    
+
     Returns:
         Normalized array with OHLC scaled to [0, 1] per window
-    
+
     Raises:
         ValueError: If X has fewer than ohlc_channels features
-    
+
     Examples:
         >>> X = np.random.randn(100, 105, 11)
         >>> X_norm = price_relevance(X)
@@ -58,46 +58,44 @@ def price_relevance(X: np.ndarray, *, ohlc_channels: int = 4) -> np.ndarray:
     """
     if X.ndim != 3:
         raise ValueError(f"Expected 3D array (N, T, D), got shape {X.shape}")
-    
+
     if X.shape[-1] < ohlc_channels:
-        raise ValueError(
-            f"Expected at least {ohlc_channels} features for OHLC, got {X.shape[-1]}"
-        )
-    
+        raise ValueError(f"Expected at least {ohlc_channels} features for OHLC, got {X.shape[-1]}")
+
     # Extract OHLC channels
     ohlc = X[..., :ohlc_channels]
-    
+
     # Compute min/max per window (axis=1)
     ohlc_min = ohlc.min(axis=1, keepdims=True)
     ohlc_max = ohlc.max(axis=1, keepdims=True)
-    
+
     # Normalize to [0, 1]
     rng = ohlc_max - ohlc_min + 1e-8  # Add epsilon to avoid division by zero
     ohlc_norm = (ohlc - ohlc_min) / rng
-    
+
     # Create normalized array (copy to avoid modifying original)
     X_norm = X.copy()
     X_norm[..., :ohlc_channels] = ohlc_norm
-    
+
     logger.debug(
         f"Applied price relevance scaling to {ohlc_channels} OHLC channels | "
         f"Range: [{ohlc_norm.min():.4f}, {ohlc_norm.max():.4f}]"
     )
-    
+
     return X_norm
 
 
 def z_score_normalize(X: np.ndarray, *, axis: int = 1, eps: float = 1e-8) -> np.ndarray:
     """Apply z-score normalization (mean=0, std=1).
-    
+
     Args:
         X: Input array of shape (N, T, D)
         axis: Axis to compute statistics over (default: 1 for per-window)
         eps: Epsilon to avoid division by zero (default: 1e-8)
-    
+
     Returns:
         Z-score normalized array
-    
+
     Examples:
         >>> X = np.random.randn(100, 105, 11)
         >>> X_norm = z_score_normalize(X)
@@ -113,16 +111,16 @@ def min_max_normalize(
     X: np.ndarray, *, axis: int = 1, feature_range: tuple = (0, 1), eps: float = 1e-8
 ) -> np.ndarray:
     """Apply min-max normalization to specified range.
-    
+
     Args:
         X: Input array of shape (N, T, D)
         axis: Axis to compute statistics over (default: 1 for per-window)
         feature_range: Target range (default: (0, 1))
         eps: Epsilon to avoid division by zero (default: 1e-8)
-    
+
     Returns:
         Min-max normalized array
-    
+
     Examples:
         >>> X = np.random.randn(100, 105, 11)
         >>> X_norm = min_max_normalize(X, feature_range=(-1, 1))
@@ -131,30 +129,30 @@ def min_max_normalize(
     """
     x_min = X.min(axis=axis, keepdims=True)
     x_max = X.max(axis=axis, keepdims=True)
-    
+
     # Normalize to [0, 1]
     X_std = (X - x_min) / (x_max - x_min + eps)
-    
+
     # Scale to feature_range
     min_val, max_val = feature_range
     X_scaled = X_std * (max_val - min_val) + min_val
-    
+
     return X_scaled
 
 
 def robust_normalize(X: np.ndarray, *, axis: int = 1, eps: float = 1e-8) -> np.ndarray:
     """Apply robust normalization using median and IQR.
-    
+
     More robust to outliers than z-score normalization.
-    
+
     Args:
         X: Input array of shape (N, T, D)
         axis: Axis to compute statistics over (default: 1 for per-window)
         eps: Epsilon to avoid division by zero (default: 1e-8)
-    
+
     Returns:
         Robust normalized array
-    
+
     Examples:
         >>> X = np.random.randn(100, 105, 11)
         >>> X_norm = robust_normalize(X)
@@ -164,7 +162,7 @@ def robust_normalize(X: np.ndarray, *, axis: int = 1, eps: float = 1e-8) -> np.n
     q75 = np.percentile(X, 75, axis=axis, keepdims=True)
     q25 = np.percentile(X, 25, axis=axis, keepdims=True)
     iqr = q75 - q25 + eps
-    
+
     return (X - median) / iqr
 
 
@@ -176,7 +174,7 @@ def normalize_batch(
     **kwargs,
 ) -> np.ndarray:
     """Normalize batch using specified method.
-    
+
     Args:
         X: Input array of shape (N, T, D)
         method: Normalization method (default: 'price_relevance')
@@ -187,13 +185,13 @@ def normalize_batch(
             - 'none': No normalization
         ohlc_channels: Number of OHLC channels (default: 4)
         **kwargs: Additional arguments for normalization method
-    
+
     Returns:
         Normalized array
-    
+
     Raises:
         ValueError: If method is unknown
-    
+
     Examples:
         >>> X = np.random.randn(100, 105, 11)
         >>> X_norm = normalize_batch(X, method='price_relevance')
@@ -215,4 +213,3 @@ def normalize_batch(
             f"Unknown normalization method: {method}. "
             f"Choose from: price_relevance, z_score, min_max, robust, none"
         )
-

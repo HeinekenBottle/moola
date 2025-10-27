@@ -1,7 +1,5 @@
 """Data loading utilities with validation."""
 
-import pandas as pd
-
 
 def validate_expansions(df):
     """Remove samples with invalid expansion indices.

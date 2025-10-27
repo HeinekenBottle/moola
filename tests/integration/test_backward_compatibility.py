@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from moola.cli import doctor, evaluate, train
+from moola.cli import doctor, train
 from moola.models import get_model, list_models
 from moola.utils.seeds import set_seed
 

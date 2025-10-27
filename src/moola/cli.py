@@ -419,7 +419,7 @@ def train(
 
     CRITICAL: Requires temporal split file to prevent look-ahead bias in time series.
     Random/stratified splits are FORBIDDEN for financial data.
-    
+
     PAPER-STRICT COMPLIANCE:
     - Only Stones models allowed: {jade, sapphire, opal}
     - No experiments/ or enhanced_simple_lstm imports
@@ -428,15 +428,14 @@ def train(
     """
     import os
     import pickle
-    import sys
     import subprocess
     from pathlib import Path
 
     import numpy as np
     import pandas as pd
 
-    from .data_infra.storage_11d import prepare_model_inputs
     from .data.splits import assert_no_random, assert_temporal, load_split
+    from .data_infra.storage_11d import prepare_model_inputs
     from .models import get_model
     from .utils.seeds import print_gpu_info
 
@@ -455,35 +454,36 @@ def train(
 
     # PAPER-STRICT: Import path validation
     import moola
+
     moola_path = Path(moola.__file__).parent
     forbidden_paths = ["experiments", "enhanced_simple_lstm"]
-    
+
     for root, dirs, files in os.walk(moola_path):
         # Skip __pycache__ and .git
         dirs[:] = [d for d in dirs if d not in ["__pycache__", ".git"]]
-        
+
         for file in files:
             if file.endswith(".py"):
                 file_path = Path(root) / file
                 rel_path = file_path.relative_to(moola_path)
                 rel_path_str = str(rel_path)
-                
+
                 if any(forbidden in rel_path_str for forbidden in forbidden_paths):
                     raise AssertionError(
                         f"PAPER-STRICT VIOLATION: Forbidden import path detected: {rel_path_str}"
                     )
-    
+
     log.info("✅ PAPER-STRICT: Import paths validated (no experiments/ or enhanced_simple_lstm)")
 
     # PAPER-STRICT: Log git SHA and model info
     try:
-        git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], 
-                                        cwd=Path(__file__).parent.parent.parent,
-                                        text=True).strip()
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).parent.parent.parent, text=True
+        ).strip()
         log.info(f"✅ PAPER-STRICT: Git SHA: {git_sha}")
     except subprocess.CalledProcessError:
         log.warning("⚠️  Could not determine git SHA")
-    
+
     # Log model file path
     model_file = Path(moola.__file__).parent / "models" / f"{model}.py"
     if model_file.exists():
@@ -500,21 +500,21 @@ def train(
     log.info("PAPER-STRICT TEMPORAL SPLIT VALIDATION")
     log.info("=" * 60)
     split_data = load_split(split)
-    
+
     # PAPER-STRICT: Validate with purge window and hash checking
     assert_temporal(split_data, purge_window=5)  # 5-sample purge window
     assert_no_random({"split_impl": "temporal", "split_strategy": "forward_chaining"})
-    
+
     # PAPER-STRICT: Additional validation with actual data timestamps
     try:
         # Load a small sample of data to validate timestamps
         df_sample = pd.read_parquet(data).head(100)  # Just first 100 rows for timestamp validation
-        if 'timestamp' in df_sample.columns:
+        if "timestamp" in df_sample.columns:
             assert_temporal(split_data, purge_window=5, df_with_timestamps=df_sample)
             log.info("✅ PAPER-STRICT: Timestamp validation passed")
     except Exception as e:
         log.warning(f"⚠️  Could not validate timestamps: {e}")
-    
+
     log.info("✅ PAPER-STRICT: All split validations passed")
 
     log.info(f"Split: {split_data['name']}")
@@ -534,34 +534,38 @@ def train(
     log.info("=" * 60)
     log.info("SANITY CHECKS: Pointer-Favoring Patch Requirements")
     log.info("=" * 60)
-    
+
     # Check model is one of the approved Stones models
     approved_models = {"jade", "sapphire", "opal"}
     assert model in approved_models, f"❌ Model must be one of {approved_models}, got: {model}"
     log.info(f"✅ Model approved: {model}")
-    
+
     # Check pointer encoding is center_length (this should be hardcoded in Jade models)
-    if hasattr(cfg.model, 'pointer_encoding'):
-        assert cfg.model.pointer_encoding == "center_length", f"❌ Pointer encoding must be 'center_length', got: {cfg.model.pointer_encoding}"
+    if hasattr(cfg.model, "pointer_encoding"):
+        assert (
+            cfg.model.pointer_encoding == "center_length"
+        ), f"❌ Pointer encoding must be 'center_length', got: {cfg.model.pointer_encoding}"
         log.info(f"✅ Pointer encoding: {cfg.model.pointer_encoding}")
     else:
         log.info("✅ Pointer encoding: center_length (hardcoded in Jade models)")
-    
+
     # Check batch size is 29 for supervised training
-    batch_size = getattr(cfg.model, 'batch_size', 29)  # Default to 29 if not specified
+    batch_size = getattr(cfg.model, "batch_size", 29)  # Default to 29 if not specified
     assert batch_size == 29, f"❌ Batch size must be 29 for supervised training, got: {batch_size}"
     log.info(f"✅ Batch size: {batch_size}")
-    
+
     # Check uncertainty weighting is enabled (for multi-task models)
     if predict_pointers:
-        use_uncertainty_weighting = getattr(cfg.model, 'use_uncertainty_weighting', True)
-        assert use_uncertainty_weighting, "❌ Uncertainty weighting must be enabled for pointer prediction"
+        use_uncertainty_weighting = getattr(cfg.model, "use_uncertainty_weighting", True)
+        assert (
+            use_uncertainty_weighting
+        ), "❌ Uncertainty weighting must be enabled for pointer prediction"
         log.info("✅ Uncertainty weighting: enabled (pointer-favoring)")
-        
+
         # Log Kendall bias initialization
         log.info("✅ Kendall bias: log_var_ptr=-0.60 (σ≈0.74), log_var_type=0.00 (σ=1.00)")
         log.info("✅ Pointer task weight: ~1.8x higher than classification")
-    
+
     log.info("=" * 60)
 
     # Log feature configuration
@@ -624,14 +628,14 @@ def train(
     log.info("=" * 60)
     log.info("RELATIVITY FEATURE PIPELINE")
     log.info("=" * 60)
-    
+
     from .data.parquet_loader import load
-    from .features.relativity import build_features, RelativityConfig
-    
+    from .features.relativity import RelativityConfig, build_features
+
     # Load data with parquet loader (replaces df from above)
     df = load([data])
     log.info(f"Loaded {len(df)} rows with parquet loader")
-    
+
     # Build relativity features
     relativity_cfg = RelativityConfig(
         ohlc_eps=1.0e-6,
@@ -641,13 +645,13 @@ def train(
         zigzag_hybrid_confirm_lookback=5,
         zigzag_hybrid_min_retrace_atr=0.5,
         window_length=105,
-        window_overlap=0.5
+        window_overlap=0.5,
     )
-    
+
     X, mask, meta = build_features(df, relativity_cfg)
     log.info(f"Built relativity features: shape={X.shape}, features={meta['n_features']}")
     log.info(f"Feature names: {meta['feature_names']}")
-    
+
     # Prepare processed data in expected format
     processed_data = {
         "X_raw": None,  # No raw OHLC needed anymore
@@ -655,17 +659,17 @@ def train(
         "y": df["label"].values if "label" in df.columns else None,
         "feature_names": meta["feature_names"],
         "expansion_start": None,  # Not applicable for relativity features
-        "expansion_end": None,    # Not applicable for relativity features
+        "expansion_end": None,  # Not applicable for relativity features
         "metadata": {
             "feature_config": {
                 "use_engineered_features": True,
                 "max_engineered_features": meta["n_features"],
                 "use_hopsketch": False,
                 "feature_type": "relativity",
-                "input_size": meta["n_features"]
+                "input_size": meta["n_features"],
             },
-            "relativity_meta": meta
-        }
+            "relativity_meta": meta,
+        },
     }
 
     # Log data processing results
@@ -798,46 +802,59 @@ def train(
     log.info("=" * 70)
     log.info("PAPER-STRICT AUDIT")
     log.info("=" * 70)
-    
+
     # Model audit
     log.info(f"Active model name: {model}")
     log.info(f"Model class: {type(model_instance).__name__}")
     log.info(f"Model file path: {model_instance.__class__.__module__}")
-    
+
     # Config audit
     log.info(f"Config path used: {Path(cfg_dir) / 'model' / f'{model}.yaml'}")
-    
+
     # Encoder audit
     encoder_path = pretrained_encoder if pretrained_encoder else "None"
     log.info(f"Encoder preload path: {encoder_path}")
-    
+
     # Paper-strict assertions
     try:
         # Check pointer encoding
-        if hasattr(model_instance, 'pointer_head'):
-            assert hasattr(model_instance.pointer_head, 'encoding'), "Model missing pointer_head.encoding"
-            assert model_instance.pointer_head.encoding == "center_length", f"Pointer encoding must be 'center_length', got '{model_instance.pointer_head.encoding}'"
+        if hasattr(model_instance, "pointer_head"):
+            assert hasattr(
+                model_instance.pointer_head, "encoding"
+            ), "Model missing pointer_head.encoding"
+            assert (
+                model_instance.pointer_head.encoding == "center_length"
+            ), f"Pointer encoding must be 'center_length', got '{model_instance.pointer_head.encoding}'"
             log.info("✓ Pointer encoding: center_length")
-        
+
         # Check batch size for supervised training
-        if hasattr(model_instance, 'batch_size'):
+        if hasattr(model_instance, "batch_size"):
             expected_batch = 29  # Paper-strict supervised batch size
-            assert model_instance.batch_size == expected_batch, f"Batch size must be {expected_batch} for supervised training, got {model_instance.batch_size}"
+            assert (
+                model_instance.batch_size == expected_batch
+            ), f"Batch size must be {expected_batch} for supervised training, got {model_instance.batch_size}"
             log.info(f"✓ Batch size: {model_instance.batch_size}")
-        
+
         # Check uncertainty weighting
-        if hasattr(model_instance, 'loss_fn') and hasattr(model_instance.loss_fn, 'learned_log_vars'):
-            assert getattr(model_instance.loss_fn, "learned_log_vars", None) is not None, "Model must use uncertainty-weighted loss"
+        if hasattr(model_instance, "loss_fn") and hasattr(
+            model_instance.loss_fn, "learned_log_vars"
+        ):
+            assert (
+                getattr(model_instance.loss_fn, "learned_log_vars", None) is not None
+            ), "Model must use uncertainty-weighted loss"
             log.info("✓ Uncertainty weighting: enabled")
-        elif hasattr(model_instance, 'use_uncertainty_weighting') and model_instance.use_uncertainty_weighting:
+        elif (
+            hasattr(model_instance, "use_uncertainty_weighting")
+            and model_instance.use_uncertainty_weighting
+        ):
             log.info("✓ Uncertainty weighting: enabled")
         else:
             log.warning("⚠ Uncertainty weighting: not detected")
-        
+
         log.info("=" * 70)
         log.info("PAPER-STRICT AUDIT PASSED")
         log.info("=" * 70)
-        
+
     except AssertionError as e:
         log.error("=" * 70)
         log.error("PAPER-STRICT AUDIT FAILED")
@@ -1054,13 +1071,13 @@ def train(
         mean_entropy = mc_results["type_entropy"].mean()
         mean_ptr_std = mc_results["pointer_std"].mean(axis=0)
 
-        log.info(f"Type classification uncertainty:")
+        log.info("Type classification uncertainty:")
         log.info(f"  Mean predictive entropy: {mean_entropy:.4f}")
         log.info(
             f"  Entropy range: [{mc_results['type_entropy'].min():.4f}, {mc_results['type_entropy'].max():.4f}]"
         )
 
-        log.info(f"Pointer regression uncertainty:")
+        log.info("Pointer regression uncertainty:")
         log.info(f"  Mean center std: {mean_ptr_std[0]:.4f}")
         log.info(f"  Mean length std: {mean_ptr_std[1]:.4f}")
 
@@ -1470,10 +1487,6 @@ def evaluate(
         recall_score,
     )
 
-    from .data_infra.storage_11d import (
-        create_dual_input_processor,
-        prepare_model_inputs,
-    )
     from .data.splits import assert_temporal, load_split
     from .models import get_model
 
@@ -1525,14 +1538,14 @@ def evaluate(
     log.info("=" * 60)
     log.info("RELATIVITY FEATURE PIPELINE (EVALUATION)")
     log.info("=" * 60)
-    
+
     from .data.parquet_loader import load
-    from .features.relativity import build_features, RelativityConfig
-    
+    from .features.relativity import RelativityConfig, build_features
+
     # Load data with parquet loader (replaces df from above)
     df = load([str(train_path)])
     log.info(f"Loaded {len(df)} rows with parquet loader")
-    
+
     # Build relativity features
     relativity_cfg = RelativityConfig(
         ohlc_eps=1.0e-6,
@@ -1542,13 +1555,13 @@ def evaluate(
         zigzag_hybrid_confirm_lookback=5,
         zigzag_hybrid_min_retrace_atr=0.5,
         window_length=105,
-        window_overlap=0.5
+        window_overlap=0.5,
     )
-    
+
     X, mask, meta = build_features(df, relativity_cfg)
     log.info(f"Built relativity features: shape={X.shape}, features={meta['n_features']}")
     log.info(f"Feature names: {meta['feature_names']}")
-    
+
     # Prepare processed data in expected format
     processed_data = {
         "X_raw": None,  # No raw OHLC needed anymore
@@ -1556,17 +1569,17 @@ def evaluate(
         "y": df["label"].values if "label" in df.columns else None,
         "feature_names": meta["feature_names"],
         "expansion_start": None,  # Not applicable for relativity features
-        "expansion_end": None,    # Not applicable for relativity features
+        "expansion_end": None,  # Not applicable for relativity features
         "metadata": {
             "feature_config": {
                 "use_engineered_features": True,
                 "max_engineered_features": meta["n_features"],
                 "use_hopsketch": False,
                 "feature_type": "relativity",
-                "input_size": meta["n_features"]
+                "input_size": meta["n_features"],
             },
-            "relativity_meta": meta
-        }
+            "relativity_meta": meta,
+        },
     }
 
     # Extract training variables from Stones loader
@@ -1574,7 +1587,6 @@ def evaluate(
     y = processed_data["y"]
     expansion_start = processed_data["expansion_start"]
     expansion_end = processed_data["expansion_end"]
-
 
     log.info(f"Evaluation data shape for {model}: {X.shape}")
     if use_engineered_features and processed_data["X_engineered"] is not None:
@@ -1923,10 +1935,15 @@ def pretrain_tcc(cfg_dir, over, device, epochs, patience):
     type=click.Choice(["cpu", "cuda"]),
     help="Device for training (cuda for RTX 4090)",
 )
-@click.option("--epochs", default=100, type=int, help="Number of pre-training epochs (paper-strict: 100)")
+@click.option(
+    "--epochs", default=100, type=int, help="Number of pre-training epochs (paper-strict: 100)"
+)
 @click.option("--patience", default=15, type=int, help="Early stopping patience")
 @click.option(
-    "--mask-ratio", default=0.4, type=float, help="Proportion of timesteps to mask (paper-strict: 0.4)"
+    "--mask-ratio",
+    default=0.4,
+    type=float,
+    help="Proportion of timesteps to mask (paper-strict: 0.4)",
 )
 @click.option(
     "--mask-strategy",
@@ -2129,14 +2146,11 @@ def precompute(cfg_dir, over, data, output_dir, seed):
     import json
     import time
     from pathlib import Path
-    from typing import Dict, Tuple
 
     import numpy as np
     import pandas as pd
-    import yaml
-    from pydantic import BaseModel
 
-    from .features.relativity import build_features, RelativityConfig
+    from .features.relativity import RelativityConfig, build_features
 
     cfg = _load_cfg(Path(cfg_dir), list(over))
     paths = resolve_paths()
@@ -2177,7 +2191,7 @@ def precompute(cfg_dir, over, data, output_dir, seed):
         zigzag_hybrid_confirm_lookback=5,
         zigzag_hybrid_min_retrace_atr=0.5,
         window_length=105,
-        window_overlap=0.5
+        window_overlap=0.5,
     )
 
     log.info("Building relativity features...")
@@ -2205,12 +2219,12 @@ def precompute(cfg_dir, over, data, output_dir, seed):
         "train_indices": list(range(train_end)),
         "val_indices": list(range(train_end, val_end)),
         "test_indices": list(range(val_end, n)),
-        "split_info": {"method": "simple_split"}
+        "split_info": {"method": "simple_split"},
     }
 
     # Save splits
     splits_path = output_dir / "splits.json"
-    with open(splits_path, 'w') as f:
+    with open(splits_path, "w") as f:
         json.dump(splits, f, indent=2)
     log.info(f"Saved splits to {splits_path}")
 
@@ -2221,13 +2235,13 @@ def precompute(cfg_dir, over, data, output_dir, seed):
         "relativity_config": relativity_cfg.model_dump(),
         "features_shape": X.shape,
         "mask_shape": mask.shape,
-        "feature_names": meta['feature_names'],
-        "n_features": meta['n_features'],
-        "processing_time": time.time() - start_time
+        "feature_names": meta["feature_names"],
+        "n_features": meta["n_features"],
+        "processing_time": time.time() - start_time,
     }
 
     metadata_path = output_dir / "metadata.json"
-    with open(metadata_path, 'w') as f:
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
     log.info(f"Saved metadata to {metadata_path}")
 
@@ -2296,10 +2310,16 @@ def pipeline(cfg_dir, over, data, split, model, device, seed):
     try:
         # Call precompute command
         cmd = [
-            sys.executable, "-m", "moola.cli", "precompute",
-            "--cfg-dir", cfg_dir,
-            "--data", data,
-            "--output-dir", str(precompute_output),
+            sys.executable,
+            "-m",
+            "moola.cli",
+            "precompute",
+            "--cfg-dir",
+            cfg_dir,
+            "--data",
+            data,
+            "--output-dir",
+            str(precompute_output),
         ]
         if seed:
             cmd.extend(["--seed", str(seed)])
@@ -2329,12 +2349,20 @@ def pipeline(cfg_dir, over, data, split, model, device, seed):
 
     try:
         cmd = [
-            sys.executable, "-m", "moola.cli", "train",
-            "--cfg-dir", cfg_dir,
-            "--model", model,
-            "--data", str(train_data),
-            "--split", split,
-            "--device", device,
+            sys.executable,
+            "-m",
+            "moola.cli",
+            "train",
+            "--cfg-dir",
+            cfg_dir,
+            "--model",
+            model,
+            "--data",
+            str(train_data),
+            "--split",
+            split,
+            "--device",
+            device,
             "--predict-pointers",
         ]
         if seed:
@@ -2360,8 +2388,10 @@ def pipeline(cfg_dir, over, data, split, model, device, seed):
     try:
         # Run validation script
         cmd = [
-            sys.executable, "scripts/validate_data.py",
-            "--data", str(train_data),
+            sys.executable,
+            "scripts/validate_data.py",
+            "--data",
+            str(train_data),
         ]
         log.info(f"Running: {' '.join(cmd)}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)

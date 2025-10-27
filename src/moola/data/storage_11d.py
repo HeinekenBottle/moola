@@ -4,9 +4,8 @@ Defines storage formats and migration strategies for 4D→11D feature integratio
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional
 
-import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -30,7 +29,7 @@ class Storage11DArchitecture:
         for path in [self.raw_path, self.batches_path, self.processed_path, self.enhanced_path]:
             path.mkdir(parents=True, exist_ok=True)
 
-    def get_storage_schema(self) -> Dict[str, Any]:
+    def get_storage_schema(self) -> dict[str, Any]:
         """Get recommended storage schema for 11D features."""
         return {
             "raw_4d_ohlc": {
@@ -145,7 +144,7 @@ class Storage11DArchitecture:
 
         return output_path
 
-    def validate_storage_integrity(self) -> Dict[str, Any]:
+    def validate_storage_integrity(self) -> dict[str, Any]:
         """Validate storage architecture integrity.
 
         Returns:
@@ -187,7 +186,7 @@ class Storage11DArchitecture:
 
         return report
 
-    def get_storage_stats(self) -> Dict[str, Any]:
+    def get_storage_stats(self) -> dict[str, Any]:
         """Get storage statistics.
 
         Returns:

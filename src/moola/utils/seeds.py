@@ -119,18 +119,18 @@ def print_gpu_info() -> None:
     print("=" * 60)
 
     if info["cuda_available"]:
-        print(f"✓ CUDA Available: YES")
+        print("✓ CUDA Available: YES")
         print(f"  Device Count: {info['device_count']}")
         print(f"  Device Name: {info['device_name']}")
         print(f"  CUDA Version: {info['cuda_version']}")
         print(f"  Total Memory: {info['memory_total']:.2f} GB")
         print(f"  Allocated: {info['memory_allocated']:.2f} GB")
         print(f"  Cached: {info['memory_cached']:.2f} GB")
-        print(f"\n✓ GPU training will be ENABLED")
+        print("\n✓ GPU training will be ENABLED")
     else:
-        print(f"✗ CUDA Available: NO")
-        print(f"\n⚠ WARNING: Training will run on CPU only!")
-        print(f"  This will be significantly slower than GPU training.")
+        print("✗ CUDA Available: NO")
+        print("\n⚠ WARNING: Training will run on CPU only!")
+        print("  This will be significantly slower than GPU training.")
 
     print("=" * 60 + "\n")
 

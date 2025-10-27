@@ -1,0 +1,334 @@
+{
+  "model": "artifacts/baseline_100ep_weighted/best_model.pt",
+  "data": "data/processed/labeled/train_latest_overlaps_v2.parquet",
+  "threshold": 0.5,
+  "num_windows": 20,
+  "summary": {
+    "mean_iou": 0.06238095238095237,
+    "passing_rate": 0.0,
+    "max_iou": 0.1523809523809524,
+    "min_iou": 0.01904761904761905
+  },
+  "predictions": [
+    {
+      "window_id": 0,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        42,
+        48
+      ],
+      "confidence": 0.6081880331039429,
+      "overlap_iou": 0.06666666666666667,
+      "label": "retracement"
+    },
+    {
+      "window_id": 1,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        98,
+        103
+      ],
+      "confidence": 0.6081867218017578,
+      "overlap_iou": 0.05714285714285714,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 2,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        89,
+        104
+      ],
+      "confidence": 0.6171074509620667,
+      "overlap_iou": 0.1523809523809524,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 3,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        99,
+        101
+      ],
+      "confidence": 0.6224455237388611,
+      "overlap_iou": 0.02857142857142857,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 4,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        39,
+        44
+      ],
+      "confidence": 0.6009790897369385,
+      "overlap_iou": 0.05714285714285714,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 5,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        85,
+        86
+      ],
+      "confidence": 0.5968430042266846,
+      "overlap_iou": 0.01904761904761905,
+      "label": "retracement"
+    },
+    {
+      "window_id": 6,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        7,
+        14
+      ],
+      "confidence": 0.6177347898483276,
+      "overlap_iou": 0.0761904761904762,
+      "label": "retracement"
+    },
+    {
+      "window_id": 7,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        86,
+        91
+      ],
+      "confidence": 0.6036243438720703,
+      "overlap_iou": 0.05714285714285714,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 8,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        6,
+        13
+      ],
+      "confidence": 0.6120621562004089,
+      "overlap_iou": 0.0761904761904762,
+      "label": "retracement"
+    },
+    {
+      "window_id": 9,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        61,
+        63
+      ],
+      "confidence": 0.59453946352005,
+      "overlap_iou": 0.02857142857142857,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 10,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        19,
+        22
+      ],
+      "confidence": 0.6087992787361145,
+      "overlap_iou": 0.0380952380952381,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 11,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        34,
+        38
+      ],
+      "confidence": 0.5968207716941833,
+      "overlap_iou": 0.047619047619047616,
+      "label": "retracement"
+    },
+    {
+      "window_id": 12,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        11,
+        14
+      ],
+      "confidence": 0.6023958921432495,
+      "overlap_iou": 0.0380952380952381,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 13,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        101,
+        104
+      ],
+      "confidence": 0.6074077486991882,
+      "overlap_iou": 0.0380952380952381,
+      "label": "retracement"
+    },
+    {
+      "window_id": 14,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        15,
+        30
+      ],
+      "confidence": 0.619971513748169,
+      "overlap_iou": 0.1523809523809524,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 15,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        43,
+        49
+      ],
+      "confidence": 0.5934666395187378,
+      "overlap_iou": 0.06666666666666667,
+      "label": "retracement"
+    },
+    {
+      "window_id": 16,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        40,
+        48
+      ],
+      "confidence": 0.6080455780029297,
+      "overlap_iou": 0.08571428571428572,
+      "label": "retracement"
+    },
+    {
+      "window_id": 17,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        61,
+        63
+      ],
+      "confidence": 0.6036604642868042,
+      "overlap_iou": 0.02857142857142857,
+      "label": "consolidation"
+    },
+    {
+      "window_id": 18,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        92,
+        100
+      ],
+      "confidence": 0.6093971729278564,
+      "overlap_iou": 0.08571428571428572,
+      "label": "retracement"
+    },
+    {
+      "window_id": 19,
+      "predicted_spans": [
+        [
+          0,
+          104
+        ]
+      ],
+      "true_span": [
+        63,
+        67
+      ],
+      "confidence": 0.6129522323608398,
+      "overlap_iou": 0.047619047619047616,
+      "label": "consolidation"
+    }
+  ]
+}

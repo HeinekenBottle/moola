@@ -5,11 +5,12 @@ Phase 3: Consolidation
 Merge duplicate code, unify configs
 """
 
-import os
-import sys
-import shutil
-from pathlib import Path
 import hashlib
+import os
+import shutil
+import sys
+from pathlib import Path
+
 
 def get_file_hash(filepath):
     """Get MD5 hash of file."""
@@ -19,13 +20,14 @@ def get_file_hash(filepath):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
+
 def find_duplicates(directory):
     """Find duplicate files in directory."""
     hashes = {}
     duplicates = []
     for root, dirs, files in os.walk(directory):
         for file in files:
-            if file.endswith(('.py', '.yaml', '.yml')):
+            if file.endswith((".py", ".yaml", ".yml")):
                 filepath = os.path.join(root, file)
                 file_hash = get_file_hash(filepath)
                 if file_hash in hashes:
@@ -33,6 +35,7 @@ def find_duplicates(directory):
                 else:
                     hashes[file_hash] = filepath
     return duplicates
+
 
 def main():
     project_root = Path(__file__).parent.parent
@@ -46,13 +49,14 @@ def main():
         sys.exit(1)
 
     # Create backup
-    import tarfile
     import datetime
+    import tarfile
+
     backup_file = f".backup_phase3_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
     print(f"Creating backup: {backup_file}")
     with tarfile.open(backup_file, "w:gz") as tar:
         for root, dirs, files in os.walk("."):
-            if any(excl in root for excl in ['artifacts', 'data', 'logs', '.git']):
+            if any(excl in root for excl in ["artifacts", "data", "logs", ".git"]):
                 continue
             for file in files:
                 tar.add(os.path.join(root, file))
@@ -75,6 +79,7 @@ def main():
         print("Checking model configs inherit from base...")
         # Read base config
         import yaml
+
         with open(base_config) as f:
             base = yaml.safe_load(f)
 
@@ -88,7 +93,7 @@ def main():
                 if key not in jade:
                     jade[key] = value
                     print(f"Added {key} to jade.yaml")
-            with open(jade_config, 'w') as f:
+            with open(jade_config, "w") as f:
                 yaml.dump(jade, f, default_flow_style=False)
 
     # Merge duplicate code if any
@@ -116,11 +121,11 @@ def main():
             with open(req_file) as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith('#'):
+                    if line and not line.startswith("#"):
                         consolidated.add(line)
 
     # Write back consolidated requirements
-    with open("requirements.txt", 'w') as f:
+    with open("requirements.txt", "w") as f:
         f.write("# Consolidated requirements\n")
         for req in sorted(consolidated):
             f.write(f"{req}\n")
@@ -131,6 +136,7 @@ def main():
 
     print(f"Phase 3 completed. Backup: {backup_file}")
     (project_root / ".refactor_phase3_done").touch()
+
 
 if __name__ == "__main__":
     main()

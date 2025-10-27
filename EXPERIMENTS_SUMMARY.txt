@@ -1,0 +1,251 @@
+================================================================================
+PARALLEL EXPERIMENTS: THRESHOLD TUNING + DATA AUGMENTATION
+================================================================================
+
+TWO EXPERIMENTS DESIGNED TO IMPROVE EXPANSION SPAN DETECTION F1 SCORE
+
+EXPERIMENT A: Threshold Precision Tuning (5 min)
+  - Goal: Find optimal threshold for span detection (F1 > 0.23, Recall >= 0.40)
+  - Method: Grid search thresholds 0.30-0.40 (step 0.02) on validation set
+  - Expected: Identify threshold balancing precision/recall
+
+EXPERIMENT B: Data Augmentation Strategy (20 epochs, ~25 min)
+  - Goal: Test if jitter augmentation improves F1 score to 0.25+
+  - Method: Gaussian jitter (σ=0.03) on 210 samples → 630 total (3x)
+  - Expected: F1 >= 0.25 via increased training diversity
+
+TOTAL RUNTIME: ~30 minutes on RTX 4090 GPU
+
+================================================================================
+QUICK START COMMANDS
+================================================================================
+
+# 1. PREREQUISITES: Train baseline model (if not already done)
+python3 scripts/train_baseline_100ep.py \
+    --data data/processed/labeled/train_latest_overlaps_v2.parquet \
+    --output artifacts/baseline_100ep/ \
+    --epochs 100 \
+    --device cuda
+
+# 2. RUN BOTH EXPERIMENTS (automated)
+bash scripts/run_parallel_experiments.sh
+
+# 3. ANALYZE RESULTS
+python3 scripts/analyze_experiment_results.py \
+    --threshold-csv results/threshold_grid.csv \
+    --augmentation-dir artifacts/augmentation_exp/
+
+================================================================================
+INDIVIDUAL EXPERIMENT COMMANDS
+================================================================================
+
+# EXPERIMENT A: Threshold Grid Search
+python3 scripts/experiment_a_threshold_grid.py \
+    --checkpoint artifacts/baseline_100ep/best_model.pt \
+    --data data/processed/labeled/train_latest_overlaps_v2.parquet \
+    --output results/threshold_grid.csv \
+    --min-threshold 0.30 \
+    --max-threshold 0.40 \
+    --step 0.02 \
+    --device cuda
+
+# EXPERIMENT B: Data Augmentation
+python3 scripts/experiment_b_augmentation.py \
+    --data data/processed/labeled/train_latest_overlaps_v2.parquet \
+    --output artifacts/augmentation_exp/ \
+    --epochs 20 \
+    --n-augment 2 \
+    --sigma 0.03 \
+    --pos-weight 13.1 \
+    --device cuda
+
+================================================================================
+EXPECTED OUTPUTS
+================================================================================
+
+EXPERIMENT A: Threshold Grid Search
+-----------------------------------
+Threshold    F1       Precision    Recall     Target Met
+0.30         0.2150   0.1500       0.4200     ✓ YES
+0.32         0.2380   0.1680       0.4050     ✓ YES  <- OPTIMAL
+0.34         0.2290   0.1850       0.3700       no
+0.36         0.2050   0.1980       0.3400       no
+0.38         0.1890   0.2100       0.3100       no
+0.40         0.1720   0.2200       0.2850       no
+
+RECOMMENDED THRESHOLD: 0.32 (F1=0.238, Recall=0.405)
+
+Files generated:
+  - results/threshold_grid.csv (full results)
+  - results/threshold_summary.txt (recommendation)
+
+EXPERIMENT B: Data Augmentation (20 Epochs)
+--------------------------------------------
+Epoch  1/20: train_loss=1.2340, val_loss=1.3456, F1=0.102, P=0.085, R=0.135
+Epoch  5/20: train_loss=0.8765, val_loss=0.9234, F1=0.178, P=0.145, R=0.235
+Epoch 10/20: train_loss=0.6543, val_loss=0.7123, F1=0.215, P=0.172, R=0.295
+Epoch 15/20: train_loss=0.5234, val_loss=0.6234, F1=0.238, P=0.185, R=0.345
+Epoch 20/20: train_loss=0.4523, val_loss=0.5678, F1=0.252, P=0.192, R=0.385
+
+RESULTS:
+  Total time: 25.3 minutes
+  Best validation F1: 0.252 (epoch 20)
+  Final F1 (epoch 20): 0.252
+  ✅ TARGET MET: F1 >= 0.25
+
+Files generated:
+  - artifacts/augmentation_exp/training_history.csv
+  - artifacts/augmentation_exp/training_curves.png
+  - artifacts/augmentation_exp/best_model.pt
+  - artifacts/augmentation_exp/metadata.json
+
+================================================================================
+SUCCESS CRITERIA
+================================================================================
+
+EXPERIMENT A: Threshold Tuning
+  ✅ F1 > 0.23
+  ✅ Recall >= 0.40
+  ✅ Found optimal threshold in [0.30, 0.40] range
+
+EXPERIMENT B: Data Augmentation
+  ✅ F1 >= 0.25 within 20 epochs
+  ✅ No overfitting (val loss decreases or stabilizes)
+  ✅ Recall >= 0.40 maintained
+
+================================================================================
+OUTPUT FILES CHECKLIST
+================================================================================
+
+After experiments complete, verify these files exist:
+
+Experiment A:
+  [ ] results/threshold_grid.csv
+  [ ] results/threshold_summary.txt
+
+Experiment B:
+  [ ] artifacts/augmentation_exp/training_history.csv
+  [ ] artifacts/augmentation_exp/training_curves.png
+  [ ] artifacts/augmentation_exp/best_model.pt
+  [ ] artifacts/augmentation_exp/metadata.json
+
+================================================================================
+ANALYSIS COMMANDS
+================================================================================
+
+# View Experiment A results
+cat results/threshold_summary.txt
+
+# Parse CSV for best threshold
+python3 << 'EOF'
+import pandas as pd
+df = pd.read_csv("results/threshold_grid.csv")
+best = df.loc[df["f1"].idxmax()]
+print(f"Best: {best['threshold']:.2f}, F1={best['f1']:.4f}")
+EOF
+
+# View Experiment B training curves
+open artifacts/augmentation_exp/training_curves.png
+
+# Check Experiment B target
+python3 << 'EOF'
+import pandas as pd
+df = pd.read_csv("artifacts/augmentation_exp/training_history.csv")
+best_f1 = df["span_f1"].max()
+print(f"Best F1: {best_f1:.4f}")
+print(f"Target (0.25): {'✅ MET' if best_f1 >= 0.25 else '❌ NOT MET'}")
+EOF
+
+# Comprehensive analysis of both experiments
+python3 scripts/analyze_experiment_results.py
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+IF EXPERIMENT A SUCCEEDS (optimal threshold found):
+  1. Update inference code to use optimal threshold (e.g., 0.32)
+  2. Re-run validation to confirm improvement
+  3. Deploy to production inference pipeline
+
+IF EXPERIMENT B SUCCEEDS (F1 >= 0.25):
+  1. Deploy augmentation to training pipeline (3x data, σ=0.03)
+  2. Test higher augmentation factors (4x, 5x) for further gains
+  3. Combine with optimal threshold for maximum performance
+
+IF BOTH SUCCEED:
+  Training:  Use 3x augmentation (σ=0.03)
+  Inference: Use optimal threshold from Experiment A
+  Expected:  Baseline 0.22 → 0.28-0.30 F1 (+27-36% gain)
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ERROR: "Checkpoint not found"
+  SOLUTION: Train baseline first (see Prerequisites section)
+
+ERROR: "CUDA out of memory"
+  SOLUTION: Reduce batch size (--batch-size 16 for Experiment B)
+
+ISSUE: F1 worse than baseline in Experiment B
+  CAUSES:
+    - Jitter too strong (try --sigma 0.01 instead of 0.03)
+    - Data leakage (verify validation uses original samples only)
+    - pos_weight mismatch (recalculate from actual class distribution)
+
+ISSUE: Experiment B doesn't improve F1
+  INTERPRETATION:
+    - Valid experimental result (jitter doesn't help)
+    - Try alternative augmentations (time warping, mixup)
+    - Focus on threshold optimization instead
+
+================================================================================
+TECHNICAL DETAILS
+================================================================================
+
+MODEL ARCHITECTURE:
+  - JadeCompact (52K parameters)
+  - 1-layer BiLSTM (96 hidden × 2 directions)
+  - Input: 13 features (12 relativity + position_encoding)
+  - Dropout: 0.7 recurrent, 0.6 dense, 0.3 input
+
+FEATURES (13D):
+  1. open_norm, 2. close_norm, 3. body_pct
+  4. upper_wick_pct, 5. lower_wick_pct, 6. range_z
+  7. dist_to_prev_SH, 8. dist_to_prev_SL
+  9. bars_since_SH_norm, 10. bars_since_SL_norm
+  11. expansion_proxy, 12. consol_proxy
+  13. position_encoding (ICT structure awareness)
+
+LOSS CONFIGURATION:
+  - Uncertainty-weighted multi-task loss (Kendall et al., CVPR 2018)
+  - Soft span loss with pos_weight=13.1 (handles 7.1% class imbalance)
+  - Huber loss for pointers (δ=0.08) and countdown (δ=1.0)
+
+DATA:
+  - Training: 210 samples (168 train, 42 val split)
+  - Augmentation: 3x expansion → 630 training samples
+  - Validation: Original samples only (no augmentation)
+
+REFERENCES:
+  - Kendall et al., "Multi-Task Learning Using Uncertainty to Weigh Losses", CVPR 2018
+  - Um et al., "Data Augmentation of Wearable Sensor Data", ACM ICMI 2017
+
+================================================================================
+DOCUMENTATION
+================================================================================
+
+DETAILED GUIDES:
+  - PARALLEL_EXPERIMENTS_README.md (full experiment design and rationale)
+  - EXPERIMENTS_QUICKSTART.md (copy-paste commands and quick analysis)
+  - CLAUDE.md (project context and architecture)
+  - docs/ARCHITECTURE.md (system design details)
+
+SCRIPTS:
+  - scripts/experiment_a_threshold_grid.py (Experiment A implementation)
+  - scripts/experiment_b_augmentation.py (Experiment B implementation)
+  - scripts/run_parallel_experiments.sh (automated runner)
+  - scripts/analyze_experiment_results.py (post-experiment analysis)
+
+================================================================================

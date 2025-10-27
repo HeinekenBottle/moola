@@ -66,9 +66,9 @@ def compute_pointer_metrics(
     combined_error = center_weight * center_error + length_weight * length_error
 
     # Hit accuracies at different tolerances (convert timesteps to normalized units)
-    hit_1 = (center_error <= (1/104)).mean()  # ±1 timestep
-    hit_3 = (center_error <= (3/104)).mean()  # ±3 timesteps
-    hit_5 = (center_error <= (5/104)).mean()  # ±5 timesteps
+    hit_1 = (center_error <= (1 / 104)).mean()  # ±1 timestep
+    hit_3 = (center_error <= (3 / 104)).mean()  # ±3 timesteps
+    hit_5 = (center_error <= (5 / 104)).mean()  # ±5 timesteps
 
     return {
         "center_mae": center_error.mean(),

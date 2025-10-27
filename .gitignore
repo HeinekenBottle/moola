@@ -111,3 +111,4 @@ artifacts/runpod_bundles/*.tar.gz
 
 # Artifacts directory (use SCP to transfer)
 artifacts/
+*.tar.gz

@@ -17,10 +17,9 @@ Exit codes:
 """
 
 import sys
-from typing import List, Tuple
 
 
-def check_package(name: str, import_name: str = None) -> Tuple[str, str, str]:
+def check_package(name: str, import_name: str = None) -> tuple[str, str, str]:
     """Check if a package is installed and return (name, version, status).
 
     Args:
@@ -41,7 +40,7 @@ def check_package(name: str, import_name: str = None) -> Tuple[str, str, str]:
         return (name, str(e), "❌")
 
 
-def check_numpy_compatibility(numpy_version: str, torch_version: str) -> Tuple[str, str]:
+def check_numpy_compatibility(numpy_version: str, torch_version: str) -> tuple[str, str]:
     """Check NumPy-PyTorch compatibility.
 
     Args:
@@ -52,14 +51,17 @@ def check_numpy_compatibility(numpy_version: str, torch_version: str) -> Tuple[s
         Tuple of (status_emoji, message)
     """
     try:
-        np_major = int(numpy_version.split('.')[0])
-        torch_major = int(torch_version.split('.')[0])
-        torch_minor = int(torch_version.split('.')[1])
+        np_major = int(numpy_version.split(".")[0])
+        torch_major = int(torch_version.split(".")[0])
+        torch_minor = int(torch_version.split(".")[1])
 
         # PyTorch 2.0-2.2 requires NumPy < 2.0
         if torch_major == 2 and torch_minor < 3:
             if np_major >= 2:
-                return ("❌", f"PyTorch {torch_version} incompatible with NumPy {numpy_version} (need <2.0)")
+                return (
+                    "❌",
+                    f"PyTorch {torch_version} incompatible with NumPy {numpy_version} (need <2.0)",
+                )
             else:
                 return ("✅", f"NumPy {numpy_version} compatible with PyTorch {torch_version}")
 
@@ -74,7 +76,7 @@ def check_numpy_compatibility(numpy_version: str, torch_version: str) -> Tuple[s
         return ("⚠️", "Could not parse version numbers")
 
 
-def check_cuda() -> List[Tuple[str, str, str]]:
+def check_cuda() -> list[tuple[str, str, str]]:
     """Check CUDA availability and GPU detection.
 
     Returns:
@@ -113,13 +115,13 @@ def check_cuda() -> List[Tuple[str, str, str]]:
 
 def main():
     """Run all environment checks and print results."""
-    print("\n" + "="*70)
-    print(" "*15 + "RunPod Environment Verification")
-    print("="*70 + "\n")
+    print("\n" + "=" * 70)
+    print(" " * 15 + "RunPod Environment Verification")
+    print("=" * 70 + "\n")
 
     # Check core packages
     print("📦 Core ML Packages")
-    print("-"*70)
+    print("-" * 70)
 
     checks = [
         check_package("torch"),
@@ -137,7 +139,7 @@ def main():
 
     # Check additional packages
     print("\n📋 Additional Packages")
-    print("-"*70)
+    print("-" * 70)
 
     additional_checks = [
         check_package("mlflow"),
@@ -156,7 +158,7 @@ def main():
 
     # NumPy-PyTorch compatibility check
     print("\n🔗 Version Compatibility")
-    print("-"*70)
+    print("-" * 70)
 
     numpy_version = None
     torch_version = None
@@ -175,14 +177,14 @@ def main():
 
     # CUDA check
     print("\n🚀 GPU & CUDA")
-    print("-"*70)
+    print("-" * 70)
 
     cuda_checks = check_cuda()
     for name, value, status in cuda_checks:
         print(f"{status} {name:25s} {value}")
 
     # Summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
 
     all_checks = checks + additional_checks
     failed = [c for c in all_checks if c[2] == "❌"]

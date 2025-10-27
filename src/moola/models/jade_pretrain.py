@@ -15,8 +15,7 @@ Usage:
     loss, metrics = model((X, mask, valid_mask))
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -43,7 +42,10 @@ class JadeConfig:
         assert self.hidden_size > 0, "hidden_size must be positive"
         assert self.num_layers > 0, "num_layers must be positive"
         assert 0.0 <= self.dropout < 1.0, "dropout must be in [0, 1)"
-        assert self.mask_strategy in ["random", "patch"], "mask_strategy must be 'random' or 'patch'"
+        assert self.mask_strategy in [
+            "random",
+            "patch",
+        ], "mask_strategy must be 'random' or 'patch'"
         assert 0.0 < self.mask_ratio < 1.0, "mask_ratio must be in (0, 1)"
 
 
@@ -108,8 +110,8 @@ class JadePretrainer(nn.Module):
         nn.init.zeros_(self.decoder.bias)
 
     def forward(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        self, batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         """Forward pass with masked reconstruction.
 
         Args:
@@ -184,7 +186,7 @@ class JadePretrainer(nn.Module):
 
         return total_loss, metrics
 
-    def get_encoder_state_dict(self) -> Dict:
+    def get_encoder_state_dict(self) -> dict:
         """Extract encoder weights for transfer to Jade core model.
 
         Returns:
@@ -196,7 +198,7 @@ class JadePretrainer(nn.Module):
             if k.startswith("encoder.")
         }
 
-    def get_model_info(self) -> Dict:
+    def get_model_info(self) -> dict:
         """Get model architecture summary.
 
         Returns:
@@ -219,8 +221,12 @@ class JadePretrainer(nn.Module):
 
     @torch.no_grad()
     def compute_mc_dropout_uncertainty(
-        self, X: torch.Tensor, valid_mask: torch.Tensor, n_passes: int = 50, dropout_rate: float = 0.1
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self,
+        X: torch.Tensor,
+        valid_mask: torch.Tensor,
+        n_passes: int = 50,
+        dropout_rate: float = 0.1,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute MC Dropout uncertainty for calibration (ECE <0.10).
 
         Args:

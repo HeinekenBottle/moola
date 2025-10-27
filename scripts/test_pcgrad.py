@@ -1,11 +1,14 @@
 """Quick test to verify PCGrad implementation works correctly."""
 
-import torch
 import sys
-sys.path.insert(0, 'src')
+
+import torch
+
+sys.path.insert(0, "src")
 
 # Import the PCGrad function from finetune_jade
 import importlib.util
+
 spec = importlib.util.spec_from_file_location("finetune_jade", "scripts/finetune_jade.py")
 finetune_jade = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(finetune_jade)
@@ -66,9 +69,9 @@ summary = monitor.get_summary()
 print(f"  Total steps: {summary['total_steps']}")
 print(f"  Conflict rate: {summary['conflict_rate']:.2%}")
 print(f"  Projection rate: {summary['projection_rate']:.2%}")
-assert summary['total_steps'] == 15
-assert summary['conflict_rate'] == 5/15  # 5 conflicts out of 15
-assert summary['projection_rate'] == 3/15  # 3 projections out of 15
+assert summary["total_steps"] == 15
+assert summary["conflict_rate"] == 5 / 15  # 5 conflicts out of 15
+assert summary["projection_rate"] == 3 / 15  # 3 projections out of 15
 print("  ✓ PASS\n")
 
 print("=" * 60)

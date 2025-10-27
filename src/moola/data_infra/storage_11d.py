@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,7 @@ def _decode_feature(sample: Any) -> np.ndarray:
     return array
 
 
-def load_dataset(parquet_path: str | Path) -> Dict[str, np.ndarray]:
+def load_dataset(parquet_path: str | Path) -> dict[str, np.ndarray]:
     """Load Stones training data from parquet.
 
     The parquet file is expected to contain:
@@ -54,7 +54,7 @@ def load_dataset(parquet_path: str | Path) -> Dict[str, np.ndarray]:
     return {"X": X, "y": y, "ptr_start": ptr_start, "ptr_end": ptr_end}
 
 
-def prepare_inputs(batch: Dict[str, np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def prepare_inputs(batch: dict[str, np.ndarray]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Convert a loaded Stones batch into tensors."""
     X = torch.from_numpy(batch["X"]).contiguous()
     y = torch.from_numpy(batch["y"]).long()
@@ -69,7 +69,7 @@ class StonesDataProcessor:
 
     def process_training_data(
         self, df: pd.DataFrame, enable_engineered_features: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if "features" not in df.columns:
             raise ValueError("DataFrame must contain a 'features' column")
 
@@ -113,10 +113,10 @@ def create_dual_input_processor(**_: Any) -> StonesDataProcessor:
 
 
 def prepare_model_inputs(
-    processed_data: Dict[str, Any],
+    processed_data: dict[str, Any],
     model_type: str | None = None,
     use_engineered_features: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Shim that exposes the subset of keys required by the CLI."""
     return {
         "X": processed_data["X"],

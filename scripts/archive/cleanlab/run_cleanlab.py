@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 import click
+
 from moola.utils.cleanlab_utils import (
     analyze_data_quality,
     convert_to_cleanlab_format,
@@ -57,7 +58,7 @@ def convert(input, output):
     """Convert data to Cleanlab format."""
     click.echo(f"Converting {input} → {output}")
     convert_to_cleanlab_format(input, output)
-    click.echo(f"✅ Conversion complete")
+    click.echo("✅ Conversion complete")
 
 
 @cli.command()
@@ -67,7 +68,7 @@ def export(data, output):
     """Export data for Cleanlab Studio."""
     click.echo(f"Exporting to Cleanlab Studio: {output}")
     export_for_studio(data, output)
-    click.echo(f"✅ Export complete")
+    click.echo("✅ Export complete")
 
 
 @cli.command()
@@ -83,4 +84,3 @@ def phase2(data, model, output):
 
 if __name__ == "__main__":
     cli()
-

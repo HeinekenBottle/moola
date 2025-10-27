@@ -68,9 +68,9 @@ def load_split(split_path: str | Path) -> dict[str, Any]:
     return split_data
 
 
-def assert_temporal(split_data: dict[str, Any], 
-                    purge_window: int = 0,
-                    df_with_timestamps: Any = None) -> None:
+def assert_temporal(
+    split_data: dict[str, Any], purge_window: int = 0, df_with_timestamps: Any = None
+) -> None:
     """Validate that split uses forward-chaining (temporal ordering) with purge window.
 
     PAPER-STRICT: Enforces forward-chaining with optional purge window to prevent
@@ -147,7 +147,7 @@ def assert_temporal(split_data: dict[str, Any],
         if len(train_idx) > 0 and len(val_idx) > 0:
             max_train_idx = np.max(train_idx)
             min_val_idx = np.min(val_idx)
-            
+
             if min_val_idx <= max_train_idx + purge_window:
                 gap = min_val_idx - max_train_idx
                 raise AssertionError(
@@ -164,21 +164,17 @@ def assert_temporal(split_data: dict[str, Any],
     test_hashes = set(hash(idx) for idx in test_idx)
 
     if not train_hashes.isdisjoint(val_hashes):
-        raise AssertionError(
-            f"PAPER-STRICT VIOLATION: Hash collision detected between train/val!"
-        )
+        raise AssertionError("PAPER-STRICT VIOLATION: Hash collision detected between train/val!")
 
     if not train_hashes.isdisjoint(test_hashes):
-        raise AssertionError(
-            f"PAPER-STRICT VIOLATION: Hash collision detected between train/test!"
-        )
+        raise AssertionError("PAPER-STRICT VIOLATION: Hash collision detected between train/test!")
 
     # PAPER-STRICT: Time-based validation if timestamps provided
-    if df_with_timestamps is not None and 'timestamp' in df_with_timestamps.columns:
+    if df_with_timestamps is not None and "timestamp" in df_with_timestamps.columns:
         if len(train_idx) > 0 and len(val_idx) > 0:
-            max_train_time = df_with_timestamps.iloc[train_idx]['timestamp'].max()
-            min_val_time = df_with_timestamps.iloc[val_idx]['timestamp'].min()
-            
+            max_train_time = df_with_timestamps.iloc[train_idx]["timestamp"].max()
+            min_val_time = df_with_timestamps.iloc[val_idx]["timestamp"].min()
+
             if min_val_time <= max_train_time:
                 raise AssertionError(
                     f"PAPER-STRICT VIOLATION: Temporal leakage detected!\n"

@@ -5,15 +5,12 @@ and produce expected output format.
 """
 
 import numpy as np
-import pytest
 
 
 def test_bootstrap_functions_integration():
     """Test bootstrap functions work together in realistic workflow."""
     from moola.utils.metrics.bootstrap import (
         bootstrap_accuracy,
-        bootstrap_calibration_metrics,
-        bootstrap_pointer_metrics,
         format_bootstrap_result,
     )
 

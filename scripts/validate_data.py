@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def validate_checksums():
     """Validate data files against checksums."""
     data_dir = Path("data")
@@ -21,9 +22,7 @@ def validate_checksums():
 
     # Run shasum to verify
     result = subprocess.run(
-        ["shasum", "-a", "256", "-c", str(checksum_file)],
-        capture_output=True,
-        text=True
+        ["shasum", "-a", "256", "-c", str(checksum_file)], capture_output=True, text=True
     )
 
     if result.returncode == 0:
@@ -35,12 +34,13 @@ def validate_checksums():
         print(result.stderr)
         return False
 
+
 def validate_data_structure():
     """Validate that required data files exist."""
     required_files = [
         "data/raw/nq_5year.parquet",  # To be downloaded
         "data/processed/train_174.parquet",
-        "data/splits/temporal_split.json"
+        "data/splits/temporal_split.json",
     ]
 
     missing = []
@@ -54,6 +54,7 @@ def validate_data_structure():
     else:
         print("✅ All required data files present")
         return True
+
 
 if __name__ == "__main__":
     print("Validating Moola data integrity...")

@@ -6,9 +6,10 @@ Update model configs, fix imports, resolve type errors
 """
 
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
+
 
 def run_command(cmd, cwd=None):
     """Run command and return success."""
@@ -18,6 +19,7 @@ def run_command(cmd, cwd=None):
     except Exception as e:
         return False, "", str(e)
 
+
 def main():
     project_root = Path(__file__).parent.parent
     os.chdir(project_root)
@@ -25,18 +27,22 @@ def main():
     print("Phase 2: Fixing - Starting...")
 
     # Safety check
-    if not (project_root / "pyproject.toml").exists() or not (project_root / "src" / "moola").exists():
+    if (
+        not (project_root / "pyproject.toml").exists()
+        or not (project_root / "src" / "moola").exists()
+    ):
         print("Error: Not in project root")
         sys.exit(1)
 
     # Create backup
-    import tarfile
     import datetime
+    import tarfile
+
     backup_file = f".backup_phase2_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
     print(f"Creating backup: {backup_file}")
     with tarfile.open(backup_file, "w:gz") as tar:
         for root, dirs, files in os.walk("."):
-            if any(excl in root for excl in ['artifacts', 'data', 'logs', '.git']):
+            if any(excl in root for excl in ["artifacts", "data", "logs", ".git"]):
                 continue
             for file in files:
                 tar.add(os.path.join(root, file))
@@ -49,12 +55,30 @@ def main():
 
         # Add checks for current_extreme_price
         fixes = [
-            ('if high > self.current_extreme_price:', 'if self.current_extreme_price is not None and high > self.current_extreme_price:'),
-            ('if low < self.current_extreme_price:', 'if self.current_extreme_price is not None and low < self.current_extreme_price:'),
-            ('actual_move = self.current_extreme_price - price', 'actual_move = (self.current_extreme_price or 0) - price'),
-            ('actual_move = price - self.current_extreme_price', 'actual_move = price - (self.current_extreme_price or 0)'),
-            ('retrace = self.extreme_candidate_price - low', 'retrace = (self.extreme_candidate_price or 0) - low'),
-            ('retrace = high - self.extreme_candidate_price', 'retrace = high - (self.extreme_candidate_price or 0)'),
+            (
+                "if high > self.current_extreme_price:",
+                "if self.current_extreme_price is not None and high > self.current_extreme_price:",
+            ),
+            (
+                "if low < self.current_extreme_price:",
+                "if self.current_extreme_price is not None and low < self.current_extreme_price:",
+            ),
+            (
+                "actual_move = self.current_extreme_price - price",
+                "actual_move = (self.current_extreme_price or 0) - price",
+            ),
+            (
+                "actual_move = price - self.current_extreme_price",
+                "actual_move = price - (self.current_extreme_price or 0)",
+            ),
+            (
+                "retrace = self.extreme_candidate_price - low",
+                "retrace = (self.extreme_candidate_price or 0) - low",
+            ),
+            (
+                "retrace = high - self.extreme_candidate_price",
+                "retrace = high - (self.extreme_candidate_price or 0)",
+            ),
         ]
 
         for old, new in fixes:
@@ -106,6 +130,7 @@ def main():
 
     print(f"Phase 2 completed. Backup: {backup_file}")
     (project_root / ".refactor_phase2_done").touch()
+
 
 if __name__ == "__main__":
     main()

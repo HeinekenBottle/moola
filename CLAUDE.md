@@ -650,3 +650,6 @@ Core skills in `~/.claude/plugins/cache/superpowers/skills/`:
 - REmember pythonpath in future
 - RSYNC and dependencies to be validated in future
 - Remember script dependencies
+- The issue is the baseline model was trained without CRF (output is 1D), but now we're trying to load it into a CRF model (output is 2D for the
+  2 states). Let me simplify: just fine-tune WITHOUT CRF using the position encoding model as-is, then we can layer CRF on top afterwards if
+  needed:

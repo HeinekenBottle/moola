@@ -16,13 +16,12 @@ sys.path.insert(0, str(Path.cwd() / "src"))
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
 
-from moola.models.jade_core import JadeCompact, compute_span_f1, compute_span_metrics
-from moola.features.relativity import build_relativity_features, RelativityConfig
+from moola.features.relativity import RelativityConfig, build_relativity_features
+from moola.models.jade_core import JadeCompact
 
 
 def create_expansion_labels(expansion_start, expansion_end, window_length=105):
@@ -115,7 +114,9 @@ def evaluate_threshold(model, loader, device, threshold=0.5, min_length=1):
                 true_soft = binary[i].cpu().numpy()
 
                 # Convert soft → hard using threshold
-                pred_hard = extract_hard_spans(pred_soft, threshold=threshold, min_length=min_length)
+                pred_hard = extract_hard_spans(
+                    pred_soft, threshold=threshold, min_length=min_length
+                )
                 true_hard = extract_hard_spans(true_soft, threshold=0.5, min_length=min_length)
 
                 all_pred_spans.append(pred_hard)
@@ -216,7 +217,9 @@ def main():
 
     # Test thresholds
     print("\nTesting thresholds...")
-    print(f"{'Threshold':<12} {'F1':<8} {'Precision':<12} {'Recall':<8} {'Pred Spans':<12} {'True Spans'}")
+    print(
+        f"{'Threshold':<12} {'F1':<8} {'Precision':<12} {'Recall':<8} {'Pred Spans':<12} {'True Spans'}"
+    )
     print("-" * 80)
 
     thresholds = np.arange(args.min_threshold, args.max_threshold + args.step, args.step)
@@ -252,7 +255,7 @@ def main():
     # Save results
     results_df = pd.DataFrame(results)
     results_df.to_csv("threshold_optimization_results.csv", index=False)
-    print(f"\n✓ Results saved to threshold_optimization_results.csv")
+    print("\n✓ Results saved to threshold_optimization_results.csv")
 
     return best_result["threshold"]
 

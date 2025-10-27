@@ -11,20 +11,18 @@ be converted to accurate hard span predictions.
 import argparse
 import sys
 from pathlib import Path
-import pickle
 
 sys.path.insert(0, str(Path.cwd() / "src"))
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
 
-from moola.models.jade_core import JadeCompact, soft_span_loss, compute_span_f1, compute_span_metrics
-from moola.features.relativity import build_relativity_features, RelativityConfig
+from moola.features.relativity import RelativityConfig, build_relativity_features
+from moola.models.jade_core import JadeCompact
 
 
 class ExpansionDataset(Dataset):
@@ -52,12 +50,14 @@ class ExpansionDataset(Dataset):
             binary = np.float32(row.get("expansion_binary", 0))
             countdown = np.float32(row.get("countdown_bars", 0))
 
-            self.data.append({
-                "features": torch.FloatTensor(features),
-                "binary": torch.FloatTensor([binary]),
-                "span_mask": torch.FloatTensor(span_mask),
-                "countdown": torch.FloatTensor([countdown]),
-            })
+            self.data.append(
+                {
+                    "features": torch.FloatTensor(features),
+                    "binary": torch.FloatTensor([binary]),
+                    "span_mask": torch.FloatTensor(span_mask),
+                    "countdown": torch.FloatTensor([countdown]),
+                }
+            )
 
     def __len__(self):
         return len(self.data)
@@ -207,9 +207,7 @@ def main():
     # Load data
     print("\nLoading data...")
     dataset = ExpansionDataset(args.data_path)
-    train_idx, val_idx = train_test_split(
-        range(len(dataset)), test_size=0.2, random_state=42
-    )
+    train_idx, val_idx = train_test_split(range(len(dataset)), test_size=0.2, random_state=42)
 
     val_loader = DataLoader(
         dataset,
@@ -221,7 +219,9 @@ def main():
 
     # Test thresholds
     print("\nTesting thresholds...")
-    print(f"{'Threshold':<12} {'F1':<8} {'Precision':<12} {'Recall':<8} {'Pred Spans':<12} {'True Spans'}")
+    print(
+        f"{'Threshold':<12} {'F1':<8} {'Precision':<12} {'Recall':<8} {'Pred Spans':<12} {'True Spans'}"
+    )
     print("-" * 80)
 
     thresholds = np.arange(args.min_threshold, args.max_threshold + args.step, args.step)
@@ -229,10 +229,12 @@ def main():
 
     for threshold in thresholds:
         metrics = evaluate_threshold(model, val_loader, args.device, threshold=threshold)
-        results.append({
-            "threshold": threshold,
-            **metrics,
-        })
+        results.append(
+            {
+                "threshold": threshold,
+                **metrics,
+            }
+        )
 
         print(
             f"{threshold:<12.2f} {metrics['f1']:<8.4f} {metrics['precision']:<12.4f} "
@@ -253,7 +255,7 @@ def main():
     # Save results
     results_df = pd.DataFrame(results)
     results_df.to_csv("threshold_optimization_results.csv", index=False)
-    print(f"\n✓ Results saved to threshold_optimization_results.csv")
+    print("\n✓ Results saved to threshold_optimization_results.csv")
 
     return best_result["threshold"]
 

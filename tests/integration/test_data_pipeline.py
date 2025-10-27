@@ -129,7 +129,7 @@ class TestDataPipelineIntegration:
 
     def test_data_augmentation_integration(self, test_data):
         """Test data augmentation pipeline integration."""
-        from moola.utils.augmentation import mixup_criterion, mixup_cutmix
+        from moola.utils.augmentation import mixup_cutmix
 
         # Extract test features
         X = np.array([np.array(f) for f in test_data["features"]])
@@ -196,7 +196,6 @@ class TestDataPipelineIntegration:
 
     def test_memory_efficiency(self, test_data):
         """Test memory efficiency with small datasets."""
-        import torch
 
         # Test with small batch sizes
         model = get_model("simple_lstm", device="cpu", batch_size=16)

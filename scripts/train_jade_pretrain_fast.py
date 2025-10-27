@@ -29,7 +29,10 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from moola.data.fast_windowed_loader import create_fast_dataloaders, create_strided_dataloaders
+from moola.data.fast_windowed_loader import (
+    create_fast_dataloaders,
+    create_strided_dataloaders,
+)
 from moola.models.jade_pretrain import JadeConfig, JadePretrainer
 from moola.utils.seeds import set_seed
 
@@ -46,9 +49,7 @@ class CosineWarmupScheduler:
 
         # Cosine scheduler after warmup
         self.cosine_scheduler = CosineAnnealingLR(
-            optimizer,
-            T_max=total_epochs - warmup_epochs,
-            eta_min=base_lr * 0.1
+            optimizer, T_max=total_epochs - warmup_epochs, eta_min=base_lr * 0.1
         )
 
     def step(self):
@@ -57,7 +58,7 @@ class CosineWarmupScheduler:
             # Linear warmup
             lr = self.base_lr * (self.current_epoch + 1) / self.warmup_epochs
             for param_group in self.optimizer.param_groups:
-                param_group['lr'] = lr
+                param_group["lr"] = lr
         else:
             # Cosine decay
             self.cosine_scheduler.step()
@@ -66,7 +67,7 @@ class CosineWarmupScheduler:
 
     def get_last_lr(self):
         """Get current learning rate."""
-        return [param_group['lr'] for param_group in self.optimizer.param_groups]
+        return [param_group["lr"] for param_group in self.optimizer.param_groups]
 
 
 def train_epoch(model, train_loader, optimizer, scaler, device, grad_clip=1.0):
@@ -151,7 +152,7 @@ Examples:
       --stride 52 \\
       --epochs 50 \\
       --batch-size 256
-        """
+        """,
     )
     parser.add_argument("--feature-dir", required=True, help="Pre-computed feature directory")
     parser.add_argument("--stride", type=int, help="Window stride (optional, for faster training)")
@@ -199,7 +200,7 @@ Examples:
                 batch_size=args.batch_size,
                 num_workers=4,
                 pin_memory=True,
-                seed=args.seed
+                seed=args.seed,
             )
         else:
             train_loader, val_loader, test_loader = create_fast_dataloaders(
@@ -207,7 +208,7 @@ Examples:
                 batch_size=args.batch_size,
                 num_workers=4,
                 pin_memory=True,
-                seed=args.seed
+                seed=args.seed,
             )
 
         load_time = time.time() - load_start
@@ -221,15 +222,11 @@ Examples:
         print("=" * 80)
 
         model_config = JadeConfig(
-            input_size=10,
-            hidden_size=128,
-            num_layers=2,
-            dropout=0.2,
-            huber_delta=1.0
+            input_size=10, hidden_size=128, num_layers=2, dropout=0.2, huber_delta=1.0
         )
 
         model = JadePretrainer(model_config)
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
         print(f"Model: {model.get_model_info()}")
@@ -241,15 +238,12 @@ Examples:
             lr=args.lr,
             betas=(0.9, 0.999),
             weight_decay=args.weight_decay,
-            eps=1e-8
+            eps=1e-8,
         )
 
         # Create scheduler
         scheduler = CosineWarmupScheduler(
-            optimizer,
-            warmup_epochs=args.warmup_epochs,
-            total_epochs=args.epochs,
-            base_lr=args.lr
+            optimizer, warmup_epochs=args.warmup_epochs, total_epochs=args.epochs, base_lr=args.lr
         )
 
         # Create gradient scaler for mixed precision
@@ -263,7 +257,7 @@ Examples:
         print(f"Training for {args.epochs} epochs...")
         print("=" * 80)
 
-        best_val_loss = float('inf')
+        best_val_loss = float("inf")
         patience_counter = 0
         train_start = time.time()
 
@@ -295,16 +289,16 @@ Examples:
 
                 # Save best model
                 checkpoint = {
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'train_loss': train_loss,
-                    'val_loss': val_loss,
-                    'config': model_config.model_dump(),
-                    'seed': args.seed
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "config": model_config.model_dump(),
+                    "seed": args.seed,
                 }
 
-                best_path = output_dir / 'checkpoint_best.pt'
+                best_path = output_dir / "checkpoint_best.pt"
                 torch.save(checkpoint, best_path)
                 print(f"  *** New best validation loss: {val_loss:.6f} ***")
             else:
@@ -330,21 +324,21 @@ Examples:
 
         # Save results
         results = {
-            'best_val_loss': best_val_loss,
-            'test_loss': test_loss,
-            'total_time': total_time,
-            'epochs_trained': epoch + 1,
-            'config': {
-                'model': model_config.model_dump(),
-                'learning_rate': args.lr,
-                'batch_size': args.batch_size,
-                'epochs': args.epochs,
-                'seed': args.seed
-            }
+            "best_val_loss": best_val_loss,
+            "test_loss": test_loss,
+            "total_time": total_time,
+            "epochs_trained": epoch + 1,
+            "config": {
+                "model": model_config.model_dump(),
+                "learning_rate": args.lr,
+                "batch_size": args.batch_size,
+                "epochs": args.epochs,
+                "seed": args.seed,
+            },
         }
 
-        results_path = output_dir / 'training_results.json'
-        with open(results_path, 'w') as f:
+        results_path = output_dir / "training_results.json"
+        with open(results_path, "w") as f:
             json.dump(results, f, indent=2)
 
         print(f"\nResults saved to {results_path}")
@@ -357,6 +351,7 @@ Examples:
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

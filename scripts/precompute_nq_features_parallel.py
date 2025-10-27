@@ -27,23 +27,22 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import yaml
 from joblib import Parallel, delayed
 from pydantic import BaseModel
-from tqdm import tqdm
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from moola.features.relativity import build_relativity_features, RelativityConfig
+from moola.features.relativity import RelativityConfig, build_relativity_features
 
 
 class ParallelPrecomputeConfig(BaseModel):
     """Configuration for parallel precomputation."""
+
     window_length: int = 105
     warmup_bars: int = 20
     overlap_bars: int = 30  # Overlap between chunks for zigzag warmup
@@ -60,7 +59,7 @@ class ParallelPrecomputeConfig(BaseModel):
     zigzag_hybrid_min_retrace_atr: float = 0.5
 
 
-def shard_by_month(df: pd.DataFrame, overlap_bars: int = 30) -> List[Tuple[str, pd.DataFrame]]:
+def shard_by_month(df: pd.DataFrame, overlap_bars: int = 30) -> list[tuple[str, pd.DataFrame]]:
     """Shard DataFrame into monthly chunks with overlap.
 
     Args:
@@ -74,7 +73,7 @@ def shard_by_month(df: pd.DataFrame, overlap_bars: int = 30) -> List[Tuple[str, 
         raise ValueError("DataFrame must have DatetimeIndex")
 
     # Group by year-month
-    grouped = df.groupby(pd.Grouper(freq='MS'))  # MS = month start
+    grouped = df.groupby(pd.Grouper(freq="MS"))  # MS = month start
 
     shards = []
     prev_end_idx = None
@@ -93,7 +92,7 @@ def shard_by_month(df: pd.DataFrame, overlap_bars: int = 30) -> List[Tuple[str, 
         end_idx = group.index[-1]
         chunk = df.loc[start_idx:end_idx]
 
-        month_label = month_start.strftime('%Y-%m')
+        month_label = month_start.strftime("%Y-%m")
         shards.append((month_label, chunk))
 
         prev_end_idx = end_idx
@@ -101,9 +100,9 @@ def shard_by_month(df: pd.DataFrame, overlap_bars: int = 30) -> List[Tuple[str, 
     return shards
 
 
-def process_shard(shard_data: Tuple[str, pd.DataFrame],
-                  cfg: RelativityConfig,
-                  overlap_bars: int) -> Tuple[str, np.ndarray, np.ndarray, Dict]:
+def process_shard(
+    shard_data: tuple[str, pd.DataFrame], cfg: RelativityConfig, overlap_bars: int
+) -> tuple[str, np.ndarray, np.ndarray, dict]:
     """Process a single shard (month) of data.
 
     Args:
@@ -117,10 +116,7 @@ def process_shard(shard_data: Tuple[str, pd.DataFrame],
     month_label, chunk = shard_data
 
     # Build features for this chunk
-    X, mask, meta = build_relativity_features(
-        chunk[['open', 'high', 'low', 'close']],
-        cfg.dict()
-    )
+    X, mask, meta = build_relativity_features(chunk[["open", "high", "low", "close"]], cfg.dict())
 
     # Strip overlap windows (keep only non-overlap windows)
     # The first overlap_bars won't have complete windows, so strip them
@@ -131,10 +127,9 @@ def process_shard(shard_data: Tuple[str, pd.DataFrame],
     return month_label, X, mask, meta
 
 
-def parallel_precompute(data_path: str,
-                       output_dir: str,
-                       config: ParallelPrecomputeConfig,
-                       n_jobs: int = 32) -> Dict:
+def parallel_precompute(
+    data_path: str, output_dir: str, config: ParallelPrecomputeConfig, n_jobs: int = 32
+) -> dict:
     """Precompute features using parallel processing.
 
     Args:
@@ -182,7 +177,7 @@ def parallel_precompute(data_path: str,
         atr_period=config.atr_period,
         zigzag_k=config.zigzag_k,
         zigzag_hybrid_confirm_lookback=config.zigzag_hybrid_confirm_lookback,
-        zigzag_hybrid_min_retrace_atr=config.zigzag_hybrid_min_retrace_atr
+        zigzag_hybrid_min_retrace_atr=config.zigzag_hybrid_min_retrace_atr,
     )
 
     # Process shards in parallel
@@ -196,14 +191,15 @@ def parallel_precompute(data_path: str,
     build_start = time.time()
 
     results = Parallel(n_jobs=n_jobs, verbose=10)(
-        delayed(process_shard)(shard, relativity_cfg, config.overlap_bars)
-        for shard in shards
+        delayed(process_shard)(shard, relativity_cfg, config.overlap_bars) for shard in shards
     )
 
     build_time = time.time() - build_start
     bars_per_second = len(df) / build_time
 
-    print(f"\n  ✅ Parallel processing completed in {build_time:.1f}s ({bars_per_second:.0f} bars/s)")
+    print(
+        f"\n  ✅ Parallel processing completed in {build_time:.1f}s ({bars_per_second:.0f} bars/s)"
+    )
     print(f"  Speedup: ~{(1800/build_time):.1f}x vs sequential (est.)")
 
     # Merge results
@@ -234,9 +230,9 @@ def parallel_precompute(data_path: str,
     print("\nCreating time-based split indices...")
 
     # Find split boundaries
-    train_end_idx = df.index.get_indexer([config.train_end], method='ffill')[0]
-    val_end_idx = df.index.get_indexer([config.val_end], method='ffill')[0]
-    test_end_idx = df.index.get_indexer([config.test_end], method='ffill')[0]
+    train_end_idx = df.index.get_indexer([config.train_end], method="ffill")[0]
+    val_end_idx = df.index.get_indexer([config.val_end], method="ffill")[0]
+    test_end_idx = df.index.get_indexer([config.test_end], method="ffill")[0]
 
     # Adjust for window length
     n_windows = len(X_full)
@@ -248,7 +244,9 @@ def parallel_precompute(data_path: str,
 
     print(f"  Train: windows [0, {train_windows}) = {train_windows:,} windows")
     print(f"  Val:   windows [{val_start}, {val_windows}) = {val_windows - val_start:,} windows")
-    print(f"  Test:  windows [{test_start}, {test_windows}) = {test_windows - test_start:,} windows")
+    print(
+        f"  Test:  windows [{test_start}, {test_windows}) = {test_windows - test_start:,} windows"
+    )
 
     # Save features
     print("\nSaving feature arrays...")
@@ -274,50 +272,41 @@ def parallel_precompute(data_path: str,
         "parallel_config": {
             "n_jobs": n_jobs,
             "n_shards": len(shards),
-            "overlap_bars": config.overlap_bars
+            "overlap_bars": config.overlap_bars,
         },
-
         # Data info
         "n_bars": len(df),
         "n_windows": n_windows,
-        "date_range": {
-            "start": str(df.index.min()),
-            "end": str(df.index.max())
-        },
-
+        "date_range": {"start": str(df.index.min()), "end": str(df.index.max())},
         # Feature info
         "feature_shape": list(X_full.shape),
         "feature_dtype": str(X_full.dtype),
-        "feature_names": feature_meta['feature_names'],
-        "feature_ranges": feature_meta['feature_ranges'],
-
+        "feature_names": feature_meta["feature_names"],
+        "feature_ranges": feature_meta["feature_ranges"],
         # Mask info
         "valid_mask_shape": list(valid_mask_full.shape),
         "valid_ratio": float(valid_mask_full.mean()),
-
         # Split info
         "splits": {
             "train": {
                 "window_range": [0, train_windows],
                 "n_windows": train_windows,
-                "date_range": [str(df.index[0]), config.train_end]
+                "date_range": [str(df.index[0]), config.train_end],
             },
             "val": {
                 "window_range": [val_start, val_windows],
                 "n_windows": val_windows - val_start,
-                "date_range": [config.train_end, config.val_end]
+                "date_range": [config.train_end, config.val_end],
             },
             "test": {
                 "window_range": [test_start, test_windows],
                 "n_windows": test_windows - test_start,
-                "date_range": [config.val_end, config.test_end]
-            }
+                "date_range": [config.val_end, config.test_end],
+            },
         },
-
         # Config
         "config": config.dict(),
         "relativity_config": relativity_cfg.dict(),
-
         # Performance
         "timing": {
             "load_time": load_time,
@@ -326,13 +315,13 @@ def parallel_precompute(data_path: str,
             "merge_time": merge_time,
             "save_time": save_time,
             "total_time": load_time + shard_time + build_time + merge_time + save_time,
-            "bars_per_second": bars_per_second
-        }
+            "bars_per_second": bars_per_second,
+        },
     }
 
     # Save metadata
     metadata_path = output_path / "metadata.json"
-    with open(metadata_path, 'w') as f:
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
     print(f"\n  ✅ Saved metadata to {metadata_path}")
@@ -342,9 +331,9 @@ def parallel_precompute(data_path: str,
     splits_data = {
         "train_indices": [0, train_windows],
         "val_indices": [val_start, val_windows],
-        "test_indices": [test_start, test_windows]
+        "test_indices": [test_start, test_windows],
     }
-    with open(splits_path, 'w') as f:
+    with open(splits_path, "w") as f:
         json.dump(splits_data, f, indent=2)
 
     print(f"  ✅ Saved split indices to {splits_path}")
@@ -353,20 +342,20 @@ def parallel_precompute(data_path: str,
     print("\n" + "=" * 80)
     print("PARALLEL PRECOMPUTATION COMPLETE")
     print("=" * 80)
-    total_time = metadata['timing']['total_time']
+    total_time = metadata["timing"]["total_time"]
     print(f"Total time: {total_time:.1f}s ({total_time/60:.1f}m)")
     print(f"Processing speed: {bars_per_second:.0f} bars/s")
     print(f"Speedup vs sequential: ~{(1800/build_time):.1f}x")
-    print(f"\nOutput files:")
+    print("\nOutput files:")
     print(f"  {features_path}")
     print(f"  {mask_path}")
     print(f"  {metadata_path}")
     print(f"  {splits_path}")
 
-    print(f"\nNext steps:")
-    print(f"  1. Verify features: python3 scripts/verify_precomputed_features.py")
-    print(f"  2. Check non-zero density (target >50%)")
-    print(f"  3. Train Jade model with uncertainty weighting")
+    print("\nNext steps:")
+    print("  1. Verify features: python3 scripts/verify_precomputed_features.py")
+    print("  2. Check non-zero density (target >50%)")
+    print("  3. Train Jade model with uncertainty weighting")
 
     return metadata
 
@@ -395,7 +384,7 @@ Hardware:
   - Ubuntu 22.04 LTS
   - NVMe SSD
   - Est. time: 5-10 minutes
-        """
+        """,
     )
     parser.add_argument("--data", required=True, help="Path to NQ parquet file")
     parser.add_argument("--output", required=True, help="Output directory for features")
@@ -409,13 +398,12 @@ Hardware:
     try:
         # Load config if provided
         if args.config:
-            with open(args.config, 'r') as f:
+            with open(args.config) as f:
                 config_dict = yaml.safe_load(f)
             config = ParallelPrecomputeConfig(**config_dict)
         else:
             config = ParallelPrecomputeConfig(
-                window_length=args.window_length,
-                overlap_bars=args.overlap_bars
+                window_length=args.window_length, overlap_bars=args.overlap_bars
             )
 
         # Run parallel precomputation
@@ -426,6 +414,7 @@ Hardware:
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

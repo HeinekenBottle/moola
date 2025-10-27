@@ -32,10 +32,8 @@ Reference:
     - Architecture analysis: LSTM_CHART_INTERACTION_ANALYSIS.md
 """
 
-from pathlib import Path
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -133,7 +131,7 @@ class BiLSTMMaskedAutoencoder(nn.Module):
 
     def compute_loss(
         self, reconstruction: torch.Tensor, x_original: torch.Tensor, mask: torch.Tensor
-    ) -> Tuple[torch.Tensor, dict]:
+    ) -> tuple[torch.Tensor, dict]:
         """Compute masked reconstruction loss with regularization.
 
         Critical: Loss ONLY on masked positions (not visible positions).
@@ -193,7 +191,7 @@ class MaskingStrategy:
     @staticmethod
     def mask_random(
         x: torch.Tensor, mask_token: torch.Tensor, mask_ratio: float = 0.15
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Randomly mask 15% of timesteps (BERT-style).
 
         Args:
@@ -223,7 +221,7 @@ class MaskingStrategy:
     @staticmethod
     def mask_block(
         x: torch.Tensor, mask_token: torch.Tensor, mask_ratio: float = 0.15
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Mask contiguous blocks of timesteps.
 
         More challenging than random masking - forces learning of
@@ -266,7 +264,7 @@ class MaskingStrategy:
     @staticmethod
     def mask_patch(
         x: torch.Tensor, mask_token: torch.Tensor, mask_ratio: float = 0.15, patch_size: int = 7
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Mask entire patches (subseries) of timesteps (PatchTST-inspired).
 
         Divides sequence into patches and masks complete patches.
@@ -319,7 +317,7 @@ def apply_masking(
     mask_strategy: Literal["random", "block", "patch"] = "random",
     mask_ratio: float = 0.15,
     patch_size: int = 7,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply masking strategy to input tensor.
 
     Args:

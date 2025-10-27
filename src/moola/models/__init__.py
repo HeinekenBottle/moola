@@ -11,8 +11,6 @@ Stones collection with codename system - PAPER-STRICT COMPLIANCE:
 ONLY THIS MODEL IS ALLOWED FOR PAPER EXPERIMENTS.
 """
 
-from typing import Optional
-
 from .adapters import ModuleAdapter, TrainCfg
 from .jade_core import JadeCompact
 
@@ -90,4 +88,3 @@ def list_models() -> list[str]:
         List of available Stones model names
     """
     return ["jade"]
-

@@ -15,7 +15,7 @@ import pandas as pd
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from moola.features.relativity import build_features, RelativityConfig
+from moola.features.relativity import RelativityConfig, build_features
 
 
 def convert_ohlc_to_relativity(ohlc_window):
@@ -30,11 +30,11 @@ def convert_ohlc_to_relativity(ohlc_window):
     """
     # Create a minimal dataframe for build_features
     # Each row is one bar with OHLC
-    df = pd.DataFrame(ohlc_window, columns=['open', 'high', 'low', 'close'])
+    df = pd.DataFrame(ohlc_window, columns=["open", "high", "low", "close"])
 
     # Need timestamps (just use a simple range)
-    df['timestamp'] = pd.date_range('2020-01-01', periods=len(df), freq='1min')
-    df = df.set_index('timestamp')
+    df["timestamp"] = pd.date_range("2020-01-01", periods=len(df), freq="1min")
+    df = df.set_index("timestamp")
 
     # Build relativity features
     cfg = RelativityConfig(window_length=105)
@@ -60,17 +60,17 @@ def main():
     print(f"✅ Loaded {len(df)} samples")
 
     # Check first sample
-    first_features = df['features'].iloc[0]
+    first_features = df["features"].iloc[0]
     print(f"\nOriginal feature shape: {np.asarray(first_features).shape}")
-    print(f"Expected: (105,) array of 4D OHLC arrays")
+    print("Expected: (105,) array of 4D OHLC arrays")
 
     # Convert each sample
-    print(f"\nConverting to relativity features (105, 10)...")
+    print("\nConverting to relativity features (105, 10)...")
     engineered_features = []
 
     for i, row in df.iterrows():
         # Extract OHLC window
-        ohlc_window = np.array([arr for arr in row['features']])  # Shape: (105, 4)
+        ohlc_window = np.array([arr for arr in row["features"]])  # Shape: (105, 4)
 
         # Apply relativity engineering
         try:
@@ -89,12 +89,12 @@ def main():
     # Create new dataframe with engineered features
     # Convert numpy arrays to lists for parquet compatibility
     df_jade = df.copy()
-    df_jade['features'] = [feat.tolist() for feat in engineered_features]
+    df_jade["features"] = [feat.tolist() for feat in engineered_features]
 
     # Verify shape
-    print(f"\nVerifying feature shapes...")
+    print("\nVerifying feature shapes...")
     for i in range(min(3, len(df_jade))):
-        feat = np.array(df_jade['features'].iloc[i])
+        feat = np.array(df_jade["features"].iloc[i])
         feat_shape = feat.shape
         print(f"  Sample {i}: {feat_shape}")
         assert feat_shape == (105, 10), f"Expected (105, 10), got {feat_shape}"
@@ -104,10 +104,10 @@ def main():
     df_jade.to_parquet(output_path, index=False)
 
     # Verify saved file
-    print(f"\nVerifying saved file...")
+    print("\nVerifying saved file...")
     df_verify = pd.read_parquet(output_path)
     print(f"✅ Verified: {len(df_verify)} samples")
-    first_feat = np.array(df_verify['features'].iloc[0])
+    first_feat = np.array(df_verify["features"].iloc[0])
     print(f"   First feature shape: {first_feat.shape}")
 
     print("\n" + "=" * 80)
@@ -116,9 +116,11 @@ def main():
     print(f"Input:  {input_path} (OHLC 4D)")
     print(f"Output: {output_path} (Relativity 10D)")
     print(f"Samples: {len(df_verify)}")
-    print(f"Feature shape: (105, 10)")
+    print("Feature shape: (105, 10)")
     print("\nNext steps:")
-    print("1. Upload to RunPod: scp -P 11192 data/processed/train_174.parquet root@IP:/root/moola/data/processed/")
+    print(
+        "1. Upload to RunPod: scp -P 11192 data/processed/train_174.parquet root@IP:/root/moola/data/processed/"
+    )
     print("2. Run fine-tuning experiments (Option 1 vs Option 2)")
 
 

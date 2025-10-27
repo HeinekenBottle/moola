@@ -23,7 +23,6 @@ Usage:
 """
 
 import torch
-from typing import Dict
 
 
 class LossNormalizer:
@@ -46,7 +45,7 @@ class LossNormalizer:
         self.step_count = 0
         self.running_means = {}
 
-    def normalize(self, losses: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def normalize(self, losses: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Normalize losses by their running mean.
 
         Args:
@@ -68,15 +67,13 @@ class LossNormalizer:
             # Update running mean (EMA)
             if self.step_count > self.warmup_steps:
                 self.running_means[name] = (
-                    self.momentum * self.running_means[name] +
-                    (1 - self.momentum) * loss_value
+                    self.momentum * self.running_means[name] + (1 - self.momentum) * loss_value
                 )
             else:
                 # During warmup, use simple moving average
                 self.running_means[name] = (
-                    (self.running_means[name] * (self.step_count - 1) + loss_value) /
-                    self.step_count
-                )
+                    self.running_means[name] * (self.step_count - 1) + loss_value
+                ) / self.step_count
 
             # Normalize: loss / running_mean
             # This makes each task contribute ~1.0 on average, then weights control proportions
@@ -88,7 +85,7 @@ class LossNormalizer:
 
         return normalized
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """Get current running means for logging."""
         return self.running_means.copy()
 
@@ -160,6 +157,7 @@ if __name__ == "__main__":
 
     # Simulate 20 training steps with realistic loss scales
     import random
+
     for step in range(20):
         # Classification: 0.5-2.0
         loss_type = torch.tensor(random.uniform(0.8, 1.5))
@@ -171,30 +169,38 @@ if __name__ == "__main__":
         loss_countdown = torch.tensor(random.uniform(0.5, 0.9))
 
         # Normalize
-        norm = normalizer.normalize({
-            'type': loss_type,
-            'ptr': loss_ptr,
-            'binary': loss_binary,
-            'countdown': loss_countdown,
-        })
+        norm = normalizer.normalize(
+            {
+                "type": loss_type,
+                "ptr": loss_ptr,
+                "binary": loss_binary,
+                "countdown": loss_countdown,
+            }
+        )
 
         # Apply target weights (10/70/10/10)
-        total = 0.1 * norm['type'] + 0.7 * norm['ptr'] + 0.1 * norm['binary'] + 0.1 * norm['countdown']
+        total = (
+            0.1 * norm["type"] + 0.7 * norm["ptr"] + 0.1 * norm["binary"] + 0.1 * norm["countdown"]
+        )
 
         # Calculate actual contributions
         contrib = {
-            'type': (0.1 * norm['type'] / total * 100).item(),
-            'ptr': (0.7 * norm['ptr'] / total * 100).item(),
-            'binary': (0.1 * norm['binary'] / total * 100).item(),
-            'countdown': (0.1 * norm['countdown'] / total * 100).item(),
+            "type": (0.1 * norm["type"] / total * 100).item(),
+            "ptr": (0.7 * norm["ptr"] / total * 100).item(),
+            "binary": (0.1 * norm["binary"] / total * 100).item(),
+            "countdown": (0.1 * norm["countdown"] / total * 100).item(),
         }
 
         if step % 5 == 0:
             print(f"\nStep {step}:")
-            print(f"  Raw losses: type={loss_type.item():.4f}, ptr={loss_ptr.item():.4f}, "
-                  f"binary={loss_binary.item():.4f}, countdown={loss_countdown.item():.4f}")
+            print(
+                f"  Raw losses: type={loss_type.item():.4f}, ptr={loss_ptr.item():.4f}, "
+                f"binary={loss_binary.item():.4f}, countdown={loss_countdown.item():.4f}"
+            )
             print(f"  Running means: {normalizer.get_stats()}")
-            print(f"  Contributions: type={contrib['type']:.1f}%, ptr={contrib['ptr']:.1f}%, "
-                  f"binary={contrib['binary']:.1f}%, countdown={contrib['countdown']:.1f}%")
+            print(
+                f"  Contributions: type={contrib['type']:.1f}%, ptr={contrib['ptr']:.1f}%, "
+                f"binary={contrib['binary']:.1f}%, countdown={contrib['countdown']:.1f}%"
+            )
 
     print("\n✓ Test complete - contributions should stabilize around target (10/70/10/10)")

@@ -6,19 +6,16 @@ Each overlap shares ~53 bars, inherits prorated labels for partial expansions.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path.cwd() / "src"))
 
-import numpy as np
+
 import pandas as pd
-from typing import List, Dict, Tuple
 
 
 def prorate_expansion_labels(
-    expansion_start: int,
-    expansion_end: int,
-    window_offset: int,
-    window_length: int = 105
-) -> Tuple[int, int, float]:
+    expansion_start: int, expansion_end: int, window_offset: int, window_length: int = 105
+) -> tuple[int, int, float]:
     """Prorate expansion pointers for overlapping window.
 
     Args:
@@ -57,9 +54,7 @@ def prorate_expansion_labels(
 
 
 def generate_overlapping_windows(
-    base_df: pd.DataFrame,
-    stride: int = 52,
-    min_overlap_fraction: float = 0.3
+    base_df: pd.DataFrame, stride: int = 52, min_overlap_fraction: float = 0.3
 ) -> pd.DataFrame:
     """Generate overlapping windows from base dataset.
 
@@ -74,23 +69,25 @@ def generate_overlapping_windows(
     expanded_rows = []
 
     for idx, row in base_df.iterrows():
-        features = row['features']  # List of 105 OHLC arrays
-        expansion_start = row['expansion_start']
-        expansion_end = row['expansion_end']
-        label = row['label']
-        window_id = row['window_id']
+        features = row["features"]  # List of 105 OHLC arrays
+        expansion_start = row["expansion_start"]
+        expansion_end = row["expansion_end"]
+        label = row["label"]
+        window_id = row["window_id"]
 
         # Always include original window (offset=0)
-        expanded_rows.append({
-            'window_id': f"{window_id}_offset0",
-            'base_window_id': window_id,
-            'offset': 0,
-            'features': features,
-            'label': label,
-            'expansion_start': expansion_start,
-            'expansion_end': expansion_end,
-            'overlap_fraction': 1.0,
-        })
+        expanded_rows.append(
+            {
+                "window_id": f"{window_id}_offset0",
+                "base_window_id": window_id,
+                "offset": 0,
+                "features": features,
+                "label": label,
+                "expansion_start": expansion_start,
+                "expansion_end": expansion_end,
+                "overlap_fraction": 1.0,
+            }
+        )
 
         # Generate forward overlaps (stride forward)
         offset = stride
@@ -101,23 +98,25 @@ def generate_overlapping_windows(
 
             if overlap_frac >= min_overlap_fraction:
                 # Extract overlapping window features
-                overlap_features = features[offset:offset + 105]
+                overlap_features = features[offset : offset + 105]
 
                 # Pad if needed (edge case: near end of original)
                 if len(overlap_features) < 105:
                     # Skip incomplete windows
                     break
 
-                expanded_rows.append({
-                    'window_id': f"{window_id}_offset{offset}",
-                    'base_window_id': window_id,
-                    'offset': offset,
-                    'features': overlap_features,
-                    'label': label,
-                    'expansion_start': new_start,
-                    'expansion_end': new_end,
-                    'overlap_fraction': overlap_frac,
-                })
+                expanded_rows.append(
+                    {
+                        "window_id": f"{window_id}_offset{offset}",
+                        "base_window_id": window_id,
+                        "offset": offset,
+                        "features": overlap_features,
+                        "label": label,
+                        "expansion_start": new_start,
+                        "expansion_end": new_end,
+                        "overlap_fraction": overlap_frac,
+                    }
+                )
 
             offset += stride
 
@@ -131,23 +130,25 @@ def generate_overlapping_windows(
             if overlap_frac >= min_overlap_fraction:
                 # Extract overlapping window features
                 start_idx = max(0, offset)
-                overlap_features = features[start_idx:start_idx + 105]
+                overlap_features = features[start_idx : start_idx + 105]
 
                 # Pad if needed (edge case: near start of original)
                 if len(overlap_features) < 105:
                     # Skip incomplete windows
                     break
 
-                expanded_rows.append({
-                    'window_id': f"{window_id}_offset{offset}",
-                    'base_window_id': window_id,
-                    'offset': offset,
-                    'features': overlap_features,
-                    'label': label,
-                    'expansion_start': new_start,
-                    'expansion_end': new_end,
-                    'overlap_fraction': overlap_frac,
-                })
+                expanded_rows.append(
+                    {
+                        "window_id": f"{window_id}_offset{offset}",
+                        "base_window_id": window_id,
+                        "offset": offset,
+                        "features": overlap_features,
+                        "label": label,
+                        "expansion_start": new_start,
+                        "expansion_end": new_end,
+                        "overlap_fraction": overlap_frac,
+                    }
+                )
 
             offset -= stride
 
@@ -168,12 +169,8 @@ def main():
     print(f"Base windows: {len(base_df)}")
 
     # Generate overlapping windows
-    print(f"\nGenerating overlaps (stride=52, min_overlap=0.3)...")
-    expanded_df = generate_overlapping_windows(
-        base_df,
-        stride=52,
-        min_overlap_fraction=0.3
-    )
+    print("\nGenerating overlaps (stride=52, min_overlap=0.3)...")
+    expanded_df = generate_overlapping_windows(base_df, stride=52, min_overlap_fraction=0.3)
 
     print(f"Expanded windows: {len(expanded_df)} ({len(expanded_df) / len(base_df):.2f}x)")
 
@@ -183,16 +180,16 @@ def main():
     print(f"Forward overlaps: {(expanded_df['offset'] > 0).sum()}")
     print(f"Backward overlaps: {(expanded_df['offset'] < 0).sum()}")
 
-    overlap_stats = expanded_df['overlap_fraction'].describe()
-    print(f"\nOverlap fraction distribution:")
+    overlap_stats = expanded_df["overlap_fraction"].describe()
+    print("\nOverlap fraction distribution:")
     print(f"  Mean: {overlap_stats['mean']:.3f}")
     print(f"  Median: {overlap_stats['50%']:.3f}")
     print(f"  Min: {overlap_stats['min']:.3f}")
     print(f"  Max: {overlap_stats['max']:.3f}")
 
     # Label distribution
-    print(f"\n=== Label Distribution ===")
-    label_counts = expanded_df['label'].value_counts()
+    print("\n=== Label Distribution ===")
+    label_counts = expanded_df["label"].value_counts()
     for label, count in label_counts.items():
         pct = count / len(expanded_df) * 100
         print(f"{label}: {count} ({pct:.1f}%)")

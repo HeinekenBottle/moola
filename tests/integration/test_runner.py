@@ -10,22 +10,19 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import pytest
-from loguru import logger
+from typing import Any, Optional
 
 
 class IntegrationTestRunner:
     """Automated runner for integration tests."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[dict[str, Any]] = None):
         self.config = config or self._default_config()
         self.results = []
         self.start_time = None
         self.end_time = None
 
-    def _default_config(self) -> Dict[str, Any]:
+    def _default_config(self) -> dict[str, Any]:
         """Default test configuration."""
         return {
             "max_workers": min(multiprocessing.cpu_count(), 4),
@@ -42,7 +39,7 @@ class IntegrationTestRunner:
             ],
         }
 
-    def run_all_tests(self) -> Dict[str, Any]:
+    def run_all_tests(self) -> dict[str, Any]:
         """Run all integration tests."""
         print("🚀 Starting comprehensive integration test suite...")
         self.start_time = time.time()
@@ -72,7 +69,7 @@ class IntegrationTestRunner:
 
         return report
 
-    def _run_tests_parallel(self, test_suites: List) -> Dict[str, Any]:
+    def _run_tests_parallel(self, test_suites: list) -> dict[str, Any]:
         """Run tests in parallel using process pool."""
         results = {}
 
@@ -99,7 +96,7 @@ class IntegrationTestRunner:
 
         return results
 
-    def _run_tests_sequential(self, test_suites: List) -> Dict[str, Any]:
+    def _run_tests_sequential(self, test_suites: list) -> dict[str, Any]:
         """Run tests sequentially."""
         results = {}
 
@@ -121,7 +118,7 @@ class IntegrationTestRunner:
 
         return results
 
-    def run_data_pipeline_tests(self) -> Dict[str, Any]:
+    def run_data_pipeline_tests(self) -> dict[str, Any]:
         """Run data pipeline integration tests."""
         print("\n🔧 Running data pipeline integration tests...")
 
@@ -164,7 +161,7 @@ class IntegrationTestRunner:
 
         return result
 
-    def run_model_architecture_tests(self) -> Dict[str, Any]:
+    def run_model_architecture_tests(self) -> dict[str, Any]:
         """Run enhanced SimpleLSTM architecture tests."""
         print("\n🏗️  Running enhanced SimpleLSTM architecture tests...")
 
@@ -201,7 +198,7 @@ class IntegrationTestRunner:
 
         return result
 
-    def run_pretraining_tests(self) -> Dict[str, Any]:
+    def run_pretraining_tests(self) -> dict[str, Any]:
         """Run pre-training integration tests."""
         print("\n🎓 Running pre-training integration tests...")
 
@@ -238,7 +235,7 @@ class IntegrationTestRunner:
 
         return result
 
-    def run_backward_compatibility_tests(self) -> Dict[str, Any]:
+    def run_backward_compatibility_tests(self) -> dict[str, Any]:
         """Run backward compatibility tests."""
         print("\n🔄 Running backward compatibility tests...")
 
@@ -275,7 +272,7 @@ class IntegrationTestRunner:
 
         return result
 
-    def run_validation_benchmarks(self) -> Dict[str, Any]:
+    def run_validation_benchmarks(self) -> dict[str, Any]:
         """Run validation benchmarks."""
         print("\n📊 Running validation benchmarks...")
 
@@ -300,7 +297,7 @@ class IntegrationTestRunner:
 
         return result
 
-    def _generate_final_report(self, suite_results: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_final_report(self, suite_results: dict[str, Any]) -> dict[str, Any]:
         """Generate final test report."""
         total_time = self.end_time - self.start_time
 
@@ -329,7 +326,7 @@ class IntegrationTestRunner:
         report["analysis"] = self._analyze_results(suite_results)
 
         # Print summary
-        print(f"\n📊 Integration Test Summary:")
+        print("\n📊 Integration Test Summary:")
         print(f"   Total Suites: {total_suites}")
         print(f"   Successful: {successful_suites}")
         print(f"   Success Rate: {success_rate:.2%}")
@@ -337,7 +334,7 @@ class IntegrationTestRunner:
 
         return report
 
-    def _analyze_results(self, suite_results: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_results(self, suite_results: dict[str, Any]) -> dict[str, Any]:
         """Analyze test results and provide insights."""
         analysis = {
             "strong_areas": [],
@@ -371,7 +368,7 @@ class IntegrationTestRunner:
 
         return analysis
 
-    def _save_results(self, results: Dict[str, Any], report: Dict[str, Any]):
+    def _save_results(self, results: dict[str, Any], report: dict[str, Any]):
         """Save test results to files."""
         # Save JSON results
         json_path = Path("integration_test_results.json")
@@ -390,7 +387,7 @@ class IntegrationTestRunner:
                 with open(val_report_path, "w") as f:
                     json.dump(validation_results["results"], f, indent=2)
 
-    def _generate_html_report(self, report: Dict[str, Any]):
+    def _generate_html_report(self, report: dict[str, Any]):
         """Generate HTML test report."""
         html_content = self._create_html_template(report)
 
@@ -398,7 +395,7 @@ class IntegrationTestRunner:
         with open(html_path, "w") as f:
             f.write(html_content)
 
-    def _create_html_template(self, report: Dict[str, Any]) -> str:
+    def _create_html_template(self, report: dict[str, Any]) -> str:
         """Create HTML template for test report."""
         summary = report["summary"]
         analysis = report["analysis"]

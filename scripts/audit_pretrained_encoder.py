@@ -17,19 +17,16 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
 from rich.console import Console
+from rich.progress import track
 from rich.table import Table
 
-from moola.data.windowed_loader import WindowedConfig, WindowedDataset
-from moola.features.relativity import build_relativity_features, RelativityConfig
+from moola.features.relativity import RelativityConfig, build_relativity_features
 from moola.models.jade_pretrain import JadeConfig, JadePretrainer
-from rich.progress import track
 
 console = Console()
 
@@ -56,7 +53,7 @@ FEATURE_NAMES = list(FEATURE_SPECS.keys())
 WEIGHTED_MAE_THRESHOLD = 0.02
 
 
-def load_checkpoint(checkpoint_path: str) -> Tuple[JadePretrainer, Dict]:
+def load_checkpoint(checkpoint_path: str) -> tuple[JadePretrainer, dict]:
     """Load pre-trained model checkpoint."""
     console.print(f"[blue]Loading checkpoint: {checkpoint_path}[/blue]")
 
@@ -84,7 +81,9 @@ def load_checkpoint(checkpoint_path: str) -> Tuple[JadePretrainer, Dict]:
         "learned_sigma": torch.exp(model.log_sigma).item(),
     }
 
-    console.print(f"[green]✓ Loaded epoch {metadata['epoch']}, val_loss={metadata['val_loss']:.6f}[/green]")
+    console.print(
+        f"[green]✓ Loaded epoch {metadata['epoch']}, val_loss={metadata['val_loss']:.6f}[/green]"
+    )
     console.print(f"[green]✓ Learned σ = {metadata['learned_sigma']:.4f}[/green]")
 
     return model, metadata
@@ -92,7 +91,7 @@ def load_checkpoint(checkpoint_path: str) -> Tuple[JadePretrainer, Dict]:
 
 def sample_contiguous_windows(
     df: pd.DataFrame, n_samples: int = 1000, temporal_mix: float = 0.2, window_len: int = 105
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Sample contiguous 105-bar windows by start indices for temporal integrity.
 
     Args:
@@ -129,7 +128,9 @@ def sample_contiguous_windows(
         starts_recent_sample = np.random.choice(starts_recent, len(starts_recent), replace=True)
         # Pad with train-era if needed
         extra = n_recent - len(starts_recent_sample)
-        starts_train_sample = np.append(starts_train_sample, np.random.choice(starts_train, extra, replace=False))
+        starts_train_sample = np.append(
+            starts_train_sample, np.random.choice(starts_train, extra, replace=False)
+        )
         n_train_era += extra  # Adjust count
 
     all_starts = np.concatenate([starts_train_sample, starts_recent_sample])[:n_samples]
@@ -141,27 +142,30 @@ def sample_contiguous_windows(
     for start in track(all_starts, description="Extracting contiguous windows"):
         if start + window_len > len(df):
             continue  # Edge case
-        window_df = df.iloc[start:start + window_len][["open", "high", "low", "close"]].copy()
+        window_df = df.iloc[start : start + window_len][["open", "high", "low", "close"]].copy()
         X_12d, valid_mask, _ = build_relativity_features(window_df, relativity_cfg.dict())
         # Ensure proper array indexing and conversion to tensor
         X_np = X_12d[0] if (isinstance(X_12d, np.ndarray) and X_12d.ndim > 2) else X_12d
-        mask_np = valid_mask[0] if (isinstance(valid_mask, np.ndarray) and valid_mask.ndim > 1) else valid_mask
+        mask_np = (
+            valid_mask[0]
+            if (isinstance(valid_mask, np.ndarray) and valid_mask.ndim > 1)
+            else valid_mask
+        )
         X_list.append(torch.as_tensor(X_np, dtype=torch.float32))  # [window_len, 12]
         valid_mask_list.append(torch.as_tensor(mask_np, dtype=torch.float32))  # [window_len]
 
     X = torch.stack(X_list)
     valid_mask = torch.stack(valid_mask_list)
 
-    console.print(f"[blue]✓ {len(X)} contiguous windows: ~{n_train_era} train-era, ~{n_recent} recent[/blue]")
+    console.print(
+        f"[blue]✓ {len(X)} contiguous windows: ~{n_train_era} train-era, ~{n_recent} recent[/blue]"
+    )
     return X, valid_mask
 
 
 def compute_reconstruction_metrics(
-    model: JadePretrainer,
-    X: torch.Tensor,
-    valid_mask: torch.Tensor,
-    device: str = "cpu"
-) -> Dict[str, float]:
+    model: JadePretrainer, X: torch.Tensor, valid_mask: torch.Tensor, device: str = "cpu"
+) -> dict[str, float]:
     """Compute reconstruction metrics on validation data.
 
     Args:
@@ -194,9 +198,8 @@ def compute_reconstruction_metrics(
 
         # Weighted MAE (normalized features weight=1, range features weight=1.5)
         feature_weights = torch.tensor(
-            [1.0 if FEATURE_SPECS[name]["type"] == "normalized" else 1.5
-             for name in FEATURE_NAMES],
-            device=device
+            [1.0 if FEATURE_SPECS[name]["type"] == "normalized" else 1.5 for name in FEATURE_NAMES],
+            device=device,
         )
         weighted_mae = ((valid_recon - valid_X).abs() * feature_weights).mean().item()
 
@@ -217,8 +220,8 @@ def compute_mc_dropout_ece(
     X: torch.Tensor,
     valid_mask: torch.Tensor,
     n_passes: int = 50,
-    device: str = "cpu"
-) -> Dict[str, float]:
+    device: str = "cpu",
+) -> dict[str, float]:
     """Compute MC Dropout uncertainty and Expected Calibration Error.
 
     Args:
@@ -283,15 +286,17 @@ def compute_mc_dropout_ece(
     }
 
 
-def print_results(metrics: Dict, mc_metrics: Dict, metadata: Dict):
+def print_results(metrics: dict, mc_metrics: dict, metadata: dict):
     """Print audit results in formatted table."""
     console.print("\n[bold cyan]═══ Pre-Training Audit Results ═══[/bold cyan]\n")
 
     # Checkpoint metadata
-    console.print(f"[bold]Checkpoint Metadata:[/bold]")
+    console.print("[bold]Checkpoint Metadata:[/bold]")
     console.print(f"  Epoch: {metadata['epoch']}")
     console.print(f"  Val Loss: {metadata['val_loss']:.6f}")
-    console.print(f"  Learned σ: {metadata['learned_sigma']:.4f} {'✓' if 0.5 <= metadata['learned_sigma'] <= 2.0 else '⚠️'}")
+    console.print(
+        f"  Learned σ: {metadata['learned_sigma']:.4f} {'✓' if 0.5 <= metadata['learned_sigma'] <= 2.0 else '⚠️'}"
+    )
 
     # Per-feature reconstruction
     console.print("\n[bold]Per-Feature Reconstruction:[/bold]")
@@ -309,13 +314,7 @@ def print_results(metrics: Dict, mc_metrics: Dict, metadata: Dict):
 
         status = "✓" if mae < threshold and std < 0.05 else "⚠️"
 
-        table.add_row(
-            feature_name,
-            f"{mae:.4f}",
-            f"{threshold:.4f}",
-            f"{std:.4f}",
-            status
-        )
+        table.add_row(feature_name, f"{mae:.4f}", f"{threshold:.4f}", f"{std:.4f}", status)
 
     console.print(table)
 
@@ -325,8 +324,12 @@ def print_results(metrics: Dict, mc_metrics: Dict, metadata: Dict):
     non_zero_status = "✓" if metrics["non_zero_activation_ratio"] > 0.5 else "⚠️"
     ece_status = "✓" if mc_metrics["ece"] < 0.10 else "⚠️"
 
-    console.print(f"  Weighted MAE: {metrics['weighted_mae']:.4f} (threshold: {WEIGHTED_MAE_THRESHOLD}) {weighted_mae_status}")
-    console.print(f"  Non-zero Activations: {metrics['non_zero_activation_ratio']:.2%} (threshold: 50%) {non_zero_status}")
+    console.print(
+        f"  Weighted MAE: {metrics['weighted_mae']:.4f} (threshold: {WEIGHTED_MAE_THRESHOLD}) {weighted_mae_status}"
+    )
+    console.print(
+        f"  Non-zero Activations: {metrics['non_zero_activation_ratio']:.2%} (threshold: 50%) {non_zero_status}"
+    )
     console.print(f"  Epistemic Uncertainty: {mc_metrics['epistemic_uncertainty']:.4f}")
     console.print(f"  ECE (calibration): {mc_metrics['ece']:.4f} (threshold: 0.10) {ece_status}")
 
@@ -335,13 +338,15 @@ def print_results(metrics: Dict, mc_metrics: Dict, metadata: Dict):
         weighted_mae_status == "✓"
         and non_zero_status == "✓"
         and ece_status == "✓"
-        and 0.5 <= metadata['learned_sigma'] <= 2.0
+        and 0.5 <= metadata["learned_sigma"] <= 2.0
     )
 
     if all_passed:
         console.print("\n[bold green]✓ Encoder quality: PASS - Ready for fine-tuning[/bold green]")
     else:
-        console.print("\n[bold yellow]⚠️ Encoder quality: MARGINAL - Review failed metrics before fine-tuning[/bold yellow]")
+        console.print(
+            "\n[bold yellow]⚠️ Encoder quality: MARGINAL - Review failed metrics before fine-tuning[/bold yellow]"
+        )
 
 
 def main():

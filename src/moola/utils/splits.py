@@ -11,7 +11,6 @@ DO NOT use make_splits() for new work - use forward-chaining splits instead.
 import json
 import warnings
 from pathlib import Path
-from typing import Iterator, Tuple
 
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
@@ -34,7 +33,7 @@ def make_splits(
     seed: int,
     k: int = 5,
     output_dir: Path = None,
-) -> list[Tuple[np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """Generate and persist deterministic stratified K-fold splits.
 
     ⚠️  DEPRECATED: DO NOT USE FOR TIME SERIES DATA! ⚠️
@@ -97,7 +96,7 @@ def make_splits(
     return splits
 
 
-def load_splits(splits_dir: Path, k: int = 5) -> list[Tuple[np.ndarray, np.ndarray]]:
+def load_splits(splits_dir: Path, k: int = 5) -> list[tuple[np.ndarray, np.ndarray]]:
     """Load persisted K-fold splits from disk.
 
     Args:
@@ -118,7 +117,7 @@ def load_splits(splits_dir: Path, k: int = 5) -> list[Tuple[np.ndarray, np.ndarr
         if not fold_file.exists():
             raise FileNotFoundError(f"Split manifest not found: {fold_file}")
 
-        with open(fold_file, "r") as f:
+        with open(fold_file) as f:
             manifest = json.load(f)
 
         train_idx = np.array(manifest["train_idx"])
@@ -134,7 +133,7 @@ def get_or_create_splits(
     seed: int,
     k: int,
     splits_dir: Path,
-) -> list[Tuple[np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """Get existing splits or create new ones if they don't exist.
 
     Args:

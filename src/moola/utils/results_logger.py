@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 class ResultsLogger:
@@ -16,8 +16,8 @@ class ResultsLogger:
         self,
         phase: int,
         experiment_id: str,
-        metrics: Dict[str, Any],
-        config: Optional[Dict[str, Any]] = None,
+        metrics: dict[str, Any],
+        config: Optional[dict[str, Any]] = None,
     ) -> None:
         """Log experiment results to file (append mode).
 
@@ -53,7 +53,7 @@ class ResultsLogger:
                     results.append(record)
         return results
 
-    def get_winner(self, phase: int, metric: str = "accuracy") -> Optional[Dict]:
+    def get_winner(self, phase: int, metric: str = "accuracy") -> Optional[dict]:
         """Get best result for a phase by metric."""
         results = self.get_phase_results(phase)
         if not results:

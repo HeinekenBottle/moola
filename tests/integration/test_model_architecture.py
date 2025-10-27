@@ -8,12 +8,10 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 import torch
 import torch.nn as nn
 
-from moola.features import AdvancedFeatureEngineer, FeatureConfig
 from moola.models import get_model
 from moola.utils.seeds import set_seed
 
@@ -57,20 +55,20 @@ class TestSimpleLSTMEnhancedArchitecture:
         # Test LSTM layer configuration
         lstm = model.model.lstm
         assert lstm.input_size == 4, f"Wrong input size: {lstm.input_size}"
-        assert lstm.hidden_size == model.hidden_size, f"Hidden size mismatch"
-        assert lstm.num_layers == model.num_layers, f"Layer count mismatch"
+        assert lstm.hidden_size == model.hidden_size, "Hidden size mismatch"
+        assert lstm.num_layers == model.num_layers, "Layer count mismatch"
         assert lstm.bidirectional, "LSTM should be bidirectional"
 
         # Test attention layer configuration
         attention = model.model.attention
-        assert attention.embed_dim == model.hidden_size * 2, f"Attention dim mismatch"
-        assert attention.num_heads == model.num_heads, f"Attention heads mismatch"
+        assert attention.embed_dim == model.hidden_size * 2, "Attention dim mismatch"
+        assert attention.num_heads == model.num_heads, "Attention heads mismatch"
 
         # Test classifier layer configuration
         classifier = model.model.classifier
         assert len(classifier) == 4, f"Wrong classifier layers: {len(classifier)}"
-        assert classifier[0].in_features == model.hidden_size * 2, f"Input dim mismatch"
-        assert classifier[3].out_features == 2, f"Output dim mismatch"
+        assert classifier[0].in_features == model.hidden_size * 2, "Input dim mismatch"
+        assert classifier[3].out_features == 2, "Output dim mismatch"
 
     def test_feature_integration_compatibility(self):
         """Test compatibility with engineered features."""

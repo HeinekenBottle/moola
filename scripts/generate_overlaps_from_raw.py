@@ -7,14 +7,16 @@ training data: 174 → ~350 windows.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path.cwd() / "src"))
 
 import json
 import re
+from typing import Optional
+
 import numpy as np
 import pandas as pd
-from datetime import timedelta
-from typing import Dict, List, Tuple, Optional
+
 
 def load_candlesticks_annotations(annotations_dir: str) -> pd.DataFrame:
     """Load all Candlesticks annotations into a DataFrame.
@@ -26,32 +28,36 @@ def load_candlesticks_annotations(annotations_dir: str) -> pd.DataFrame:
         DataFrame with columns: window_id, center_timestamp, expansions
     """
     master_index = pd.read_csv(f"{annotations_dir}/master_index.csv")
-    master_index['center_timestamp'] = pd.to_datetime(master_index['center_timestamp'], format='mixed', utc=True)
+    master_index["center_timestamp"] = pd.to_datetime(
+        master_index["center_timestamp"], format="mixed", utc=True
+    )
 
     # Load expansion details from batch files
     annotations = []
     for idx, row in master_index.iterrows():
         batch_file = f"{annotations_dir}/{row['batch_file']}"
         try:
-            with open(batch_file, 'r') as f:
+            with open(batch_file) as f:
                 batch_data = json.load(f)
 
             # Each batch file is a list with one annotation
             if isinstance(batch_data, list) and len(batch_data) > 0:
                 anno = batch_data[0]
-                annotations.append({
-                    'window_id': row['window_id'],
-                    'center_timestamp': row['center_timestamp'],
-                    'window_quality': row['window_quality'],
-                    'expansions': anno.get('expansions', [])
-                })
+                annotations.append(
+                    {
+                        "window_id": row["window_id"],
+                        "center_timestamp": row["center_timestamp"],
+                        "window_quality": row["window_quality"],
+                        "expansions": anno.get("expansions", []),
+                    }
+                )
         except (FileNotFoundError, json.JSONDecodeError) as e:
             print(f"Warning: Couldn't load {batch_file}: {e}")
 
     return pd.DataFrame(annotations)
 
 
-def parse_window_id(window_id: str) -> Tuple[int, int]:
+def parse_window_id(window_id: str) -> tuple[int, int]:
     """Parse window_id like '0_exp_1' to (base_id, exp_num).
 
     Args:
@@ -60,16 +66,14 @@ def parse_window_id(window_id: str) -> Tuple[int, int]:
     Returns:
         (base_window_id, expansion_number)
     """
-    match = re.match(r'(\d+)_exp_(\d+)', str(window_id))
+    match = re.match(r"(\d+)_exp_(\d+)", str(window_id))
     if match:
         return int(match.group(1)), int(match.group(2))
     return None, None
 
 
 def find_window_in_raw(
-    raw_df: pd.DataFrame,
-    center_timestamp: pd.Timestamp,
-    window_length: int = 105
+    raw_df: pd.DataFrame, center_timestamp: pd.Timestamp, window_length: int = 105
 ) -> Optional[int]:
     """Find the center index of a window in raw NQ data.
 
@@ -83,14 +87,14 @@ def find_window_in_raw(
     """
     # Ensure raw_df has datetime index
     if not isinstance(raw_df.index, pd.DatetimeIndex):
-        if 'timestamp' in raw_df.columns:
-            raw_df = raw_df.set_index('timestamp')
+        if "timestamp" in raw_df.columns:
+            raw_df = raw_df.set_index("timestamp")
         else:
             raise ValueError("raw_df must have datetime index or timestamp column")
 
     # Find closest timestamp
     try:
-        center_idx = raw_df.index.get_indexer([center_timestamp], method='nearest')[0]
+        center_idx = raw_df.index.get_indexer([center_timestamp], method="nearest")[0]
 
         # Verify we have enough data around this center
         half_window = window_length // 2
@@ -111,8 +115,8 @@ def extract_overlapping_windows(
     window_id: str,
     window_length: int = 105,
     stride: int = 52,
-    max_overlaps: int = 2
-) -> List[Dict]:
+    max_overlaps: int = 2,
+) -> list[dict]:
     """Extract overlapping windows around a center position.
 
     Args:
@@ -137,17 +141,19 @@ def extract_overlapping_windows(
     end_idx = start_idx + window_length
 
     if start_idx >= 0 and end_idx <= len(raw_df):
-        ohlc = raw_df.iloc[start_idx:end_idx][['open', 'high', 'low', 'close']].values
-        windows.append({
-            'window_id': f"{window_id}_offset0",
-            'base_window_id': window_id,
-            'offset': 0,
-            'features': ohlc,
-            'label': label,
-            'expansion_start': expansion_start,
-            'expansion_end': expansion_end,
-            'overlap_fraction': 1.0,
-        })
+        ohlc = raw_df.iloc[start_idx:end_idx][["open", "high", "low", "close"]].values
+        windows.append(
+            {
+                "window_id": f"{window_id}_offset0",
+                "base_window_id": window_id,
+                "offset": 0,
+                "features": ohlc,
+                "label": label,
+                "expansion_start": expansion_start,
+                "expansion_end": expansion_end,
+                "overlap_fraction": 1.0,
+            }
+        )
 
     # Forward overlaps
     for i in range(1, max_overlaps + 1):
@@ -172,17 +178,21 @@ def extract_overlapping_windows(
 
             # Only keep if overlap is meaningful (>30%)
             if overlap_frac >= 0.3:
-                ohlc = raw_df.iloc[new_start_idx:new_end_idx][['open', 'high', 'low', 'close']].values
-                windows.append({
-                    'window_id': f"{window_id}_offset+{offset}",
-                    'base_window_id': window_id,
-                    'offset': offset,
-                    'features': ohlc,
-                    'label': label,
-                    'expansion_start': max(0, new_exp_start),
-                    'expansion_end': min(window_length - 1, new_exp_end),
-                    'overlap_fraction': overlap_frac,
-                })
+                ohlc = raw_df.iloc[new_start_idx:new_end_idx][
+                    ["open", "high", "low", "close"]
+                ].values
+                windows.append(
+                    {
+                        "window_id": f"{window_id}_offset+{offset}",
+                        "base_window_id": window_id,
+                        "offset": offset,
+                        "features": ohlc,
+                        "label": label,
+                        "expansion_start": max(0, new_exp_start),
+                        "expansion_end": min(window_length - 1, new_exp_end),
+                        "overlap_fraction": overlap_frac,
+                    }
+                )
 
     # Backward overlaps
     for i in range(1, max_overlaps + 1):
@@ -207,17 +217,21 @@ def extract_overlapping_windows(
 
             # Only keep if overlap is meaningful (>30%)
             if overlap_frac >= 0.3:
-                ohlc = raw_df.iloc[new_start_idx:new_end_idx][['open', 'high', 'low', 'close']].values
-                windows.append({
-                    'window_id': f"{window_id}_offset{offset}",
-                    'base_window_id': window_id,
-                    'offset': offset,
-                    'features': ohlc,
-                    'label': label,
-                    'expansion_start': max(0, new_exp_start),
-                    'expansion_end': min(window_length - 1, new_exp_end),
-                    'overlap_fraction': overlap_frac,
-                })
+                ohlc = raw_df.iloc[new_start_idx:new_end_idx][
+                    ["open", "high", "low", "close"]
+                ].values
+                windows.append(
+                    {
+                        "window_id": f"{window_id}_offset{offset}",
+                        "base_window_id": window_id,
+                        "offset": offset,
+                        "features": ohlc,
+                        "label": label,
+                        "expansion_start": max(0, new_exp_start),
+                        "expansion_end": min(window_length - 1, new_exp_end),
+                        "overlap_fraction": overlap_frac,
+                    }
+                )
 
     return windows
 
@@ -229,7 +243,9 @@ def main():
 
     # Paths
     train_latest_path = "data/processed/labeled/train_latest.parquet"
-    annotations_dir = "/Users/jack/projects/candlesticks/data/corrections/multi_expansion_annotations_v2"
+    annotations_dir = (
+        "/Users/jack/projects/candlesticks/data/corrections/multi_expansion_annotations_v2"
+    )
     raw_nq_path = "data/raw/nq_ohlcv_1min_2020-09_2025-09_fixed.parquet"
     output_path = "data/processed/labeled/train_latest_overlaps_v2.parquet"
 
@@ -244,22 +260,22 @@ def main():
 
     print(f"\n3. Loading raw NQ data ({raw_nq_path})...")
     raw_df = pd.read_parquet(raw_nq_path)
-    if 'timestamp' in raw_df.columns:
-        raw_df['timestamp'] = pd.to_datetime(raw_df['timestamp'], utc=True)
-        raw_df = raw_df.set_index('timestamp')
+    if "timestamp" in raw_df.columns:
+        raw_df["timestamp"] = pd.to_datetime(raw_df["timestamp"], utc=True)
+        raw_df = raw_df.set_index("timestamp")
     else:
         # Index is already datetime, convert to UTC
         raw_df.index = pd.to_datetime(raw_df.index, utc=True)
     print(f"   {len(raw_df)} bars from {raw_df.index[0]} to {raw_df.index[-1]}")
 
     # Map train_latest windows to annotations
-    print(f"\n4. Mapping train_latest windows to annotations...")
+    print("\n4. Mapping train_latest windows to annotations...")
     expanded_windows = []
     matched_count = 0
     skipped_count = 0
 
     for idx, row in train_df.iterrows():
-        window_id = row['window_id']
+        window_id = row["window_id"]
         base_id, exp_num = parse_window_id(window_id)
 
         if base_id is None:
@@ -268,18 +284,20 @@ def main():
             continue
 
         # Find annotation
-        anno_row = annotations_df[annotations_df['window_id'] == base_id]
+        anno_row = annotations_df[annotations_df["window_id"] == base_id]
         if anno_row.empty:
             print(f"   Warning: No annotation found for base_id {base_id}")
             skipped_count += 1
             continue
 
-        center_timestamp = anno_row.iloc[0]['center_timestamp']
-        expansions = anno_row.iloc[0]['expansions']
+        center_timestamp = anno_row.iloc[0]["center_timestamp"]
+        expansions = anno_row.iloc[0]["expansions"]
 
         # Find the specific expansion (exp_num is 1-indexed)
         if exp_num > len(expansions):
-            print(f"   Warning: exp_num {exp_num} > {len(expansions)} expansions in window {base_id}")
+            print(
+                f"   Warning: exp_num {exp_num} > {len(expansions)} expansions in window {base_id}"
+            )
             skipped_count += 1
             continue
 
@@ -294,12 +312,12 @@ def main():
         windows = extract_overlapping_windows(
             raw_df,
             center_idx,
-            row['expansion_start'],
-            row['expansion_end'],
-            row['label'],
+            row["expansion_start"],
+            row["expansion_end"],
+            row["label"],
             window_id,
             stride=52,
-            max_overlaps=2
+            max_overlaps=2,
         )
 
         expanded_windows.extend(windows)
@@ -309,18 +327,22 @@ def main():
             print(f"   Processed {matched_count + skipped_count}/{len(train_df)} windows...")
 
     print(f"\n   Matched: {matched_count}, Skipped: {skipped_count}")
-    print(f"   Generated: {len(expanded_windows)} total windows ({len(expanded_windows) / len(train_df):.2f}x)")
+    print(
+        f"   Generated: {len(expanded_windows)} total windows ({len(expanded_windows) / len(train_df):.2f}x)"
+    )
 
     # Create DataFrame
-    print(f"\n5. Creating expanded dataset...")
+    print("\n5. Creating expanded dataset...")
     expanded_df = pd.DataFrame(expanded_windows)
 
     # Convert numpy arrays to lists for parquet compatibility
-    expanded_df['features'] = expanded_df['features'].apply(lambda x: x.tolist() if isinstance(x, np.ndarray) else x)
+    expanded_df["features"] = expanded_df["features"].apply(
+        lambda x: x.tolist() if isinstance(x, np.ndarray) else x
+    )
 
     # Add source and quality columns to match train_latest schema
-    expanded_df['source'] = 'overlapped'
-    expanded_df['quality'] = 'auto'
+    expanded_df["source"] = "overlapped"
+    expanded_df["quality"] = "auto"
 
     # Statistics
     print("\n=== Overlap Statistics ===")
@@ -328,16 +350,16 @@ def main():
     print(f"Forward overlaps: {(expanded_df['offset'] > 0).sum()}")
     print(f"Backward overlaps: {(expanded_df['offset'] < 0).sum()}")
 
-    overlap_stats = expanded_df['overlap_fraction'].describe()
-    print(f"\nOverlap fraction distribution:")
+    overlap_stats = expanded_df["overlap_fraction"].describe()
+    print("\nOverlap fraction distribution:")
     print(f"  Mean: {overlap_stats['mean']:.3f}")
     print(f"  Median: {overlap_stats['50%']:.3f}")
     print(f"  Min: {overlap_stats['min']:.3f}")
     print(f"  Max: {overlap_stats['max']:.3f}")
 
     # Label distribution
-    print(f"\n=== Label Distribution ===")
-    label_counts = expanded_df['label'].value_counts()
+    print("\n=== Label Distribution ===")
+    label_counts = expanded_df["label"].value_counts()
     for label, count in label_counts.items():
         pct = count / len(expanded_df) * 100
         print(f"{label}: {count} ({pct:.1f}%)")

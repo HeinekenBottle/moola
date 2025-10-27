@@ -1,0 +1,554 @@
+{
+  "model": "artifacts/baseline_100ep_weighted/best_model.pt",
+  "data": "data/processed/labeled/train_latest_overlaps_v2.parquet",
+  "threshold": 0.6,
+  "num_windows": 20,
+  "summary": {
+    "mean_iou": 0.06639005878099928,
+    "passing_rate": 0.0,
+    "max_iou": 0.14285714285714285,
+    "min_iou": 0.0
+  },
+  "predictions": [
+    {
+      "window_id": 0,
+      "predicted_spans": [
+        [
+          0,
+          14
+        ],
+        [
+          34,
+          68
+        ],
+        [
+          90,
+          104
+        ]
+      ],
+      "true_span": [
+        42,
+        48
+      ],
+      "confidence": 0.6444619297981262,
+      "overlap_iou": 0.1076923076923077,
+      "label": "retracement",
+      "predicted_center": 0.5344787240028381,
+      "predicted_length": 0.011491984128952026
+    },
+    {
+      "window_id": 1,
+      "predicted_spans": [
+        [
+          0,
+          15
+        ],
+        [
+          38,
+          74
+        ],
+        [
+          95,
+          104
+        ]
+      ],
+      "true_span": [
+        98,
+        103
+      ],
+      "confidence": 0.6428171992301941,
+      "overlap_iou": 0.09523809523809523,
+      "label": "consolidation",
+      "predicted_center": 0.5335380434989929,
+      "predicted_length": 0.012903996743261814
+    },
+    {
+      "window_id": 2,
+      "predicted_spans": [
+        [
+          0,
+          16
+        ],
+        [
+          36,
+          90
+        ],
+        [
+          98,
+          104
+        ]
+      ],
+      "true_span": [
+        89,
+        104
+      ],
+      "confidence": 0.6364033222198486,
+      "overlap_iou": 0.10465116279069768,
+      "label": "consolidation",
+      "predicted_center": 0.5356844067573547,
+      "predicted_length": 0.009833996184170246
+    },
+    {
+      "window_id": 3,
+      "predicted_spans": [
+        [
+          0,
+          17
+        ],
+        [
+          36,
+          87
+        ],
+        [
+          94,
+          104
+        ]
+      ],
+      "true_span": [
+        99,
+        101
+      ],
+      "confidence": 0.6400766372680664,
+      "overlap_iou": 0.037037037037037035,
+      "label": "consolidation",
+      "predicted_center": 0.5337827205657959,
+      "predicted_length": 0.012304418720304966
+    },
+    {
+      "window_id": 4,
+      "predicted_spans": [
+        [
+          0,
+          16
+        ],
+        [
+          46,
+          96
+        ]
+      ],
+      "true_span": [
+        39,
+        44
+      ],
+      "confidence": 0.6204710006713867,
+      "overlap_iou": 0.0,
+      "label": "consolidation",
+      "predicted_center": 0.5360952019691467,
+      "predicted_length": 0.009931044653058052
+    },
+    {
+      "window_id": 5,
+      "predicted_spans": [
+        [
+          0,
+          15
+        ],
+        [
+          40,
+          77
+        ],
+        [
+          102,
+          104
+        ]
+      ],
+      "true_span": [
+        85,
+        86
+      ],
+      "confidence": 0.6256422400474548,
+      "overlap_iou": 0.0,
+      "label": "retracement",
+      "predicted_center": 0.5330518484115601,
+      "predicted_length": 0.013857957907021046
+    },
+    {
+      "window_id": 6,
+      "predicted_spans": [
+        [
+          0,
+          16
+        ],
+        [
+          35,
+          76
+        ],
+        [
+          97,
+          104
+        ]
+      ],
+      "true_span": [
+        7,
+        14
+      ],
+      "confidence": 0.637804388999939,
+      "overlap_iou": 0.11940298507462686,
+      "label": "retracement",
+      "predicted_center": 0.5316407084465027,
+      "predicted_length": 0.01578502729535103
+    },
+    {
+      "window_id": 7,
+      "predicted_spans": [
+        [
+          0,
+          17
+        ],
+        [
+          37,
+          67
+        ],
+        [
+          94,
+          104
+        ]
+      ],
+      "true_span": [
+        86,
+        91
+      ],
+      "confidence": 0.6332001686096191,
+      "overlap_iou": 0.0,
+      "label": "consolidation",
+      "predicted_center": 0.5346051454544067,
+      "predicted_length": 0.011373374611139297
+    },
+    {
+      "window_id": 8,
+      "predicted_spans": [
+        [
+          0,
+          14
+        ],
+        [
+          33,
+          71
+        ],
+        [
+          92,
+          104
+        ]
+      ],
+      "true_span": [
+        6,
+        13
+      ],
+      "confidence": 0.6439898610115051,
+      "overlap_iou": 0.11940298507462686,
+      "label": "retracement",
+      "predicted_center": 0.535703718662262,
+      "predicted_length": 0.009847462177276611
+    },
+    {
+      "window_id": 9,
+      "predicted_spans": [
+        [
+          0,
+          10
+        ],
+        [
+          36,
+          63
+        ],
+        [
+          67,
+          77
+        ],
+        [
+          101,
+          104
+        ]
+      ],
+      "true_span": [
+        61,
+        63
+      ],
+      "confidence": 0.6244686841964722,
+      "overlap_iou": 0.05555555555555555,
+      "label": "consolidation",
+      "predicted_center": 0.5336284041404724,
+      "predicted_length": 0.013078870251774788
+    },
+    {
+      "window_id": 10,
+      "predicted_spans": [
+        [
+          0,
+          10
+        ],
+        [
+          34,
+          62
+        ],
+        [
+          71,
+          74
+        ],
+        [
+          90,
+          104
+        ]
+      ],
+      "true_span": [
+        19,
+        22
+      ],
+      "confidence": 0.6306359767913818,
+      "overlap_iou": 0.0,
+      "label": "consolidation",
+      "predicted_center": 0.5340033173561096,
+      "predicted_length": 0.012045406736433506
+    },
+    {
+      "window_id": 11,
+      "predicted_spans": [
+        [
+          0,
+          10
+        ],
+        [
+          35,
+          70
+        ],
+        [
+          90,
+          93
+        ],
+        [
+          101,
+          104
+        ]
+      ],
+      "true_span": [
+        34,
+        38
+      ],
+      "confidence": 0.6209504008293152,
+      "overlap_iou": 0.07142857142857142,
+      "label": "retracement",
+      "predicted_center": 0.5310103893280029,
+      "predicted_length": 0.017521783709526062
+    },
+    {
+      "window_id": 12,
+      "predicted_spans": [
+        [
+          0,
+          14
+        ],
+        [
+          40,
+          40
+        ],
+        [
+          47,
+          75
+        ],
+        [
+          92,
+          104
+        ]
+      ],
+      "true_span": [
+        11,
+        14
+      ],
+      "confidence": 0.6288666725158691,
+      "overlap_iou": 0.06896551724137931,
+      "label": "consolidation",
+      "predicted_center": 0.5355885028839111,
+      "predicted_length": 0.010384202934801579
+    },
+    {
+      "window_id": 13,
+      "predicted_spans": [
+        [
+          0,
+          22
+        ],
+        [
+          38,
+          74
+        ],
+        [
+          91,
+          95
+        ]
+      ],
+      "true_span": [
+        101,
+        104
+      ],
+      "confidence": 0.6251198649406433,
+      "overlap_iou": 0.0,
+      "label": "retracement",
+      "predicted_center": 0.5299287438392639,
+      "predicted_length": 0.019535860046744347
+    },
+    {
+      "window_id": 14,
+      "predicted_spans": [
+        [
+          0,
+          9
+        ],
+        [
+          12,
+          15
+        ],
+        [
+          34,
+          87
+        ],
+        [
+          94,
+          104
+        ]
+      ],
+      "true_span": [
+        15,
+        30
+      ],
+      "confidence": 0.6290087699890137,
+      "overlap_iou": 0.010638297872340425,
+      "label": "consolidation",
+      "predicted_center": 0.5340214371681213,
+      "predicted_length": 0.012040846049785614
+    },
+    {
+      "window_id": 15,
+      "predicted_spans": [
+        [
+          0,
+          12
+        ],
+        [
+          39,
+          67
+        ],
+        [
+          89,
+          92
+        ],
+        [
+          102,
+          104
+        ]
+      ],
+      "true_span": [
+        43,
+        49
+      ],
+      "confidence": 0.6258576512336731,
+      "overlap_iou": 0.14285714285714285,
+      "label": "retracement",
+      "predicted_center": 0.5309073328971863,
+      "predicted_length": 0.017934871837496758
+    },
+    {
+      "window_id": 16,
+      "predicted_spans": [
+        [
+          0,
+          14
+        ],
+        [
+          36,
+          78
+        ],
+        [
+          94,
+          104
+        ]
+      ],
+      "true_span": [
+        40,
+        48
+      ],
+      "confidence": 0.638538658618927,
+      "overlap_iou": 0.13043478260869565,
+      "label": "retracement",
+      "predicted_center": 0.5343313813209534,
+      "predicted_length": 0.011788926087319851
+    },
+    {
+      "window_id": 17,
+      "predicted_spans": [
+        [
+          0,
+          12
+        ],
+        [
+          43,
+          72
+        ],
+        [
+          92,
+          104
+        ]
+      ],
+      "true_span": [
+        61,
+        63
+      ],
+      "confidence": 0.6385296583175659,
+      "overlap_iou": 0.05357142857142857,
+      "label": "consolidation",
+      "predicted_center": 0.533237099647522,
+      "predicted_length": 0.013450541533529758
+    },
+    {
+      "window_id": 18,
+      "predicted_spans": [
+        [
+          0,
+          13
+        ],
+        [
+          34,
+          66
+        ],
+        [
+          87,
+          104
+        ]
+      ],
+      "true_span": [
+        92,
+        100
+      ],
+      "confidence": 0.638282060623169,
+      "overlap_iou": 0.13846153846153847,
+      "label": "retracement",
+      "predicted_center": 0.5336039066314697,
+      "predicted_length": 0.012782735750079155
+    },
+    {
+      "window_id": 19,
+      "predicted_spans": [
+        [
+          0,
+          15
+        ],
+        [
+          41,
+          77
+        ],
+        [
+          89,
+          104
+        ]
+      ],
+      "true_span": [
+        63,
+        67
+      ],
+      "confidence": 0.6416911482810974,
+      "overlap_iou": 0.07246376811594203,
+      "label": "consolidation",
+      "predicted_center": 0.534440279006958,
+      "predicted_length": 0.011572938412427902
+    }
+  ]
+}
