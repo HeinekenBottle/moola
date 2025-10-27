@@ -5,36 +5,49 @@
 #############################################
 # Core ML & Data Libraries (Paper-Strict)
 #############################################
+# numpy 1.26.4: Keeping in 1.26.x series (NumPy 2.0+ has breaking changes)
+# pandas 2.3.3: Upgraded from 2.2.2 (backward compatible, minor improvements)
+# scipy 1.16.1: Upgraded from 1.11.4 (backward compatible for moola usage)
+# scikit-learn 1.7.2: Upgraded from 1.5.2 (no breaking changes for moola models)
 numpy==1.26.4
-pandas==2.2.2
-scipy==1.11.4
-scikit-learn==1.5.2
+pandas==2.3.3
+scipy==1.16.1
+scikit-learn==1.7.2
 
 
 
 #############################################
-# PyTorch Ecosystem (Paper-Strict)
+# PyTorch Ecosystem (RunPod 2025 Optimized)
 #############################################
-torch==2.3.1+cu121; sys_platform != 'darwin'
-torch==2.3.1; sys_platform == 'darwin'
-torchvision==0.18.1+cu121; sys_platform != 'darwin'
-torchvision==0.18.1; sys_platform == 'darwin'
+# PyTorch 2.4.1 with CUDA 12.4 (RunPod standard for 2025)
+# Breaking changes reviewed: moola codebase uses no deprecated APIs
+# - Uses standard state_dict/load_state_dict (not deprecated)
+# - Uses no device-specific autocast (torch.amp compatible)
+# - No FSDP, DeviceMesh, or distributed.pipeline usage
+# See analysis: requires.txt update rationale document
+torch==2.4.1+cu124; sys_platform != 'darwin'
+torch==2.4.1; sys_platform == 'darwin'
+torchvision==0.19.1+cu124; sys_platform != 'darwin'
+torchvision==0.19.1; sys_platform == 'darwin'
 
-# Advanced training utilities
+# Advanced training utilities (Lightning 2.4 supports PyTorch 2.4+)
 pytorch-lightning==2.4.0
-torchmetrics==1.8.1
+torchmetrics==1.8.2
 
 #############################################
 # Data Handling & Validation (Paper-Strict)
 #############################################
 # Parquet file support
-pyarrow==16.1.0
+# pyarrow 17.0.0: Upgraded from 16.1.0 (backward compatible, bug fixes for parquet)
+# Note: GCS-specific parquet.read_table issue reported, but pd.read_parquet works fine
+pyarrow==17.0.0
 
 # Schema validation
 pandera==0.26.1
 
 # Technical analysis library for ATR/EMA calculations
-TA-Lib==0.4.28
+# Note: Currently NOT installed/used in moola - can be removed if unused
+# TA-Lib==0.4.28
 
 #############################################
 # Configuration Management

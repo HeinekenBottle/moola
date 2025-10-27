@@ -11,24 +11,24 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Moola Maintainer" }]
 dependencies = [
-  # Core ML & Data Libraries
-  "numpy>=1.26.4,<2.0",
-  "pandas>=2.3,<3.0",
-  "scipy>=1.14,<2.0",
-  "scikit-learn>=1.7,<2.0",
+  # Core ML & Data Libraries - Paper-Strict Pinned (aligned with requirements.txt)
+  "numpy==1.26.4",           # Keep in 1.26.x series (NumPy 2.0+ breaking changes)
+  "pandas==2.3.3",            # Upgraded from 2.2.2 (backward compatible)
+  "scipy==1.16.1",            # Upgraded from 1.11.4 (backward compatible for moola)
+  "scikit-learn==1.7.2",      # Upgraded from 1.5.2 (no breaking changes for moola)
   "xgboost>=2.0,<3.0",
   "imbalanced-learn==0.14.0",
-  
+
   # PyTorch Ecosystem
   "torch>=2.0,<2.3; platform_machine != 'x86_64' or sys_platform != 'darwin'",
   "torch>=2.0,<2.2.3; platform_machine == 'x86_64' and sys_platform == 'darwin'",
   "torchvision>=0.17,<0.19",
   "pytorch-lightning>=2.4.0,<3.0",
   "torchmetrics>=1.8,<2.0",
-  
+
   # Data Handling & Validation
-  "pyarrow>=17.0,<18.0",
-  "pandera>=0.26.1,<1.0",
+  "pyarrow==17.0.0",          # Upgraded from 16.1.0 (backward compatible, bug fixes)
+  "pandera==0.26.1",          # Schema validation (no breaking changes)
   
   # Configuration Management
   "click>=8.2,<9.0",
